@@ -23,6 +23,14 @@ struct DetectedFace {
     /// image quality/pose suitability for recognition. `nil` if the quality
     /// request didn't produce a result for this face.
     let quality: Float?
+    /// Head rotation in radians, when Vision could estimate it (needs a
+    /// fairly frontal, well-lit face). Yaw is left/right turn — 0 is facing
+    /// the camera, positive/negative turn toward one side — and is what
+    /// drives the guided-pose onboarding capture. Roll (tilt) and pitch
+    /// (up/down) are exposed for completeness but unused today.
+    let yaw: Float?
+    let roll: Float?
+    let pitch: Float?
 }
 
 /// Pure, synchronous, CPU-bound work — `nonisolated` so it can run on a
@@ -49,7 +57,10 @@ nonisolated enum FaceDetector {
             return DetectedFace(
                 boundingBox: pixelRect,
                 normalizedBoundingBox: observation.boundingBox,
-                quality: qualityByRect[observation.boundingBox]
+                quality: qualityByRect[observation.boundingBox],
+                yaw: observation.yaw?.floatValue,
+                roll: observation.roll?.floatValue,
+                pitch: observation.pitch?.floatValue
             )
         }
     }

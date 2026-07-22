@@ -29,11 +29,16 @@ struct FaceIdentity: Codable, Identifiable, Equatable {
 @Observable
 @MainActor
 final class FaceEnrollmentStore {
+    /// Shared instance so the Face Lab tab and the onboarding window (each
+    /// with their own controller) observe and persist the same identities
+    /// instead of two independently-loaded, silently-diverging copies.
+    static let shared = FaceEnrollmentStore()
+
     private(set) var identities: [FaceIdentity] = []
 
     private let fileURL: URL
 
-    init() {
+    private init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let directory = appSupport.appendingPathComponent("glance", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

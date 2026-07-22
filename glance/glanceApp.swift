@@ -15,6 +15,12 @@ struct glanceApp: App {
         WindowGroup {
             ContentView()
         }
+
+        Window("Welcome to Glance", id: "onboarding") {
+            OnboardingView()
+        }
+        .windowResizability(.contentSize)
+        .windowStyle(.hiddenTitleBar)
     }
 }
 

@@ -32,7 +32,10 @@ final class PreviewHostView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer = CALayer()
-        previewLayer.videoGravity = .resizeAspect
+        // .resizeAspectFill crops to completely fill the view instead of
+        // letterboxing — without it, the sensor's rectangular aspect ratio
+        // leaves visible gaps inside a circular mask.
+        previewLayer.videoGravity = .resizeAspectFill
         layer?.addSublayer(previewLayer)
     }
 
@@ -44,7 +47,16 @@ final class PreviewHostView: NSView {
         super.layout()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        previewLayer.frame = bounds
+        // Geometry is set via bounds+position (not .frame) because a
+        // non-identity transform is applied below, and Core Animation
+        // mis-reports .frame once a layer is transformed.
+        previewLayer.bounds = CGRect(origin: .zero, size: bounds.size)
+        previewLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        // Horizontal flip so the preview reads like a mirror (turn head
+        // left -> moves left on screen). Done at the layer level rather
+        // than via the capture connection's isVideoMirrored, which had no
+        // effect on this hardware/preview combination.
+        previewLayer.setAffineTransform(CGAffineTransform(scaleX: -1, y: 1))
         CATransaction.commit()
     }
 

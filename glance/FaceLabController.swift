@@ -22,7 +22,7 @@ struct RecognitionResult: Identifiable {
 @MainActor
 final class FaceLabController {
     let camera = CameraManager()
-    let store = FaceEnrollmentStore()
+    let store = FaceEnrollmentStore.shared
     private let embedder: FaceEmbedder = VisionFeaturePrintEmbedder()
 
     private(set) var detectedFaces: [DetectedFace] = []

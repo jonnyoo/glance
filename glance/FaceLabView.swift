@@ -11,12 +11,19 @@ import SwiftUI
 
 struct FaceLabView: View {
     @State private var controller = FaceLabController()
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Face Lab — On-Device Face Recognition (Debug)")
-                    .font(.headline)
+                HStack {
+                    Text("Face Lab — On-Device Face Recognition (Debug)")
+                        .font(.headline)
+                    Spacer()
+                    Button("Start Onboarding") {
+                        openWindow(id: "onboarding")
+                    }
+                }
 
                 previewSection
                 detectionSection
