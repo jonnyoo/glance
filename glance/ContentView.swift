@@ -6,6 +6,18 @@
 import SwiftUI
 
 struct ContentView: View {
+    var body: some View {
+        TabView {
+            CredentialPOCView()
+                .tabItem { Text("Credentials") }
+            FaceLabView()
+                .tabItem { Text("Face Lab") }
+        }
+        .frame(minWidth: 560, minHeight: 700)
+    }
+}
+
+struct CredentialPOCView: View {
     @State private var controller = POCController()
 
     var body: some View {
