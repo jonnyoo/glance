@@ -38,11 +38,20 @@ enum KeystrokeInjector {
         return AXIsProcessTrustedWithOptions(options)
     }
 
-    /// Types `text` into whatever has keyboard focus, then presses Return.
+    /// Types the UTF-8 bytes into whatever has keyboard focus, then presses Return.
+    ///
+    /// Accepts `Data` (bytes) instead of `String` so the caller can hold the plaintext
+    /// as a zero-able buffer. Internally we still briefly decode to `String` (Core
+    /// Graphics needs Unicode code units), but that `String` exists only within
+    /// this function's scope — dropped as soon as we return.
+    ///
     /// Blocking; invoke from a background thread/task.
-    nonisolated static func typeAndReturn(_ text: String) throws {
+    nonisolated static func typeAndReturn(_ passwordBytes: Data) throws {
         guard isAccessibilityTrusted() else {
             throw KeystrokeError.accessibilityNotGranted
+        }
+        guard let text = String(data: passwordBytes, encoding: .utf8) else {
+            throw KeystrokeError.eventCreationFailed
         }
         let source = CGEventSource(stateID: .hidSystemState)
         for char in text {

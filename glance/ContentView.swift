@@ -10,7 +10,7 @@ struct ContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Presence POC — Lock Screen Injection Test")
+            Text("Presence POC — Secure Credential Storage")
                 .font(.headline)
 
             GroupBox("Accessibility") {
@@ -44,17 +44,56 @@ struct ContentView: View {
                 .padding(.vertical, 4)
             }
 
-            GroupBox("Test Injection") {
+            GroupBox("Credential Setup") {
                 VStack(alignment: .leading, spacing: 8) {
-                    TextField("Test string", text: $controller.testString)
-                        .textFieldStyle(.roundedBorder)
+                    HStack {
+                        Circle()
+                            .fill(controller.isSessionUnlocked ? .green : .gray)
+                            .frame(width: 10, height: 10)
+                        Text(controller.isSessionUnlocked ? "Session unlocked" : "Session locked")
+                        Spacer()
+                        Button(controller.isSessionUnlocked ? "Lock Session" : "Unlock with Touch ID") {
+                            if controller.isSessionUnlocked {
+                                controller.lockSession()
+                            } else {
+                                Task { await controller.unlockSession() }
+                            }
+                        }
+                    }
 
+                    if let sessionError = controller.sessionError {
+                        Text(sessionError)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+
+                    Divider()
+
+                    SecureField("Mac password", text: $controller.passwordInput)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(!controller.isSessionUnlocked)
+
+                    Button("Save Password") {
+                        Task { await controller.savePassword() }
+                    }
+                    .disabled(!controller.isSessionUnlocked || controller.passwordInput.isEmpty)
+
+                    Text(controller.hasStoredPassword ? "A password is stored (encrypted)." : "No password stored yet.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            }
+
+            GroupBox("Injection") {
+                VStack(alignment: .leading, spacing: 8) {
                     Toggle("Auto-inject once when screen locks", isOn: $controller.autoInjectOnLock)
 
-                    Button("Inject Now") {
-                        Task { await controller.injectTestString() }
+                    Button("Inject Stored Password") {
+                        Task { await controller.injectStoredPassword() }
                     }
                     .keyboardShortcut(.return, modifiers: [.command])
+                    .disabled(!controller.hasStoredPassword || !controller.isSessionUnlocked)
                 }
                 .padding(.vertical, 4)
             }
@@ -67,9 +106,10 @@ struct ContentView: View {
             Spacer()
         }
         .padding(20)
-        .frame(minWidth: 420, minHeight: 380)
+        .frame(minWidth: 460, minHeight: 560)
         .onAppear {
             controller.refreshAccessibilityStatus()
+            controller.refreshCredentialStatus()
         }
     }
 }
