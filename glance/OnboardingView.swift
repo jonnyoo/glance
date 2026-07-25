@@ -29,7 +29,7 @@ struct OnboardingView: View {
                 }
             }
         }
-        .frame(width: 420, height: 640)
+        .frame(width: 420, height: 560)
         .onDisappear {
             controller.stopCamera()
         }

@@ -2,12 +2,13 @@
 //  FaceLabView.swift
 //  glance
 //
-//  Debug console for milestones A-F: camera preview, face detection, crop
-//  preview, enrollment, and recognition — all in one tab, independent of the
-//  credential/unlock POC in the other tab.
+//  Debug console: camera preview, face detection + alignment, enrollment,
+//  and recognition — all in one tab, independent of the credential/unlock
+//  POC in the other tab.
 //
 
 import SwiftUI
+import Charts
 
 struct FaceLabView: View {
     @State private var controller = FaceLabController()
@@ -25,10 +26,13 @@ struct FaceLabView: View {
                     }
                 }
 
+                modelStatusSection
+                sessionLockSection
                 previewSection
                 detectionSection
                 enrollSection
                 recognizeSection
+                calibrationSection
                 logSection
             }
             .padding(20)
@@ -36,6 +40,45 @@ struct FaceLabView: View {
         .frame(minWidth: 560, minHeight: 700)
         .onDisappear {
             controller.stop()
+        }
+    }
+
+    // MARK: - Which embedder is active
+
+    private var modelStatusSection: some View {
+        HStack {
+            Circle()
+                .fill(controller.pipeline.usingFallbackEmbedder ? .orange : .green)
+                .frame(width: 8, height: 8)
+            Text("Embedder: \(controller.pipeline.embedder.name)")
+                .font(.caption)
+            if controller.pipeline.usingFallbackEmbedder {
+                Text("(ArcFace unavailable — see log)")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+            Spacer()
+        }
+    }
+
+    // MARK: - Session lock (face data is encrypted under the session key)
+
+    private var sessionLockSection: some View {
+        Group {
+            if controller.store.isLocked {
+                HStack {
+                    Circle().fill(.red).frame(width: 8, height: 8)
+                    Text("Session locked — enrolled faces are encrypted and can't be read or saved yet.")
+                        .font(.caption)
+                    Spacer()
+                    Button("Unlock") {
+                        Task { await controller.unlockSession() }
+                    }
+                }
+                if let error = controller.sessionError {
+                    Text(error).font(.caption).foregroundStyle(.red)
+                }
+            }
         }
     }
 
@@ -74,21 +117,24 @@ struct FaceLabView: View {
         }
     }
 
-    // MARK: - Milestones B/C: detection + crop
+    // MARK: - Milestones B/C/D: detection + alignment + embedding
 
     private var detectionSection: some View {
         GroupBox("Detection") {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Faces detected: \(controller.detectedFaces.count)")
-                    if let quality = controller.faceQuality {
+                    if let quality = controller.currentResult?.quality {
                         Text("Capture quality: \(String(format: "%.0f%%", quality * 100))")
                     } else {
                         Text("Capture quality: —")
                             .foregroundStyle(.secondary)
                     }
-                    if let embedding = controller.currentEmbedding {
-                        Text("Embedding: \(embedding.count) numbers")
+                    if let result = controller.currentResult {
+                        Text("Alignment: \(result.alignmentTier.rawValue)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("Embedding: \(result.embedding.count) numbers")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -97,9 +143,9 @@ struct FaceLabView: View {
                 Spacer()
 
                 VStack(spacing: 4) {
-                    Text("Cropped face").font(.caption).foregroundStyle(.secondary)
-                    if let crop = controller.croppedFace {
-                        Image(crop, scale: 1, orientation: .up, label: Text("Cropped face"))
+                    Text("Aligned input").font(.caption).foregroundStyle(.secondary)
+                    if let aligned = controller.currentResult?.alignedImage {
+                        Image(aligned, scale: 1, orientation: .up, label: Text("Aligned face"))
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                             .frame(width: 96, height: 96)
@@ -127,11 +173,11 @@ struct FaceLabView: View {
                     Button("Capture Sample") {
                         controller.captureSample()
                     }
-                    .disabled(controller.currentEmbedding == nil)
+                    .disabled(controller.currentResult == nil || controller.store.isLocked)
                 }
 
                 if controller.store.identities.isEmpty {
-                    Text("No identities enrolled yet.")
+                    Text(controller.store.isLocked ? "Unlock the session to view enrolled identities." : "No identities enrolled yet.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
@@ -141,6 +187,11 @@ struct FaceLabView: View {
                             Text("\(identity.samples.count) sample\(identity.samples.count == 1 ? "" : "s")")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if identity.isStale(comparedTo: controller.pipeline.embedder) {
+                                Text("stale")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.orange)
+                            }
                             Spacer()
                             Button(role: .destructive) {
                                 controller.deleteIdentity(identity)
@@ -165,25 +216,27 @@ struct FaceLabView: View {
                     Button("Identify") {
                         controller.recognize()
                     }
-                    .disabled(controller.currentEmbedding == nil || controller.store.identities.isEmpty)
+                    .disabled(controller.currentResult == nil || controller.store.identities.isEmpty)
 
                     Spacer()
 
-                    Text("Threshold: \(Int(controller.threshold))%")
+                    Text("Threshold: \(String(format: "%.2f", controller.threshold))")
                         .font(.caption)
-                    Slider(value: $controller.threshold, in: 0...100)
+                    Slider(value: $controller.threshold, in: -1...1)
                         .frame(width: 160)
                 }
 
                 if let best = controller.bestMatch {
                     HStack {
-                        Circle()
-                            .fill(best.similarityPercent >= controller.threshold ? .green : .red)
-                            .frame(width: 10, height: 10)
-                        Text("Best match: \(best.name) — \(String(format: "%.1f", best.similarityPercent))%")
-                        Text(best.similarityPercent >= controller.threshold ? "MATCH" : "NO MATCH")
-                            .font(.caption.bold())
-                            .foregroundStyle(best.similarityPercent >= controller.threshold ? .green : .red)
+                        Circle().fill(.green).frame(width: 10, height: 10)
+                        Text("Best match: \(best.name) — centroid \(String(format: "%.3f", best.centroidSimilarity)), max \(String(format: "%.3f", best.maxSampleSimilarity))")
+                        Text("MATCH").font(.caption.bold()).foregroundStyle(.green)
+                    }
+                } else if let first = controller.recognitionResults.first {
+                    HStack {
+                        Circle().fill(.red).frame(width: 10, height: 10)
+                        Text("Closest: \(first.name) — centroid \(String(format: "%.3f", first.centroidSimilarity)), max \(String(format: "%.3f", first.maxSampleSimilarity))")
+                        Text("NO MATCH").font(.caption.bold()).foregroundStyle(.red)
                     }
                 }
 
@@ -192,11 +245,81 @@ struct FaceLabView: View {
                     ForEach(controller.recognitionResults) { result in
                         HStack {
                             Text(result.name)
+                            if result.isStale {
+                                Text("stale").font(.caption2.bold()).foregroundStyle(.orange)
+                            }
                             Spacer()
-                            Text("\(String(format: "%.1f", result.similarityPercent))%")
+                            Text("centroid \(String(format: "%.3f", result.centroidSimilarity))")
+                                .foregroundStyle(.secondary)
+                            Text("max \(String(format: "%.3f", result.maxSampleSimilarity))")
                                 .foregroundStyle(.secondary)
                         }
                         .font(.caption)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
+    // MARK: - Threshold calibration
+
+    private var calibrationSection: some View {
+        GroupBox("Threshold Calibration") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Run Identify, then tag whether that was really you or someone else — do this across lighting, angle, and expression, and again with a different person, to see where the two score distributions actually fall.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack {
+                    Button("Mark Genuine (this is me)") {
+                        controller.recordCalibrationSample(isGenuine: true)
+                    }
+                    Button("Mark Impostor (not me)") {
+                        controller.recordCalibrationSample(isGenuine: false)
+                    }
+                    .disabled(controller.recognitionResults.isEmpty)
+                    Spacer()
+                    Button("Clear", role: .destructive) {
+                        controller.clearCalibrationSamples()
+                    }
+                    .disabled(controller.calibrationSamples.isEmpty)
+                }
+                .disabled(controller.recognitionResults.isEmpty && controller.calibrationSamples.isEmpty)
+
+                if !controller.calibrationSamples.isEmpty {
+                    Chart {
+                        ForEach(controller.calibrationSamples) { sample in
+                            PointMark(
+                                x: .value("Similarity", sample.centroidSimilarity),
+                                y: .value("Type", sample.isGenuine ? "Genuine" : "Impostor")
+                            )
+                            .foregroundStyle(sample.isGenuine ? Color.green : Color.red)
+                        }
+                        RuleMark(x: .value("Threshold", controller.threshold))
+                            .foregroundStyle(.blue)
+                            .lineStyle(StrokeStyle(lineWidth: 2, dash: [4, 4]))
+                    }
+                    .chartXScale(domain: -1...1)
+                    .frame(height: 100)
+
+                    if let suggested = controller.suggestedThreshold {
+                        HStack {
+                            Text("Suggested threshold: \(String(format: "%.3f", suggested))")
+                                .font(.caption)
+                            Button("Use it") {
+                                controller.threshold = Double(suggested)
+                            }
+                            if controller.calibrationDistributionsOverlap {
+                                Text("Distributions overlap — no single cutoff perfectly separates these samples yet.")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                    } else {
+                        Text("Record at least one genuine and one impostor sample to get a suggestion.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }

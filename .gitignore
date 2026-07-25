@@ -1,0 +1,16 @@
+# Xcode build products / derived data
+build/
+DerivedData/
+*.xcuserstate
+
+# Xcode per-user state (schemes, breakpoints) — not meant to be shared
+xcuserdata/
+
+# Compiled Core ML models are derived from the committed .mlpackage source
+*.mlmodelc
+
+# Python virtualenv used by tools/convert_arcface.py
+.venv/
+__pycache__/
+
+.DS_Store

@@ -29,7 +29,6 @@ final class CameraManager: NSObject {
     let session = AVCaptureSession()
     private let videoOutput = AVCaptureVideoDataOutput()
     private let sessionQueue = DispatchQueue(label: "com.jonathan.glance.camera.session")
-    private let ciContext = CIContext()
 
     /// Handed to the delegate outside the actor; only ever touched via `Task { @MainActor ... }`.
     private let framePublisher = FramePublisher()
@@ -128,6 +127,12 @@ final class CameraManager: NSObject {
     private final class FramePublisher: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         weak var owner: CameraManager?
         private let ciContext = CIContext()
+        /// Detection/embedding only ever need a modest-resolution frame —
+        /// running Vision on the full sensor resolution (often 1080p+) is
+        /// pure waste. This only affects `currentFrame` (used for
+        /// detection); the live preview renders from the capture session
+        /// directly via `AVCaptureVideoPreviewLayer` and is unaffected.
+        private let maxLongEdge: CGFloat = 640
 
         func captureOutput(
             _ output: AVCaptureOutput,
@@ -135,7 +140,12 @@ final class CameraManager: NSObject {
             from connection: AVCaptureConnection
         ) {
             guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-            let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+            var ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+            let longEdge = max(ciImage.extent.width, ciImage.extent.height)
+            if longEdge > maxLongEdge {
+                let scale = maxLongEdge / longEdge
+                ciImage = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+            }
             guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
 
             Task { @MainActor [weak owner] in

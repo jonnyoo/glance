@@ -6,19 +6,27 @@
 import SwiftUI
 
 struct ContentView: View {
+    /// Shared across tabs (not created per-tab) so `FaceUnlockCoordinator`
+    /// calls into the exact same controller instance the Credentials tab
+    /// shows status for — two independent `POCController`s would each spin
+    /// up their own `LockMonitor` and observe the same signal redundantly.
+    @State private var pocController = POCController()
+
     var body: some View {
         TabView {
-            CredentialPOCView()
+            CredentialPOCView(controller: pocController)
                 .tabItem { Text("Credentials") }
             FaceLabView()
                 .tabItem { Text("Face Lab") }
+            FaceUnlockView(pocController: pocController)
+                .tabItem { Text("Face Unlock") }
         }
         .frame(minWidth: 560, minHeight: 700)
     }
 }
 
 struct CredentialPOCView: View {
-    @State private var controller = POCController()
+    @Bindable var controller: POCController
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {

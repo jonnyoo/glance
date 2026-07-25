@@ -1,0 +1,12 @@
+# Python 3.9+ (matches the system python3 on this Mac). Install into a venv:
+#   python3 -m venv .venv && source .venv/bin/activate
+#   pip install -r tools/requirements.txt
+
+coremltools>=7.0
+onnx>=1.14
+onnx2torch>=1.5
+torch>=2.0
+insightface>=0.7.3
+onnxruntime>=1.16
+Pillow>=10.0
+numpy

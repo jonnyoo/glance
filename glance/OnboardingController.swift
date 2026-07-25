@@ -47,6 +47,16 @@ enum EnrollmentPose: Int, CaseIterable {
         case .right: return "arrow.right.circle.fill"
         }
     }
+
+    /// Persisted alongside each sample so a saved identity records which
+    /// pose each embedding came from.
+    var name: String {
+        switch self {
+        case .center: return "center"
+        case .left: return "left"
+        case .right: return "right"
+        }
+    }
 }
 
 enum CameraPermissionState {
@@ -59,7 +69,7 @@ enum CameraPermissionState {
 @MainActor
 final class OnboardingController {
     let camera = CameraManager()
-    private let embedder: FaceEmbedder = VisionFeaturePrintEmbedder()
+    let pipeline = FaceRecognitionPipeline()
     private let store = FaceEnrollmentStore.shared
 
     private(set) var step: OnboardingStep = .intro
@@ -93,7 +103,16 @@ final class OnboardingController {
     private(set) var currentYaw: Float?
     private(set) var enrollmentComplete = false
 
-    private var collectedSamples: [[Float]] = []
+    private struct CollectedSample {
+        let embedding: [Float]
+        let pose: EnrollmentPose
+    }
+    /// Held in memory (not persisted) until the password step succeeds —
+    /// saving requires an unlocked session (see SecureFaceStore), and
+    /// nothing unlocks the session until `finish(password:)` calls
+    /// `SecureCredentialManager.unlockSession`, which happens after
+    /// enrollment in this flow's step order.
+    private var collectedSamples: [CollectedSample] = []
     private var matchStreak = 0
     private var isProcessingFrame = false
 
@@ -204,11 +223,12 @@ final class OnboardingController {
         isProcessingFrame = true
         defer { isProcessingFrame = false }
 
-        let faces = (try? await Task.detached(priority: .userInitiated) {
-            try FaceDetector.detectFaces(in: frame)
-        }.value) ?? []
+        let pipeline = self.pipeline
+        let result = try? await Task.detached(priority: .userInitiated) {
+            try pipeline.recognize(in: frame)
+        }.value
 
-        guard let face = faces.first, let yaw = face.yaw else {
+        guard let result, let yaw = result.face.yaw else {
             faceDetected = false
             currentYaw = nil
             matchStreak = 0
@@ -217,8 +237,13 @@ final class OnboardingController {
         faceDetected = true
         currentYaw = yaw
 
-        let qualityOK = face.quality.map { $0 >= qualityFloor } ?? true
-        guard qualityOK, yawMatches(yaw, pose: pose) else {
+        let qualityOK = result.quality.map { $0 >= qualityFloor } ?? true
+        // Only a 5-point alignment produces a reliably canonical input —
+        // a 2-point or padded-crop fallback (more likely exactly during a
+        // turned pose, where landmarks are harder to find) isn't accepted
+        // toward enrollment.
+        let alignmentOK = result.alignmentTier == .fivePoint
+        guard qualityOK, alignmentOK, yawMatches(yaw, pose: pose) else {
             matchStreak = 0
             return
         }
@@ -227,14 +252,7 @@ final class OnboardingController {
         guard matchStreak >= requiredMatchStreak else { return }
         matchStreak = 0
 
-        guard let crop = FaceDetector.crop(face, from: frame) else { return }
-        let embedder = self.embedder
-        let embeddingResult = try? await Task.detached(priority: .userInitiated) {
-            try embedder.embedding(for: crop)
-        }.value
-        guard let embedding = embeddingResult else { return }
-
-        collectedSamples.append(embedding)
+        collectedSamples.append(CollectedSample(embedding: result.embedding, pose: pose))
         capturedForCurrentPose += 1
 
         if capturedForCurrentPose >= samplesPerPose {
@@ -259,10 +277,9 @@ final class OnboardingController {
     }
 
     private func finishEnrollment() async {
-        let embedderName = embedder.name
-        for sample in collectedSamples {
-            store.addSample(name: Self.ownerName, embedding: sample, embedderName: embedderName)
-        }
+        // Samples stay in memory here — persisting requires an unlocked
+        // session, which doesn't exist until `finish(password:)` calls
+        // `SecureCredentialManager.unlockSession` below.
         enrollmentComplete = true
         camera.stop()
         try? await Task.sleep(for: .seconds(1.5))
@@ -289,6 +306,15 @@ final class OnboardingController {
             try await Task.detached(priority: .userInitiated) {
                 try SecureCredentialManager.unlockSession(reason: "Set up Glance")
             }.value
+
+            // Only now that the session key exists can the face samples
+            // collected during enrollment actually be encrypted and saved.
+            store.reloadIfUnlocked()
+            let embedder = pipeline.embedder
+            for sample in collectedSamples {
+                _ = try? store.addSample(name: Self.ownerName, embedding: sample.embedding, embedder: embedder, pose: sample.pose.name)
+            }
+
             try await Task.detached(priority: .userInitiated) {
                 guard var bytes = trimmed.data(using: .utf8) else {
                     throw SecureCredentialError.emptyPassword

@@ -61,6 +61,31 @@ enum SecureCredentialManager {
         sessionLock.lock(); _cachedKey = key; sessionLock.unlock()
     }
 
+    // MARK: - Generic session-key crypto (shared seam for anything encrypted
+    // under the session key — passwords here, face embeddings in
+    // SecureFaceStore. Requires an unlocked session; does not touch Keychain.)
+
+    nonisolated static func encrypt(_ plaintext: Data) throws -> Data {
+        guard let key = cachedKey() else { throw SecureCredentialError.sessionLocked }
+        do {
+            let sealed = try AES.GCM.seal(plaintext, using: key)
+            guard let combined = sealed.combined else { throw SecureCredentialError.encryptionFailed }
+            return combined
+        } catch {
+            throw SecureCredentialError.encryptionFailed
+        }
+    }
+
+    nonisolated static func decrypt(_ ciphertext: Data) throws -> Data {
+        guard let key = cachedKey() else { throw SecureCredentialError.sessionLocked }
+        do {
+            let sealed = try AES.GCM.SealedBox(combined: ciphertext)
+            return try AES.GCM.open(sealed, using: key)
+        } catch {
+            throw SecureCredentialError.decryptionFailed
+        }
+    }
+
     // MARK: - Public API
 
     nonisolated static func hasStoredPassword() -> Bool {
@@ -105,17 +130,7 @@ enum SecureCredentialManager {
     /// call `unlockSession(reason:)` first. Blocking; call from a background task.
     nonisolated static func savePassword(_ passwordBytes: Data) throws {
         guard !passwordBytes.isEmpty else { throw SecureCredentialError.emptyPassword }
-        guard let key = cachedKey() else { throw SecureCredentialError.sessionLocked }
-
-        let combined: Data
-        do {
-            let sealed = try AES.GCM.seal(passwordBytes, using: key)
-            guard let c = sealed.combined else { throw SecureCredentialError.encryptionFailed }
-            combined = c
-        } catch {
-            throw SecureCredentialError.encryptionFailed
-        }
-
+        let combined = try encrypt(passwordBytes)
         try KeychainManager.save(account: passwordBlobAccount, data: combined)
     }
 
@@ -126,14 +141,9 @@ enum SecureCredentialManager {
     /// Returns raw bytes — the caller MUST zero them via `.resetBytes(in:)`
     /// after use. Blocking; call from a background task.
     nonisolated static func readPassword() throws -> Data {
-        guard let key = cachedKey() else { throw SecureCredentialError.sessionLocked }
+        guard cachedKey() != nil else { throw SecureCredentialError.sessionLocked }
         let ciphertext = try KeychainManager.read(account: passwordBlobAccount)
-        do {
-            let sealed = try AES.GCM.SealedBox(combined: ciphertext)
-            return try AES.GCM.open(sealed, using: key)
-        } catch {
-            throw SecureCredentialError.decryptionFailed
-        }
+        return try decrypt(ciphertext)
     }
 
     /// Deletes both Keychain items and clears the cached session key.

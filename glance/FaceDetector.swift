@@ -31,36 +31,52 @@ struct DetectedFace {
     let yaw: Float?
     let roll: Float?
     let pitch: Float?
+    /// Facial landmarks (eyes, nose, mouth, etc.), when available. Feeds
+    /// `FaceAligner` for canonical 112x112 alignment ahead of ArcFace.
+    nonisolated let landmarks: VNFaceLandmarks2D?
 }
 
 /// Pure, synchronous, CPU-bound work — `nonisolated` so it can run on a
 /// background task despite the project's default main-actor isolation.
 nonisolated enum FaceDetector {
-    /// Runs face-rectangle + capture-quality detection on a single frame.
-    /// Synchronous and CPU-bound — call from a background task.
+    /// Runs face-rectangle, capture-quality, and landmarks detection on a
+    /// single frame. Synchronous and CPU-bound — call from a background task.
     static func detectFaces(in image: CGImage) throws -> [DetectedFace] {
-        let rectanglesRequest = VNDetectFaceRectanglesRequest()
-        let qualityRequest = VNDetectFaceCaptureQualityRequest()
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
-        try handler.perform([rectanglesRequest, qualityRequest])
 
+        let rectanglesRequest = VNDetectFaceRectanglesRequest()
+        try handler.perform([rectanglesRequest])
+        let faceObservations = rectanglesRequest.results ?? []
+        guard !faceObservations.isEmpty else { return [] }
+
+        // Quality and landmarks are run *chained* to the rectangles results
+        // (via `inputFaceObservations`) rather than as independent requests
+        // re-detecting from scratch. That guarantees their results
+        // correspond 1:1, in order, to `faceObservations` — the previous
+        // approach joined quality back to rects via a `[CGRect: Float]`
+        // dictionary keyed on exact-float boundingBox equality, which is
+        // fragile (float equality) and silently drops entries on any
+        // mismatch. Chaining removes the ambiguity at the source.
+        let qualityRequest = VNDetectFaceCaptureQualityRequest()
+        let landmarksRequest = VNDetectFaceLandmarksRequest()
+        qualityRequest.inputFaceObservations = faceObservations
+        landmarksRequest.inputFaceObservations = faceObservations
+        try handler.perform([qualityRequest, landmarksRequest])
+
+        let qualityResults = qualityRequest.results ?? []
+        let landmarkResults = landmarksRequest.results ?? []
         let imageSize = CGSize(width: image.width, height: image.height)
 
-        let qualityByRect: [CGRect: Float] = Dictionary(
-            uniqueKeysWithValues: (qualityRequest.results ?? []).map {
-                ($0.boundingBox, $0.faceCaptureQuality ?? 0)
-            }
-        )
-
-        return (rectanglesRequest.results ?? []).map { observation in
+        return faceObservations.enumerated().map { index, observation in
             let pixelRect = convertToImageSpace(observation.boundingBox, imageSize: imageSize)
             return DetectedFace(
                 boundingBox: pixelRect,
                 normalizedBoundingBox: observation.boundingBox,
-                quality: qualityByRect[observation.boundingBox],
+                quality: qualityResults.indices.contains(index) ? qualityResults[index].faceCaptureQuality : nil,
                 yaw: observation.yaw?.floatValue,
                 roll: observation.roll?.floatValue,
-                pitch: observation.pitch?.floatValue
+                pitch: observation.pitch?.floatValue,
+                landmarks: landmarkResults.indices.contains(index) ? landmarkResults[index].landmarks : nil
             )
         }
     }
