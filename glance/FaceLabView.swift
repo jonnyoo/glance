@@ -21,6 +21,25 @@ struct FaceLabView: View {
                     Text("Face Lab — On-Device Face Recognition (Debug)")
                         .font(.headline)
                     Spacer()
+                    Button("Preview ✓") {
+                        NotchOverlayController.shared.present()
+                        Task {
+                            try? await Task.sleep(for: .seconds(1.5))
+                            NotchOverlayController.shared.finish(success: true)
+                        }
+                    }
+                    Button("Preview ✗") {
+                        NotchOverlayController.shared.present(onRetry: {
+                            Task {
+                                try? await Task.sleep(for: .seconds(1.5))
+                                NotchOverlayController.shared.finish(success: false)
+                            }
+                        })
+                        Task {
+                            try? await Task.sleep(for: .seconds(1.5))
+                            NotchOverlayController.shared.finish(success: false)
+                        }
+                    }
                     Button("Start Onboarding") {
                         openWindow(id: "onboarding")
                     }

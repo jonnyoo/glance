@@ -150,11 +150,13 @@ final class OnboardingController {
     func startEnrollment() {
         step = .enroll
         Task { await camera.start() }
+        NotchOverlayController.shared.present()
     }
 
     func stopCamera() {
         stopPermissionsPolling()
         camera.stop()
+        NotchOverlayController.shared.dismissImmediately()
     }
 
     // MARK: - Permissions
@@ -282,6 +284,7 @@ final class OnboardingController {
         // `SecureCredentialManager.unlockSession` below.
         enrollmentComplete = true
         camera.stop()
+        NotchOverlayController.shared.finish(success: true)
         try? await Task.sleep(for: .seconds(1.5))
         step = .password
     }
