@@ -19,8 +19,10 @@ struct NotchGeometry {
     /// fallback drawn for external/non-notched displays).
     let isPhysicalNotch: Bool
 
-    /// Fixed footprint the overlay content animates within when expanded.
-    /// Sized for the square (432x432) scan animation plus breathing room.
+    /// Fixed footprint the scan-mode overlay content (armed lock-screen
+    /// flow, Face Lab previews) animates within when expanded. Sized for
+    /// the square (432x432) scan animation plus breathing room — onboarding
+    /// does not use this; see OnboardingMetrics for its per-step sizes.
     static let openSize = CGSize(width: 240, height: 220)
 
     /// Corner radii for the notch silhouette. The top radius doubles as the
@@ -49,10 +51,22 @@ struct NotchGeometry {
     /// false` — the shadow is drawn in-content, same trick Boring Notch uses).
     static let shadowPadding: CGFloat = 24
 
+    /// Cosmetic size bump applied on hover in NotchOverlayView — included
+    /// here so the fixed window has margin for it at the largest content
+    /// size instead of clipping.
+    static let hoverBump: CGFloat = 6
+
     /// The window is created once at this size and never resized — only
-    /// `NotchOverlayView`'s content animates inside it. See NotchWindow.swift.
+    /// `NotchOverlayView`'s content animates inside it (see
+    /// NotchWindow.swift). Sized to the largest footprint either scan mode
+    /// or any onboarding step will ever ask for, so nothing clips.
     static var windowSize: CGSize {
-        CGSize(width: openSize.width + shadowPadding * 2, height: openSize.height + shadowPadding)
+        let contentWidth = max(openSize.width, OnboardingMetrics.maxPanelWidth)
+        let contentHeight = max(openSize.height, OnboardingMetrics.maxPanelHeight)
+        return CGSize(
+            width: contentWidth + shadowPadding * 2 + hoverBump,
+            height: contentHeight + shadowPadding + hoverBump
+        )
     }
 
     /// Synthetic fallback for displays with no physical notch (external

@@ -59,9 +59,18 @@ final class NotchWindowController {
     }
 
     /// Toggles whether the overlay accepts clicks. Off for the whole normal
-    /// lifecycle; on only while a failed attempt waits for a retry tap.
-    func setInteractive(_ interactive: Bool) {
+    /// lifecycle; on while a failed attempt waits for a retry tap, or while
+    /// onboarding is active.
+    ///
+    /// `key: true` additionally activates the app and makes the panel the
+    /// key window — needed only for onboarding's password field to receive
+    /// keystrokes. `NotchWindow.canBecomeKey` already gates on
+    /// `!ignoresMouseEvents`, so this is safe to call any time.
+    func setInteractive(_ interactive: Bool, key: Bool = false) {
         window?.ignoresMouseEvents = !interactive
+        guard interactive, key, let window else { return }
+        NSApp.activate()
+        window.makeKeyAndOrderFront(nil)
     }
 
     /// Current geometry for the preferred screen — read by

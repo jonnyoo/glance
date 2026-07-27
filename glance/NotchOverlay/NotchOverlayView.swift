@@ -23,8 +23,21 @@ struct NotchOverlayView: View {
     private var isExpanded: Bool {
         switch controller.phase {
         case .closed, .collapsing: return false
-        case .scanning, .success, .failure: return true
+        case .scanning, .success, .failure, .onboarding: return true
         }
+    }
+
+    /// While onboarding is active, the panel body tracks whatever step the
+    /// hosted OnboardingController is on instead of the fixed scan-mode
+    /// `openSize` — this is what makes the panel visibly grow/shrink per
+    /// step.
+    private var onboardingController: OnboardingController? {
+        if case .onboarding(let controller) = controller.content { return controller }
+        return nil
+    }
+
+    private var openBodySize: CGSize {
+        onboardingController?.panelSize ?? NotchGeometry.openSize
     }
 
     private var topRadius: CGFloat {
@@ -32,7 +45,8 @@ struct NotchOverlayView: View {
     }
 
     private var bottomRadius: CGFloat {
-        isExpanded ? NotchGeometry.openBottomRadius : NotchGeometry.closedBottomRadius
+        guard isExpanded else { return NotchGeometry.closedBottomRadius }
+        return onboardingController?.panelBottomRadius ?? NotchGeometry.openBottomRadius
     }
 
     /// The shape's visible body is inset by `topRadius` per side (the flare
@@ -41,7 +55,7 @@ struct NotchOverlayView: View {
     /// instead of coming up short by the flare. The hover bump adds a
     /// uniform few points on top of whatever size the phase already wants.
     private var currentSize: CGSize {
-        let body = isExpanded ? NotchGeometry.openSize : controller.geometry.closedSize
+        let body = isExpanded ? openBodySize : controller.geometry.closedSize
         let bump: CGFloat = isHovering ? 6 : 0
         return CGSize(
             width: body.width + NotchGeometry.flareAllowance(topRadius: topRadius) + bump,
@@ -57,17 +71,26 @@ struct NotchOverlayView: View {
 
     var body: some View {
         ZStack {
-            ScanAnimationView(media: controller.media)
-                .padding(.leading, NotchGeometry.contentPaddingLeading)
-                .padding(.trailing, NotchGeometry.contentPaddingTrailing)
-                .padding(.top, NotchGeometry.contentPaddingTop)
-                .padding(.bottom, NotchGeometry.contentPaddingBottom)
-                // Content dissolves as the panel shrinks: increasing blur
-                // plus a fade, so it melts away rather than being abruptly
-                // clipped by the collapsing shape.
-                .blur(radius: isExpanded ? 0 : 14)
-                .opacity(isExpanded ? 1 : 0)
-                .scaleEffect(isExpanded ? 1 : 0.88)
+            Group {
+                if let onboardingController {
+                    // Onboarding's step views lay themselves out to exactly
+                    // fill `panelSize` — no shared content padding here,
+                    // unlike the scan animation below.
+                    OnboardingNotchView(controller: onboardingController)
+                } else {
+                    ScanAnimationView(media: controller.media)
+                        .padding(.leading, NotchGeometry.contentPaddingLeading)
+                        .padding(.trailing, NotchGeometry.contentPaddingTrailing)
+                        .padding(.top, NotchGeometry.contentPaddingTop)
+                        .padding(.bottom, NotchGeometry.contentPaddingBottom)
+                }
+            }
+            // Content dissolves as the panel shrinks: increasing blur
+            // plus a fade, so it melts away rather than being abruptly
+            // clipped by the collapsing shape.
+            .blur(radius: isExpanded ? 0 : 14)
+            .opacity(isExpanded ? 1 : 0)
+            .scaleEffect(isExpanded ? 1 : 0.88)
         }
         .frame(width: currentSize.width, height: currentSize.height)
         .background(Color.black)
@@ -87,6 +110,9 @@ struct NotchOverlayView: View {
             }
         }
         .animation(openCloseAnimation, value: isExpanded)
+        // Drives the per-step resize while onboarding is active — isExpanded
+        // alone only fires once, on entering/leaving the expanded state.
+        .animation(openCloseAnimation, value: onboardingController?.panelSize)
         .frame(
             width: NotchGeometry.windowSize.width,
             height: NotchGeometry.windowSize.height,

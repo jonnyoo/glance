@@ -44,10 +44,37 @@ final class NotchOverlayController {
         /// the user hovers first to retry.
         case failure
         case collapsing
+        /// Hosting the multi-step onboarding flow — expanded, resizing per
+        /// step, driven entirely by the hosted OnboardingController rather
+        /// than this controller's own resolve/timeout machinery.
+        case onboarding
+    }
+
+    /// What the panel is showing. `.scan` is the pre-existing Face ID-style
+    /// video/still (armed lock-screen flow, Face Lab previews); `.onboarding`
+    /// hosts the redesigned notch-native onboarding flow. Kept as one enum
+    /// (rather than two independent optionals) so exactly one is ever active.
+    enum Content: Equatable {
+        case scan(ScanMedia)
+        case onboarding(OnboardingController)
+
+        static func == (lhs: Content, rhs: Content) -> Bool {
+            switch (lhs, rhs) {
+            case (.scan(let a), .scan(let b)): return a == b
+            case (.onboarding(let a), .onboarding(let b)): return a === b
+            default: return false
+            }
+        }
     }
 
     private(set) var phase: Phase = .closed
-    private(set) var media: ScanMedia = .idle
+    private(set) var content: Content = .scan(.idle)
+    /// Read-only convenience for the scan-mode view/callers — `.idle` while
+    /// onboarding owns the panel.
+    var media: ScanMedia {
+        if case .scan(let media) = content { return media }
+        return .idle
+    }
     private(set) var geometry: NotchGeometry = .forMainScreen()
     /// Read by the view for the hover-driven size/shadow bump — irrelevant
     /// to the phase state machine itself.
@@ -91,7 +118,7 @@ final class NotchOverlayController {
         self.onActivate = onActivate
         geometry = windowController.currentGeometry
         phase = .closed
-        media = .idle
+        content = .scan(.idle)
         windowController.show()
         updateInteractivity()
     }
@@ -115,7 +142,7 @@ final class NotchOverlayController {
         resolveTask?.cancel(); resolveTask = nil
         scanTimeoutTask?.cancel(); scanTimeoutTask = nil
         phase = .closed
-        media = .idle
+        content = .scan(.idle)
         windowController.setInteractive(false)
         windowController.hide()
     }
@@ -128,7 +155,7 @@ final class NotchOverlayController {
         resolveTask?.cancel(); resolveTask = nil
         scanTimeoutTask?.cancel()
         geometry = windowController.currentGeometry
-        media = .idle
+        content = .scan(.idle)
         phase = .scanning
         updateInteractivity()
 
@@ -150,10 +177,46 @@ final class NotchOverlayController {
         resolveTask?.cancel(); resolveTask = nil
         scanTimeoutTask?.cancel(); scanTimeoutTask = nil
         geometry = windowController.currentGeometry
-        media = .idle
+        content = .scan(.idle)
         phase = .scanning
         windowController.show()
         updateInteractivity()
+    }
+
+    // MARK: - Onboarding mode (OnboardingController)
+
+    /// Hands the panel to the redesigned notch-native onboarding flow. Sizing
+    /// and content from here on are entirely driven by `controller` — this
+    /// object only owns the window's visibility and interactivity while
+    /// `.onboarding` is the active phase.
+    func presentOnboarding(_ controller: OnboardingController) {
+        isArmed = false
+        onActivate = nil
+        resolveTask?.cancel(); resolveTask = nil
+        scanTimeoutTask?.cancel(); scanTimeoutTask = nil
+        geometry = windowController.currentGeometry
+        content = .onboarding(controller)
+        phase = .onboarding
+        windowController.show()
+        updateInteractivity()
+    }
+
+    /// Gracefully shrinks the onboarding panel away and hides the window —
+    /// the same collapse feel as the scan flow's `collapse()`, but scoped to
+    /// onboarding so a scan cycle starting concurrently can't be interrupted
+    /// by it (guarded by re-checking `content` after the animation delay).
+    func dismissOnboarding() {
+        guard case .onboarding = content else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            self.phase = .collapsing
+            self.updateInteractivity()
+            try? await Task.sleep(for: self.collapseAnimationDuration)
+            guard case .onboarding = self.content else { return }
+            self.content = .scan(.idle)
+            self.phase = .closed
+            self.windowController.hide()
+        }
     }
 
     // MARK: - Resolving (shared by both modes)
@@ -165,7 +228,7 @@ final class NotchOverlayController {
         resolveTask?.cancel()
         scanTimeoutTask?.cancel()
 
-        media = success ? .success : .failure
+        content = .scan(success ? .success : .failure)
         phase = success ? .success : .failure
         updateInteractivity()
 
@@ -190,12 +253,12 @@ final class NotchOverlayController {
             }
             resolveTask?.cancel(); resolveTask = nil
             if !isArmed {
-                media = .idle
+                content = .scan(.idle)
                 phase = .scanning
                 updateInteractivity()
             }
             onActivate()
-        case .scanning, .success, .collapsing:
+        case .scanning, .success, .collapsing, .onboarding:
             break
         }
     }
@@ -210,7 +273,7 @@ final class NotchOverlayController {
         try? await Task.sleep(for: collapseAnimationDuration)
         guard phase == .collapsing else { return }
 
-        media = .idle
+        content = .scan(.idle)
         if isArmed {
             phase = .closed
             updateInteractivity()
@@ -230,7 +293,7 @@ final class NotchOverlayController {
         resolveTask?.cancel(); resolveTask = nil
         scanTimeoutTask?.cancel(); scanTimeoutTask = nil
         phase = .closed
-        media = .idle
+        content = .scan(.idle)
         windowController.setInteractive(false)
         windowController.hide()
     }
@@ -239,7 +302,9 @@ final class NotchOverlayController {
         // Hover must register whenever there's something for it to do:
         // waking from closed-armed, or retrying a held failure. Otherwise
         // click-through, so the overlay never intercepts anything it
-        // doesn't need to.
-        windowController.setInteractive(isArmed || phase == .failure)
+        // doesn't need to. Onboarding additionally needs the window to
+        // become *key* so the password step's text field can receive
+        // keystrokes.
+        windowController.setInteractive(isArmed || phase == .failure || phase == .onboarding, key: phase == .onboarding)
     }
 }

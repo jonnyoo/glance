@@ -12,7 +12,6 @@ import Charts
 
 struct FaceLabView: View {
     @State private var controller = FaceLabController()
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         ScrollView {
@@ -41,7 +40,7 @@ struct FaceLabView: View {
                         }
                     }
                     Button("Start Onboarding") {
-                        openWindow(id: "onboarding")
+                        OnboardingController.startFlow()
                     }
                 }
 
@@ -155,6 +154,13 @@ struct FaceLabView: View {
                             .foregroundStyle(.secondary)
                         Text("Embedding: \(result.embedding.count) numbers")
                             .font(.caption)
+                            .foregroundStyle(.secondary)
+                        // Calibration aid for onboarding's pose gating — turn/tilt
+                        // your head and watch these to confirm which sign means
+                        // which direction before trusting OnboardingController's
+                        // yaw/pitch bands (see its poseMatches comment).
+                        Text("Yaw: \(yawPitchString(result.face.yaw))  Pitch: \(yawPitchString(result.face.pitch))")
+                            .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -362,6 +368,11 @@ struct FaceLabView: View {
             }
             .frame(height: 120)
         }
+    }
+
+    private func yawPitchString(_ value: Float?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%+.2f", value)
     }
 }
 
