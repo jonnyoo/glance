@@ -88,9 +88,9 @@ final class NotchOverlayController {
     private var resolveTask: Task<Void, Never>?
     private var scanTimeoutTask: Task<Void, Never>?
 
-    /// Matches the asset durations (success ~1.6s, failure ~2.0s) plus a
-    /// short beat so the final frame is actually read before collapsing.
-    private let successHoldDuration: Duration = .milliseconds(2_100)
+    /// Matches the success asset duration (~1.22s) plus a short ~0.5s beat
+    /// so the final frame is actually read before collapsing.
+    private let successHoldDuration: Duration = .milliseconds(1_700)
     /// How long a held failure frame waits for a hover-retry before quietly
     /// collapsing on its own.
     private let failureHoldDuration: Duration = .seconds(5)

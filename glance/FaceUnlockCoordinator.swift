@@ -113,7 +113,13 @@ final class FaceUnlockCoordinator {
 
         hasArmedForCurrentLock = true
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 1_000_000_000) // let the lock screen settle
+            // Was 1s — that had no measured justification (unlike the 300ms
+            // wake-settle delay above, which is backed by pmset/os_log
+            // correlation) and was the dominant chunk of the wake→notch
+            // delay users could feel. `arm()` only shows a small closed
+            // notch silhouette, not the full scan UI, so it doesn't need
+            // much of a buffer past the login window's own entrance.
+            try? await Task.sleep(nanoseconds: 250_000_000)
             await self?.arm()
         }
     }

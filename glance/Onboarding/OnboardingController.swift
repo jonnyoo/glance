@@ -275,7 +275,13 @@ final class OnboardingController {
         if leavingStep == .permissions { stopPermissionsPolling() }
         switch step {
         case .permissions: startPermissionsPolling()
-        case .enroll: beginEnrollment()
+        case .enroll:
+            // Deferred a tick so the (comparatively heavy) camera start and
+            // full-screen guide window creation don't land in the same
+            // runloop turn as the panel-resize/scroll transition kicking
+            // off — doing both at once was visibly stealing frames from the
+            // spring animation instead of letting it start smoothly.
+            Task { @MainActor [weak self] in self?.beginEnrollment() }
         default: break
         }
     }

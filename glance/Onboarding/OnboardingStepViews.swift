@@ -187,8 +187,9 @@ struct EnrollStepView: View {
 
             if controller.showCheckmark {
                 AnimatedCheckmark(color: GlanceTheme.accent, lineWidth: 8)
-                    .frame(width: 64, height: 47)
+                    .frame(width: 70, height: 59)
                     .transition(.opacity)
+                    .padding(.top, 4)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

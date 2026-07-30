@@ -45,7 +45,7 @@ enum OnboardingMetrics {
     /// `panelWidth`/the per-step heights above (kept at its original,
     /// pre-redesign-tweak footprint). Edit this pair directly if the
     /// camera step ever needs to change size on its own.
-    static let enrollPanelSize = CGSize(width: 243, height: 235)
+    static let enrollPanelSize = CGSize(width: 315, height: 310)
 
     static func panelSize(for step: OnboardingStep) -> CGSize {
         if step == .enroll { return enrollPanelSize }
@@ -101,15 +101,15 @@ enum OnboardingMetrics {
     // The preview is kept smaller than the ring so the tick marks stay
     // visible around its edge instead of being covered by the video.
 
-    static let cameraCircleDiameter: CGFloat = 128
-    static let tickRingOuterDiameter: CGFloat = 159.5
+    static let cameraCircleDiameter: CGFloat = 185
+    static let tickRingOuterDiameter: CGFloat = 235
 
     /// 10 ticks per 45deg sector x 8 sectors = 80 ticks tiling the ring.
     static let tickCount = 80
     static let ticksPerSector = 10
-    static let tickLengthUnlit: CGFloat = 9
-    static let tickLengthLit: CGFloat = 13
-    static let tickWidth: CGFloat = 1.6
+    static let tickLengthUnlit: CGFloat = 12
+    static let tickLengthLit: CGFloat = 18
+    static let tickWidth: CGFloat = 2.2
     /// Per-tick stagger so a captured sector fills as a sweep rather than
     /// snapping all ten ticks at once.
     static let tickStagger: Double = 0.008
