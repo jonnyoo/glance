@@ -23,7 +23,7 @@ struct NotchGeometry {
     /// flow, Face Lab previews) animates within when expanded. Sized for
     /// the square (432x432) scan animation plus breathing room — onboarding
     /// does not use this; see OnboardingMetrics for its per-step sizes.
-    static let openSize = CGSize(width: 240, height: 220)
+    static let openSize = CGSize(width: 220, height: 200)
 
     /// Corner radii for the notch silhouette. The top radius doubles as the
     /// width of the outward flare on each side (see NotchShape).
@@ -43,9 +43,9 @@ struct NotchGeometry {
     /// content inside it — edit these four to adjust how much breathing
     /// room the media has on each side. Used in `NotchOverlayView`.
     static let contentPaddingTop: CGFloat = 26
-    static let contentPaddingLeading: CGFloat = 36
-    static let contentPaddingTrailing: CGFloat = 36
-    static let contentPaddingBottom: CGFloat = 34
+    static let contentPaddingLeading: CGFloat = 40
+    static let contentPaddingTrailing: CGFloat = 40
+    static let contentPaddingBottom: CGFloat = 30
     /// Extra margin baked into the window so SwiftUI's `.shadow()` isn't
     /// clipped by the window bounds (the window itself has `hasShadow =
     /// false` — the shadow is drawn in-content, same trick Boring Notch uses).
