@@ -5,26 +5,10 @@
 
 import SwiftUI
 
-struct ContentView: View {
-    /// Shared across tabs (not created per-tab) so `FaceUnlockCoordinator`
-    /// calls into the exact same controller instance the Credentials tab
-    /// shows status for — two independent `POCController`s would each spin
-    /// up their own `LockMonitor` and observe the same signal redundantly.
-    @State private var pocController = POCController()
-
-    var body: some View {
-        TabView {
-            CredentialPOCView(controller: pocController)
-                .tabItem { Text("Credentials") }
-            FaceLabView()
-                .tabItem { Text("Face Lab") }
-            FaceUnlockView(pocController: pocController)
-                .tabItem { Text("Face Unlock") }
-        }
-        .frame(minWidth: 560, minHeight: 700)
-    }
-}
-
+/// The debug console this used to be a standalone window for now lives
+/// under the Settings window's DEBUG sidebar category (see
+/// SettingsWindowView) — this file now only hosts the Credentials tab's
+/// content view, unchanged.
 struct CredentialPOCView: View {
     @Bindable var controller: POCController
 
@@ -126,14 +110,9 @@ struct CredentialPOCView: View {
             Spacer()
         }
         .padding(20)
-        .frame(minWidth: 460, minHeight: 560)
         .onAppear {
             controller.refreshAccessibilityStatus()
             controller.refreshCredentialStatus()
         }
     }
-}
-
-#Preview {
-    ContentView()
 }

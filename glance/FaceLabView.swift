@@ -11,7 +11,11 @@ import SwiftUI
 import Charts
 
 struct FaceLabView: View {
-    @State private var controller = FaceLabController()
+    /// Injected from AppEnvironment rather than created here, so the
+    /// Recognition settings page's "use Face Lab's suggested threshold"
+    /// button reads calibration data from this same instance instead of a
+    /// second, independently-empty FaceLabController.
+    @Bindable var controller: FaceLabController
 
     var body: some View {
         ScrollView {
@@ -55,7 +59,10 @@ struct FaceLabView: View {
             }
             .padding(20)
         }
-        .frame(minWidth: 560, minHeight: 700)
+        // No minWidth/minHeight: those sized the old standalone debug
+        // window. This view is now hosted inside the Settings window's
+        // narrower content pane, where a 560pt floor just clipped the right
+        // edge instead of letting the content reflow.
         .onDisappear {
             controller.stop()
         }
@@ -377,5 +384,5 @@ struct FaceLabView: View {
 }
 
 #Preview {
-    FaceLabView()
+    FaceLabView(controller: FaceLabController())
 }

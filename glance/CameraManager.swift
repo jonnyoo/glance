@@ -60,6 +60,7 @@ final class CameraManager: NSObject {
 
         errorMessage = nil
         configureSessionIfNeeded()
+        reconcileDeviceIfNeeded()
 
         sessionQueue.async { [session] in
             if !session.isRunning {
@@ -90,6 +91,7 @@ final class CameraManager: NSObject {
     }
 
     private var isConfigured = false
+    private var currentInput: AVCaptureDeviceInput?
 
     private func configureSessionIfNeeded() {
         guard !isConfigured else { return }
@@ -98,15 +100,6 @@ final class CameraManager: NSObject {
         session.beginConfiguration()
         session.sessionPreset = .high
 
-        if let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
-            ?? AVCaptureDevice.default(for: .video),
-           let input = try? AVCaptureDeviceInput(device: device),
-           session.canAddInput(input) {
-            session.addInput(input)
-        } else {
-            errorMessage = "No camera device found."
-        }
-
         videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
         videoOutput.alwaysDiscardsLateVideoFrames = true
         videoOutput.setSampleBufferDelegate(framePublisher, queue: sessionQueue)
@@ -114,6 +107,33 @@ final class CameraManager: NSObject {
             session.addOutput(videoOutput)
         }
 
+        session.commitConfiguration()
+    }
+
+    /// Attaches whatever `CameraDeviceCatalog` currently resolves to,
+    /// replacing the existing input if the user's camera preference changed
+    /// in Settings since this session was last configured. Called on every
+    /// `start()` (not just the first), so switching the preferred camera
+    /// takes effect the next time a scan starts rather than needing an app
+    /// restart. A no-op if the resolved device hasn't changed.
+    private func reconcileDeviceIfNeeded() {
+        guard let device = CameraDeviceCatalog.resolvedDevice() else {
+            errorMessage = "No camera device found."
+            return
+        }
+        guard device.uniqueID != currentInput?.device.uniqueID else { return }
+
+        session.beginConfiguration()
+        if let currentInput {
+            session.removeInput(currentInput)
+        }
+        if let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) {
+            session.addInput(input)
+            currentInput = input
+        } else {
+            currentInput = nil
+            errorMessage = "No camera device found."
+        }
         session.commitConfiguration()
     }
 

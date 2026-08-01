@@ -104,9 +104,17 @@ final class FaceRecognitionPipeline {
     /// bystander or background person rather than a candidate to recognize
     /// — shared with the "move closer" prompt onboarding shows during
     /// enrollment (`OnboardingController.isTooFar`), so both agree on what
-    /// counts as close enough to matter. Untested starting heuristic; tune
-    /// after trying it against real framing.
-    nonisolated static let minimumProminentFaceWidth: Float = 0.18
+    /// counts as close enough to matter.
+    ///
+    /// User-tunable from the Recognition settings page (`GlanceSettings
+    /// .minimumFaceWidth`), which writes through to this on every change and
+    /// seeds it from the persisted value at launch. `nonisolated(unsafe) var`
+    /// rather than routing through GlanceSettings directly, because this is
+    /// read from `selectDominantFace` — a `nonisolated static func` called
+    /// from a background `Task.detached` — which can't synchronously touch
+    /// GlanceSettings' MainActor-isolated storage. Acceptable here since it's
+    /// a UI-tunable heuristic float, not security-sensitive state.
+    nonisolated(unsafe) static var minimumProminentFaceWidth: Float = 0.18
 
     /// How far (in normalized 0...1 frame coordinates) a face's center may
     /// drift from the previously-selected face and still count as "the same

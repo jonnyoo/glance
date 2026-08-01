@@ -23,12 +23,16 @@ final class POCController {
     /// Bound to the setup SecureField. Cleared immediately after a successful save.
     var passwordInput: String = ""
 
-    var autoInjectOnLock: Bool = false
+    /// Persisted via GlanceSettings — previously reset to `false` on every launch.
+    var autoInjectOnLock: Bool {
+        didSet { GlanceSettings.shared.unlockOnWake = autoInjectOnLock }
+    }
     var statusMessage: String = "Idle"
 
     private var hasAutoInjectedForCurrentLock = false
 
     init() {
+        self.autoInjectOnLock = GlanceSettings.shared.unlockOnWake
         observeLockAndWakeEvents()
     }
 

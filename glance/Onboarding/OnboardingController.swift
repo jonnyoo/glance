@@ -131,6 +131,12 @@ final class OnboardingController {
 
     private(set) var step: OnboardingStep = .intro
 
+    /// True when this flow was started by `startEnrollmentOnly()` — shows
+    /// only the guided pose-capture step (reusing `.enroll`, no new
+    /// `OnboardingStep` case needed) and saves samples directly on
+    /// completion instead of continuing on to the password step.
+    private let isEnrollmentOnly: Bool
+
     enum NavDirection { case forward, backward }
     /// Which way the step just changed — read by OnboardingNotchView to
     /// pick the scroll direction for the blur transition.
@@ -141,6 +147,27 @@ final class OnboardingController {
     static func startFlow() {
         let controller = OnboardingController()
         NotchOverlayController.shared.presentOnboarding(controller)
+    }
+
+    /// Entry point used by Settings' "Redo Face Enrollment" — presents only
+    /// the guided pose-capture step (no intro/permissions/password) and
+    /// saves samples directly once done. Requires an unlocked session;
+    /// prompts Touch ID first if it isn't already, before the notch ever
+    /// appears, since there's no password step here to unlock it later.
+    static func startEnrollmentOnly() {
+        Task { @MainActor in
+            if !SecureCredentialManager.isSessionUnlocked {
+                do {
+                    try await Task.detached(priority: .userInitiated) {
+                        try SecureCredentialManager.unlockSession(reason: "Authenticate to re-enroll your face")
+                    }.value
+                } catch {
+                    return
+                }
+            }
+            let controller = OnboardingController(isEnrollmentOnly: true)
+            NotchOverlayController.shared.presentOnboarding(controller)
+        }
     }
 
     // MARK: - Panel sizing (read by NotchOverlayView)
@@ -257,8 +284,16 @@ final class OnboardingController {
     private(set) var passwordError: String?
     private(set) var isSavingPassword = false
 
-    init() {
+    init(isEnrollmentOnly: Bool = false) {
+        self.isEnrollmentOnly = isEnrollmentOnly
         observeFrames()
+        if isEnrollmentOnly {
+            step = .enroll
+            // Deferred a tick for the same reason `advance()` defers it
+            // when transitioning into `.enroll` normally — see the comment
+            // there.
+            Task { @MainActor [weak self] in self?.beginEnrollment() }
+        }
     }
 
     // MARK: - Navigation
@@ -507,8 +542,32 @@ final class OnboardingController {
         try? await Task.sleep(for: .seconds(remaining))
 
         camera.stop()
-        navDirection = .forward
-        withAnimation(OnboardingMetrics.stepAnimation) { step = .password }
+
+        if isEnrollmentOnly {
+            await saveEnrollmentOnlySamplesAndDismiss()
+        } else {
+            navDirection = .forward
+            withAnimation(OnboardingMetrics.stepAnimation) { step = .password }
+        }
+    }
+
+    /// Re-enrollment path used by Settings' "Redo Face Enrollment". Replaces
+    /// any existing identity under the same name rather than appending to
+    /// it — `addSample` otherwise appends, and old + new samples from a
+    /// "redo" shouldn't be blended together. No password step: the caller
+    /// (`startEnrollmentOnly`) already guaranteed an unlocked session before
+    /// this flow ever started.
+    private func saveEnrollmentOnlySamplesAndDismiss() async {
+        store.reloadIfUnlocked()
+        if let existing = store.identities.first(where: { $0.name == Self.ownerName }) {
+            try? store.delete(existing)
+        }
+        let embedder = pipeline.embedder
+        for sample in collectedSamples {
+            _ = try? store.addSample(name: Self.ownerName, embedding: sample.embedding, embedder: embedder, pose: sample.pose.name)
+        }
+        teardown()
+        NotchOverlayController.shared.dismissOnboarding()
     }
 
     private static let ownerName: String = {

@@ -9,11 +9,12 @@
 import SwiftUI
 
 struct FaceUnlockView: View {
-    @State private var coordinator: FaceUnlockCoordinator
-
-    init(pocController: POCController) {
-        _coordinator = State(initialValue: FaceUnlockCoordinator(pocController: pocController))
-    }
+    /// Injected rather than constructed here — this used to build its own
+    /// `FaceUnlockCoordinator` in `init`, which meant a second instance (its
+    /// own `LockMonitor`/`CameraManager`) the moment this view was shown
+    /// from anywhere but the one place that used to construct it. Now
+    /// callers pass in the shared instance owned by `AppEnvironment`.
+    @Bindable var coordinator: FaceUnlockCoordinator
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -80,6 +81,5 @@ struct FaceUnlockView: View {
             Spacer()
         }
         .padding(20)
-        .frame(minWidth: 460, minHeight: 560)
     }
 }

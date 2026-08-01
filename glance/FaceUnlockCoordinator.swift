@@ -37,19 +37,23 @@ final class FaceUnlockCoordinator {
     let camera = CameraManager()
     let pipeline = FaceRecognitionPipeline()
 
-    /// Off by default. Setting this to false cancels any in-flight scan and
-    /// disarms the overlay immediately.
-    var isEnabled: Bool = false {
+    /// Off by default (until GlanceSettings has persisted otherwise).
+    /// Setting this to false cancels any in-flight scan and disarms the
+    /// overlay immediately. Persisted via GlanceSettings — previously this
+    /// reset to `false` on every launch since nothing wrote it anywhere.
+    var isEnabled: Bool {
         didSet {
+            GlanceSettings.shared.isFaceUnlockEnabled = isEnabled
             if !isEnabled { disarmOverlay() }
         }
     }
 
     /// Raw cosine threshold — kept independent from Face Lab's own
     /// `threshold` (not read from it) so tuning the debug tool never
-    /// silently changes the real unlock gate. Update this once you've
-    /// calibrated a value you trust.
-    var matchThreshold: Float = 0.6
+    /// silently changes the real unlock gate. Persisted via GlanceSettings.
+    var matchThreshold: Float {
+        didSet { GlanceSettings.shared.matchThreshold = matchThreshold }
+    }
     private let minMargin: Float = 0.05
     /// Each scan cycle runs for this long looking for either a confident
     /// live match or a consistently-wrong face before giving up quietly.
@@ -70,6 +74,8 @@ final class FaceUnlockCoordinator {
 
     init(pocController: POCController) {
         self.pocController = pocController
+        self.isEnabled = GlanceSettings.shared.isFaceUnlockEnabled
+        self.matchThreshold = GlanceSettings.shared.matchThreshold
         observeLockAndWakeEvents()
     }
 
