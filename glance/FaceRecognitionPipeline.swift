@@ -62,13 +62,21 @@ final class FaceRecognitionPipeline {
     }
 
     /// Runs the full frame -> detect -> align -> embed sequence for the
-    /// single largest face in `frame`. Detection, alignment, and embedding
-    /// are all synchronous/CPU-bound; this method is `nonisolated` so
-    /// callers can run it from a background task (`Task.detached`) rather
-    /// than blocking the main actor.
-    nonisolated func recognize(in frame: CGImage) throws -> FaceRecognitionResult {
+    /// single dominant face in `frame` (see `selectDominantFace`).
+    /// Detection, alignment, and embedding are all synchronous/CPU-bound;
+    /// this method is `nonisolated` so callers can run it from a background
+    /// task (`Task.detached`) rather than blocking the main actor.
+    ///
+    /// - Parameter previousBoundingBox: the normalized bounding box selected
+    ///   on the previous frame of the same scan, if any — passing this lets
+    ///   a caller scanning continuously (FaceUnlockCoordinator) keep
+    ///   selection "stuck" to the same person across frames instead of
+    ///   re-picking independently every frame. Callers that only ever
+    ///   recognize a single isolated frame (Face Lab, onboarding) can omit
+    ///   it entirely.
+    nonisolated func recognize(in frame: CGImage, preferNear previousBoundingBox: CGRect? = nil) throws -> FaceRecognitionResult {
         let faces = try FaceDetector.detectFaces(in: frame)
-        guard let face = Self.largestFace(in: faces) else {
+        guard let face = Self.selectDominantFace(in: faces, preferNear: previousBoundingBox) else {
             throw FaceRecognitionPipelineError.noFaceDetected
         }
 
@@ -92,8 +100,61 @@ final class FaceRecognitionPipeline {
         return FaceRecognitionResult(embedding: embedding, alignedImage: inputImage, alignmentTier: tier, quality: face.quality, face: face)
     }
 
-    nonisolated private static func largestFace(in faces: [DetectedFace]) -> DetectedFace? {
-        faces.max { $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height }
+    /// Below this fraction of frame width, a detected face is treated as a
+    /// bystander or background person rather than a candidate to recognize
+    /// — shared with the "move closer" prompt onboarding shows during
+    /// enrollment (`OnboardingController.isTooFar`), so both agree on what
+    /// counts as close enough to matter. Untested starting heuristic; tune
+    /// after trying it against real framing.
+    nonisolated static let minimumProminentFaceWidth: Float = 0.18
+
+    /// How far (in normalized 0...1 frame coordinates) a face's center may
+    /// drift from the previously-selected face and still count as "the same
+    /// person" between consecutive scan frames.
+    nonisolated private static let continuityDistanceTolerance: CGFloat = 0.3
+
+    /// Picks the single "dominant" face to recognize from `faces` — the
+    /// person actually in front of the camera trying to unlock, not a
+    /// bystander or someone in the background. Two things keep this stable
+    /// when more than one face is in frame:
+    ///
+    ///   1. A minimum-prominence filter excludes faces smaller than
+    ///      `minimumProminentFaceWidth` outright — someone standing well
+    ///      behind the primary user is never even a candidate, regardless
+    ///      of what else is happening in the frame.
+    ///   2. Among the remaining candidates, if `previousBoundingBox` is
+    ///      given (the box selected on the previous frame), the closest
+    ///      match to it wins over the raw largest-by-area. Without this,
+    ///      two similarly-sized faces can flip which one reads as "largest"
+    ///      from frame to frame — which starves both the liveness streak
+    ///      and the wrong-face streak of consecutive agreement, since each
+    ///      requires several frames in a row to agree on the same person.
+    ///      With two people in frame, selection could flip-flop between
+    ///      them fast enough that neither streak ever completed, so a scan
+    ///      would run out its timeout with no match *and* no confident
+    ///      rejection — it just silently gave up.
+    ///
+    /// Falls back to largest-by-area when there's no previous face to
+    /// anchor to (first frame of a scan) or nothing left is close enough to
+    /// it anymore (that face left the frame).
+    nonisolated static func selectDominantFace(in faces: [DetectedFace], preferNear previousBoundingBox: CGRect? = nil) -> DetectedFace? {
+        let candidates = faces.filter { $0.normalizedBoundingBox.width >= CGFloat(minimumProminentFaceWidth) }
+        guard !candidates.isEmpty else { return nil }
+
+        if let previous = previousBoundingBox {
+            let previousCenter = CGPoint(x: previous.midX, y: previous.midY)
+            if let nearest = candidates.min(by: { distance(from: $0, to: previousCenter) < distance(from: $1, to: previousCenter) }),
+               distance(from: nearest, to: previousCenter) < continuityDistanceTolerance {
+                return nearest
+            }
+        }
+
+        return candidates.max { $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height }
+    }
+
+    nonisolated private static func distance(from face: DetectedFace, to point: CGPoint) -> CGFloat {
+        let center = CGPoint(x: face.normalizedBoundingBox.midX, y: face.normalizedBoundingBox.midY)
+        return hypot(center.x - point.x, center.y - point.y)
     }
 }
 

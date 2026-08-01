@@ -45,7 +45,7 @@ enum OnboardingMetrics {
     /// `panelWidth`/the per-step heights above (kept at its original,
     /// pre-redesign-tweak footprint). Edit this pair directly if the
     /// camera step ever needs to change size on its own.
-    static let enrollPanelSize = CGSize(width: 315, height: 310)
+    static let enrollPanelSize = CGSize(width: 320, height: 310)
 
     static func panelSize(for step: OnboardingStep) -> CGSize {
         if step == .enroll { return enrollPanelSize }
@@ -102,14 +102,14 @@ enum OnboardingMetrics {
     // visible around its edge instead of being covered by the video.
 
     static let cameraCircleDiameter: CGFloat = 185
-    static let tickRingOuterDiameter: CGFloat = 235
+    static let tickRingOuterDiameter: CGFloat = 200
 
     /// 10 ticks per 45deg sector x 8 sectors = 80 ticks tiling the ring.
     static let tickCount = 80
     static let ticksPerSector = 10
     static let tickLengthUnlit: CGFloat = 12
-    static let tickLengthLit: CGFloat = 18
-    static let tickWidth: CGFloat = 2.2
+    static let tickLengthLit: CGFloat = 20
+    static let tickWidth: CGFloat = 2.4
     /// Per-tick stagger so a captured sector fills as a sweep rather than
     /// snapping all ten ticks at once.
     static let tickStagger: Double = 0.008
@@ -125,9 +125,9 @@ enum OnboardingMetrics {
 
     // MARK: - Full-screen guide overlay
 
-    static let guideDimOpacity: Double = 0.72
-    static let guideArrowSize: CGFloat = 72
-    static let guideTextSpacing: CGFloat = 24
+    static let guideDimOpacity: Double = 0.5
+    static let guideArrowSize: CGFloat = 84
+    static let guideTextSpacing: CGFloat = 20
     static let guideFadeIn: Double = 0.3
     static let guideFadeOut: Double = 0.35
 }

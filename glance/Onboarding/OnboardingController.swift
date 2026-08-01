@@ -192,6 +192,10 @@ final class OnboardingController {
     private(set) var faceDetected = false
     private(set) var currentYaw: Float?
     private(set) var currentPitch: Float?
+    /// Whether the last-seen face read as too small (too far from the
+    /// camera) to enroll reliably — read by EnrollmentGuideOverlay to swap
+    /// the pose instruction for a "move closer" prompt.
+    private(set) var isTooFar = false
     private(set) var enrollmentComplete = false
 
     /// Sectors already captured — read by EnrollmentRingView to decide which
@@ -411,11 +415,13 @@ final class OnboardingController {
             currentYaw = nil
             currentPitch = nil
             matchStreak = 0
+            isTooFar = false
             return
         }
         faceDetected = true
         currentYaw = yaw
         currentPitch = pitch
+        isTooFar = Float(result.face.normalizedBoundingBox.width) < FaceRecognitionPipeline.minimumProminentFaceWidth
 
         let qualityOK = result.quality.map { $0 >= qualityFloor } ?? true
         // Only a 5-point alignment produces a reliably canonical input —

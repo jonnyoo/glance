@@ -88,6 +88,11 @@ final class NotchOverlayController {
     private var resolveTask: Task<Void, Never>?
     private var scanTimeoutTask: Task<Void, Never>?
 
+    /// True once the window has been shown and rendered at least once.
+    /// Guards `primeWindowIfNeeded` so the extra render pass only ever
+    /// happens on the very first show.
+    private var hasPrimedWindow = false
+
     /// Matches the success asset duration (~1.22s) plus a short ~0.5s beat
     /// so the final frame is actually read before collapsing.
     private let successHoldDuration: Duration = .milliseconds(1_700)
@@ -120,6 +125,7 @@ final class NotchOverlayController {
         phase = .closed
         content = .scan(.idle)
         windowController.show()
+        hasPrimedWindow = true // already shown+rendered while closed, same effect as primeWindowIfNeeded
         updateInteractivity()
     }
 
@@ -166,6 +172,36 @@ final class NotchOverlayController {
         }
     }
 
+    // MARK: - Window priming (first show only)
+
+    /// `present()` and `presentOnboarding()` both set an already-expanded
+    /// phase *before* calling `show()`. On the very first show ever, that
+    /// means the window is created and rendered for the first time already
+    /// in its expanded state — there's no previously-composited "closed"
+    /// frame for SwiftUI to animate away from, so the panel just appears
+    /// already-open instead of visibly growing into place. (`arm()` doesn't
+    /// have this problem: it already sets `.closed` before `show()`, and the
+    /// real expand happens later via `beginScanning()`, after an `await`
+    /// hop gives AppKit time to render the closed frame first.)
+    ///
+    /// This runs the window through one real closed-state show+render pass
+    /// before `completion` sets the caller's actual target phase — but only
+    /// on the first call ever; every later call already has a real prior
+    /// frame (even a closed one left over from a previous `hide()`) to
+    /// animate from, so `completion` runs synchronously as before.
+    private func primeWindowIfNeeded(_ completion: @escaping () -> Void) {
+        guard !hasPrimedWindow else {
+            completion()
+            return
+        }
+        hasPrimedWindow = true
+        content = .scan(.idle)
+        phase = .closed
+        windowController.show()
+        windowController.displaySynchronously()
+        DispatchQueue.main.async(execute: completion)
+    }
+
     // MARK: - One-shot mode (onboarding, Face Lab preview)
 
     /// Shows the overlay in its scanning state. Safe to call again while
@@ -177,10 +213,13 @@ final class NotchOverlayController {
         resolveTask?.cancel(); resolveTask = nil
         scanTimeoutTask?.cancel(); scanTimeoutTask = nil
         geometry = windowController.currentGeometry
-        content = .scan(.idle)
-        phase = .scanning
-        windowController.show()
-        updateInteractivity()
+        primeWindowIfNeeded { [weak self] in
+            guard let self else { return }
+            content = .scan(.idle)
+            phase = .scanning
+            windowController.show()
+            updateInteractivity()
+        }
     }
 
     // MARK: - Onboarding mode (OnboardingController)
@@ -195,10 +234,13 @@ final class NotchOverlayController {
         resolveTask?.cancel(); resolveTask = nil
         scanTimeoutTask?.cancel(); scanTimeoutTask = nil
         geometry = windowController.currentGeometry
-        content = .onboarding(controller)
-        phase = .onboarding
-        windowController.show()
-        updateInteractivity()
+        primeWindowIfNeeded { [weak self] in
+            guard let self else { return }
+            content = .onboarding(controller)
+            phase = .onboarding
+            windowController.show()
+            updateInteractivity()
+        }
     }
 
     /// Gracefully shrinks the onboarding panel away and hides the window —

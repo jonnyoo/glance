@@ -35,6 +35,7 @@ struct IntroStepView: View {
             Spacer(minLength: 4)
             GlanceLogoView()
                 .frame(width: 106, height: 106)
+                .padding(.top, 4)
         }
         .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding)
         .padding(.top, OnboardingMetrics.titleTopInset)
@@ -45,22 +46,11 @@ struct IntroStepView: View {
 }
 
 private struct GlanceLogoView: View {
-    private static let image: NSImage? = {
-        guard let url = Bundle.main.url(forResource: "glance-logo", withExtension: "svg") else { return nil }
-        return NSImage(contentsOf: url)
-    }()
-
     var body: some View {
-        RoundedRectangle(cornerRadius: 21)
-            .fill(Color.white)
-            .overlay {
-                if let image = Self.image {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .padding(16)
-                }
-            }
+        // The video already bakes in its own white rounded-card background
+        // (same solid-background convention as the scan animations), so no
+        // extra chrome is added here.
+        LoopingVideoView(resourceName: "logoanimation")
     }
 }
 
@@ -131,7 +121,7 @@ struct PreSetupStepView: View {
                 .padding(.top, 10)
                 Spacer(minLength: 0)
                 UnlockGlyphView()
-                    .frame(width: 126, height: 126)
+                    .frame(width: 120, height: 120)
             }
             Spacer(minLength: 4)
 
@@ -153,20 +143,8 @@ struct PreSetupStepView: View {
 }
 
 private struct UnlockGlyphView: View {
-    /// Reuses the same artwork the pre-existing scan overlay shows at rest
-    /// — it lives in Resources/, not an asset catalog, so it's loaded by
-    /// URL rather than `NSImage(named:)` (see ScanAnimationView).
-    private static let image: NSImage? = {
-        guard let url = Bundle.main.url(forResource: "unlockstatic", withExtension: "png") else { return nil }
-        return NSImage(contentsOf: url)
-    }()
-
     var body: some View {
-        if let image = Self.image {
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-        }
+        LoopingVideoView(resourceName: "idleanimation")
     }
 }
 
@@ -194,6 +172,7 @@ struct EnrollStepView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(GlanceTheme.panel)
+        .padding(.top, 8)
     }
 }
 

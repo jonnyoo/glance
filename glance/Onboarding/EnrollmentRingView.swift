@@ -25,7 +25,9 @@ struct EnrollmentRingView: View {
                 Capsule()
                     .fill(color(for: index))
                     .frame(width: OnboardingMetrics.tickWidth, height: length(for: index))
-                    .offset(y: -(radius - length(for: index) / 2))
+                    // Inner tip anchored at the ring radius; growing `length`
+                    // extends the outer tip further out, not inward.
+                    .offset(y: -(radius + length(for: index) / 2))
                     .rotationEffect(.degrees(angle(for: index)))
                     .animation(
                         .easeOut(duration: 0.3).delay(Double(index % OnboardingMetrics.ticksPerSector) * OnboardingMetrics.tickStagger),

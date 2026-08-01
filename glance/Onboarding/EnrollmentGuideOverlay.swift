@@ -18,6 +18,10 @@ struct EnrollmentGuideOverlay: View {
         controller.currentPose == .center
     }
 
+    private var instructionText: String {
+        controller.isTooFar ? "Bring your face closer" : (controller.currentPose?.instruction ?? "")
+    }
+
     var body: some View {
         ZStack {
             Color.black
@@ -34,14 +38,14 @@ struct EnrollmentGuideOverlay: View {
                         .animation(.spring(response: 0.5, dampingFraction: 0.85), value: controller.arrowAngle)
                         .animation(.easeInOut(duration: 0.25), value: isCenterPose)
 
-                    Text(controller.currentPose?.instruction ?? "")
+                    Text(instructionText)
                         .font(GlanceTheme.Font.instruction)
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
-                        .id(controller.currentPose)
+                        .id(instructionText)
                         .transition(.opacity)
                 }
-                .animation(.easeInOut(duration: 0.2), value: controller.currentPose)
+                .animation(.easeInOut(duration: 0.2), value: instructionText)
                 .opacity(controller.guideVisible ? 1 : 0)
                 .animation(
                     .easeInOut(duration: controller.guideVisible ? OnboardingMetrics.guideFadeIn : OnboardingMetrics.guideFadeOut),

@@ -50,7 +50,7 @@ final class FaceLabController {
     /// around 0.28-0.40). Vision feature-print has no such standard, so
     /// this stays tunable regardless of which embedder is active — see the
     /// calibration harness for picking a value empirically.
-    var threshold: Double = 0.36
+    var threshold: Double = 0.6
     /// Minimum lead the best match must have over the runner-up once more
     /// than one identity is enrolled, so a close tie between two people
     /// doesn't produce a confident-looking single "best match."

@@ -49,6 +49,17 @@ final class NotchWindowController {
         }
     }
 
+    /// Forces the window to lay out and composite its *current* content
+    /// synchronously, rather than waiting for the next display cycle. Used
+    /// once, right after the very first `show()`, so there's a real,
+    /// already-rendered "closed" frame on screen before anything animates
+    /// away from it — see `NotchOverlayController.primeWindowIfNeeded`.
+    func displaySynchronously() {
+        guard let window else { return }
+        window.contentView?.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
+    }
+
     func hide() {
         guard let window else { return }
         if isSkyLightDelegated, let skyLight = NotchSkyLight.shared {

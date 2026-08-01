@@ -49,7 +49,7 @@ final class FaceUnlockCoordinator {
     /// `threshold` (not read from it) so tuning the debug tool never
     /// silently changes the real unlock gate. Update this once you've
     /// calibrated a value you trust.
-    var matchThreshold: Float = 0.36
+    var matchThreshold: Float = 0.6
     private let minMargin: Float = 0.05
     /// Each scan cycle runs for this long looking for either a confident
     /// live match or a consistently-wrong face before giving up quietly.
@@ -194,6 +194,12 @@ final class FaceUnlockCoordinator {
     private func observeScanWindow(deadline: Date) async -> ScanOutcome {
         let liveness = LivenessMonitor(matchThreshold: matchThreshold)
         var consecutiveWrongFaceFrames = 0
+        /// Which face (by normalized bounding box) recognition locked onto
+        /// last frame — passed back in so `selectDominantFace` stays on the
+        /// same person across frames instead of re-picking independently
+        /// every frame. This is the fix for two-people-in-frame flip-flop:
+        /// see FaceRecognitionPipeline.selectDominantFace for the full story.
+        var lastFaceBoundingBox: CGRect?
 
         while Date() < deadline, !Task.isCancelled, NotchOverlayController.shared.phase == .scanning {
             guard LockMonitor.isScreenActuallyLocked() else { return .noResolution }
@@ -204,15 +210,18 @@ final class FaceUnlockCoordinator {
             }
 
             let pipeline = self.pipeline
+            let previousBoundingBox = lastFaceBoundingBox
             let result = try? await Task.detached(priority: .userInitiated) {
-                try pipeline.recognize(in: frame)
+                try pipeline.recognize(in: frame, preferNear: previousBoundingBox)
             }.value
 
             guard let result else {
                 consecutiveWrongFaceFrames = 0
+                lastFaceBoundingBox = nil
                 try? await Task.sleep(nanoseconds: 150_000_000)
                 continue
             }
+            lastFaceBoundingBox = result.face.normalizedBoundingBox
 
             let scored = pipeline.score(result.embedding, against: FaceEnrollmentStore.shared.identities)
             let matched = pipeline.bestMatch(in: scored, threshold: matchThreshold, minMargin: minMargin)
