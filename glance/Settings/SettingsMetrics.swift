@@ -13,29 +13,48 @@ import SwiftUI
 
 enum SettingsMetrics {
     static let windowSize = CGSize(width: 620, height: 650)
-    /// Matches macOS 26 Tahoe's own native window corner radius. Measured
-    /// empirically rather than guessed: `screencapture -o -l<windowID>` on
-    /// System Settings preserves the window's alpha mask, and the traced
-    /// top-left corner profile was least-squares fitted against `CALayer`
-    /// corners rendered at 2x across radii. The best fit is **26pt with a
-    /// *continuous* (squircle) curve** — sub-pixel RMSE, and clearly better
-    /// than any circular radius, which can't reproduce the long flat tail
-    /// where the curve merges into the straight edge.
+    /// There is deliberately no `outerCornerRadius` token any more. The
+    /// window's outer corner is AppKit's own — macOS 26 rounds it to ~26pt
+    /// with a *continuous* (squircle) curve, verified by capturing window
+    /// alpha masks with `screencapture -o -l<windowID>` and comparing this
+    /// window's traced corner against Finder's (identical, 0.00px RMSE).
+    /// Hardcoding it here is what made the corners look wrong before: our
+    /// own clip could only cut *inside* the system shape, so a stale
+    /// constant silently won. See SettingsWindowView / WindowConfiguringView.
     ///
-    /// The curve style matters as much as the number here: at the same
-    /// radius a circular corner turns much more abruptly, which is what
-    /// reads as "not quite native". Always pair this with
-    /// `RoundedRectangle(cornerRadius:style: .continuous)`.
-    static let outerCornerRadius: CGFloat = 27
-    static let contentCornerRadius: CGFloat = 17.5
+    /// Vertical strip at the top of the sidebar left empty for the window's
+    /// real traffic lights, which AppKit draws over our content because the
+    /// window is `.fullSizeContentView`.
+    static let trafficLightBandHeight: CGFloat = 52
+    static let contentCornerRadius: CGFloat = 19
     static let sidebarWidth: CGFloat = 190
 
-    /// The whole-window base tint. The sidebar shows this alone; the content
-    /// panel stacks `contentOverlayColor` on top of it — that extra layer is
-    /// what makes the content panel read as *less* translucent than the
-    /// sidebar, exactly as requested.
-    static let baseLayerColor = Color(red: 16 / 255, green: 16 / 255, blue: 16 / 255).opacity(0.45)
-    static let contentOverlayColor = Color(red: 16 / 255, green: 16 / 255, blue: 16 / 255).opacity(0.38)
+    /// The content panel's fill — solid, not translucent, so it reads as an
+    /// opaque card rather than picking up whatever's behind the window (that
+    /// bleed-through via `VisualEffectView`'s materials was the "colored
+    /// glow" the header used to show). Adapts to the system appearance via
+    /// `adaptiveColor`, unlike the rest of this file's colors, which are
+    /// still dark-only — see the type's doc comment.
+    static let contentBackgroundColor = adaptiveColor(
+        dark: NSColor(red: 0x18 / 255, green: 0x18 / 255, blue: 0x18 / 255, alpha: 1),
+        light: .white
+    )
+
+    /// The sidebar's fill: the same per-appearance color as the content
+    /// panel, but translucent, so the sidebar still reads as a distinct,
+    /// lighter layer floating over `VisualEffectView`'s blur rather than a
+    /// second flat card butted up against the first.
+    static let sidebarBackgroundColor = adaptiveColor(
+        dark: NSColor(red: 0x33 / 255, green: 0x33 / 255, blue: 0x33 / 255, alpha: 0.35),
+        light: NSColor(white: 1, alpha: 0.55)
+    )
+
+    /// Gap between the content panel and every window edge — including the
+    /// sidebar seam — now that the panel floats as its own card instead of
+    /// sitting flush against the window frame.
+    static let contentOuterSpacing: CGFloat = 8
+    static let contentShadowColor = Color.black.opacity(0.12)
+    static let contentShadowRadius: CGFloat = 12
 
     static let selectedPillRadius: CGFloat = 11
     static let selectedPillColor = Color.white.opacity(0.06)
@@ -59,4 +78,19 @@ enum SettingsMetrics {
 
     static let contentHorizontalPadding: CGFloat = 20
     static let headerHeight: CGFloat = 50
+
+    /// Wraps an `NSColor(name:dynamicProvider:)` so a color can track the
+    /// system appearance rather than being fixed at whatever was true when
+    /// this enum was evaluated. Every other color in this file is a plain
+    /// `Color` literal and stays dark-only regardless of system appearance —
+    /// only `contentBackgroundColor` and `sidebarBackgroundColor` currently
+    /// use this, per an explicit request to make just the panel/sidebar
+    /// fills follow light/dark mode. Text and row colors were left alone, so
+    /// light mode currently has low contrast against a white content panel —
+    /// flagged, not fixed, since re-theming those wasn't asked for.
+    private static func adaptiveColor(dark: NSColor, light: NSColor) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+        })
+    }
 }

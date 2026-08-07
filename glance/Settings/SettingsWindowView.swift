@@ -2,9 +2,10 @@
 //  SettingsWindowView.swift
 //  glance
 //
-//  Root layout: blurred background, the two-layer translucent tint (base
-//  layer for the whole window, a second overlay just for the content panel
-//  — see SettingsMetrics), a fixed sidebar, and the selected page.
+//  Root layout: blurred background showing through a translucent sidebar,
+//  a solid content panel floating above it as its own inset, shadowed card
+//  (see SettingsMetrics.contentBackgroundColor / sidebarBackgroundColor),
+//  a fixed sidebar, and the selected page.
 //
 
 import SwiftUI
@@ -16,53 +17,44 @@ struct SettingsWindowView: View {
     var body: some View {
         ZStack {
             VisualEffectView()
-            SettingsMetrics.baseLayerColor
+            SettingsMetrics.sidebarBackgroundColor
 
             HStack(spacing: 0) {
                 SettingsSidebar(selection: $selection)
 
                 ZStack(alignment: .top) {
-                    SettingsMetrics.contentOverlayColor
+                    SettingsMetrics.contentBackgroundColor
                     contentPage
                 }
+                // All four corners now, not just the leading two — the
+                // panel is a floating card inset from every window edge
+                // (see .padding below), not flush against the trailing/
+                // top/bottom edges the way it used to be, so there's no
+                // reason left for the trailing corners to stay square.
                 .clipShape(
-                    UnevenRoundedRectangle(
-                        topLeadingRadius: SettingsMetrics.contentCornerRadius,
-                        bottomLeadingRadius: SettingsMetrics.contentCornerRadius,
-                        bottomTrailingRadius: 0,
-                        topTrailingRadius: 0
-                    )
+                    RoundedRectangle(cornerRadius: SettingsMetrics.contentCornerRadius, style: .continuous)
                 )
-                // A thin stroke on just the content panel's leading edge,
-                // matching the window's own automatic glass-style edge
-                // highlight — this is the one internal seam (sidebar vs.
-                // content) that has no system-drawn line of its own. The
-                // path wraps around the panel's rounded corners rather than
-                // running straight down (see ContentPanelLeadingEdge).
-                .overlay {
-                    ContentPanelLeadingEdge(
-                        topRadius: SettingsMetrics.contentCornerRadius,
-                        bottomRadius: SettingsMetrics.contentCornerRadius
-                    )
-                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
-                }
+                // No stroke here any more: a hairline seam highlight made
+                // sense when the panel sat flush against the sidebar, but
+                // once there's a visible gap (padding, below) a border just
+                // duplicates the shadow's job of separating the two. `x`/`y`
+                // are left at their 0 defaults on purpose — an even halo on
+                // every side is what "equal on all sides" means here, not a
+                // drop shadow offset toward one corner.
+                .shadow(color: SettingsMetrics.contentShadowColor, radius: SettingsMetrics.contentShadowRadius)
+                .padding(SettingsMetrics.contentOuterSpacing)
             }
         }
-        // Matches macOS 26's own native window corner radius exactly — both
-        // the radius and the *continuous* curve style (see
-        // SettingsMetrics.outerCornerRadius) — so this clip aligns with
-        // AppKit's own rounding of the real window frame instead of
-        // competing with it. A smaller radius here doesn't just look
-        // squarer, it wins: the visible corner is the intersection of this
-        // clip and the window mask, so under-shooting the system radius
-        // silently overrides the native shape.
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: SettingsMetrics.outerCornerRadius,
-                style: .continuous
-            )
-        )
-        // No manual stroke on the outer window — macOS already draws its
+        // No `.clipShape` on the outer window — deliberately, and this is
+        // the fix for the too-square corners. Rounding the content ourselves
+        // can only ever *subtract* from the window's real shape, so a
+        // hand-picked radius silently overrode the system's; now that the
+        // window keeps its native background (see WindowConfiguringView),
+        // AppKit masks the whole thing to the genuine macOS 26 corner —
+        // measured identical to Finder's, and free to track future OS
+        // changes without a constant here to go stale.
+        //
+        // No manual stroke on the outer window either — macOS already draws its
         // own glass-style edge highlight on a translucent window; a second
         // hand-drawn stroke on top of that just looked doubled.
         //
@@ -85,10 +77,9 @@ struct SettingsWindowView: View {
     }
 
     /// The header floats over the scroll content in a `ZStack` (rather than
-    /// sitting above it in a `VStack`) specifically so scrolled content
-    /// passes *underneath* it — that's what gives `ProgressiveBlurView`
-    /// something to blur. A solid-background header stacked above the
-    /// scroll view would never have anything behind it to blur.
+    /// sitting above it in a `VStack`) so scrolled rows pass *underneath*
+    /// it instead of being pushed down by it — `HeaderScrimView` still
+    /// needs that overlap to fade against the content scrolling past.
     private var contentPage: some View {
         ZStack(alignment: .top) {
             ScrollView(.vertical) {
@@ -102,7 +93,7 @@ struct SettingsWindowView: View {
                     .frame(maxWidth: .infinity, alignment: .topLeading)
             }
 
-            ProgressiveBlurView()
+            HeaderScrimView()
                 .frame(height: SettingsMetrics.headerHeight + 30)
 
             header

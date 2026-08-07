@@ -21,10 +21,11 @@ struct glanceApp: App {
             SettingsWindowView(environment: environment)
         }
         // Deliberately no `.windowResizability(.contentSize)`: it kept
-        // re-deriving the window size as (content + titlebar band), which is
-        // what left the traffic lights stranded above the panel. Size is set
-        // once by WindowConfiguringView instead, and the window is made
-        // non-resizable there, so nothing needs to re-derive it.
+        // re-deriving the window size as (content + titlebar band), which
+        // grew the window every time the titlebar band changed height — and
+        // it now has a real, taller one (see WindowConfiguringView's
+        // toolbar). Size is set once by WindowConfiguringView instead, and
+        // the window is made non-resizable there, so nothing re-derives it.
         .windowStyle(.hiddenTitleBar)
         .defaultPosition(.center)
     }

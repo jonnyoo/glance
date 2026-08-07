@@ -14,10 +14,13 @@ struct SettingsSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            TrafficLightsView()
-                .padding(.leading, 22)
-                .padding(.top, 22)
-                .padding(.bottom, 18)
+            // Empty reserved band, not a view: the traffic lights here are
+            // the window's real ones, drawn by AppKit in the titlebar area
+            // that our content extends underneath (see
+            // WindowConfiguringView). Nothing of ours may sit in this strip
+            // or it would render on top of them.
+            Color.clear
+                .frame(height: SettingsMetrics.trafficLightBandHeight)
 
             // Plain VStack, not a ScrollView — the design wants a fixed,
             // non-scrolling sidebar, and the full tab list comfortably fits

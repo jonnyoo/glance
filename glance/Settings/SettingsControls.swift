@@ -11,6 +11,7 @@
 
 import SwiftUI
 import AppKit
+import CoreImage
 
 
 /// One settings row: label (+ optional subtitle) on the leading edge,
@@ -140,58 +141,33 @@ struct SettingsActionRow: View {
     }
 }
 
-/// Traces only the *leading* edge of the content panel — the top-leading
-/// curve, the straight left edge, and the bottom-leading curve — so the
-/// sidebar/content seam stroke wraps around the panel's rounded corners
-/// instead of cutting across them as a straight vertical line. The trailing
-/// edge is deliberately not part of the path: it sits flush against the
-/// window edge, where the system already draws its own treatment.
+/// A scrim behind the header that fades out toward the bottom, instead of
+/// ending in a hard edge where scrolled rows disappear underneath it.
 ///
-/// Uses tangent-based arcs rather than angle-based ones to sidestep the
-/// usual confusion about which direction `clockwise:` means in SwiftUI's
-/// y-down coordinate space.
-struct ContentPanelLeadingEdge: Shape {
-    var topRadius: CGFloat
-    var bottomRadius: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX + topRadius, y: rect.minY))
-        path.addArc(
-            tangent1End: CGPoint(x: rect.minX, y: rect.minY),
-            tangent2End: CGPoint(x: rect.minX, y: rect.maxY),
-            radius: topRadius
-        )
-        path.addArc(
-            tangent1End: CGPoint(x: rect.minX, y: rect.maxY),
-            tangent2End: CGPoint(x: rect.maxX, y: rect.maxY),
-            radius: bottomRadius
-        )
-        return path
-    }
-}
-
-/// A blur that gets progressively stronger toward the top edge, instead of
-/// a flat, uniformly-blurred rectangle. SwiftUI has no native "variable
-/// blur radius" — this fakes it with the standard trick of stacking several
-/// material layers, each masked by a linear gradient that fades out at a
-/// different point. Near the top, all layers overlap (strongest, most
-/// opaque blur); further down, fewer layers remain, so it thins out and
-/// blends into the plain content underneath instead of ending in a hard
-/// edge.
-struct ProgressiveBlurView: View {
+/// This used to be a stack of `Material` layers (`.ultraThinMaterial` /
+/// `.thinMaterial`) rather than a flat color — but a `behindWindow`-blending
+/// material samples whatever is actually behind the window (see
+/// `VisualEffectView`), so the header picked up a "colored glow" from
+/// whatever was on the desktop behind it. Swapping the material for
+/// `SettingsMetrics.contentBackgroundColor` removes that bleed-through
+/// entirely: the header now reads as the same solid panel color, just
+/// fading into the content below it, with nothing sampled from outside the
+/// window. The stacked-layers-with-staggered-fades trick is kept as-is
+/// (still no native "variable fade" in SwiftUI) since it's still what gives
+/// the fade its non-linear, front-loaded shape rather than a flat ramp.
+struct HeaderScrimView: View {
     var body: some View {
         ZStack {
-            layer(.ultraThinMaterial, fadeEnd: 0.35)
-            layer(.ultraThinMaterial, fadeEnd: 0.65)
-            layer(.thinMaterial, fadeEnd: 1.0)
+            layer(fadeEnd: 0.35)
+            layer(fadeEnd: 0.65)
+            layer(fadeEnd: 1.0)
         }
         .allowsHitTesting(false)
     }
 
-    private func layer(_ material: Material, fadeEnd: CGFloat) -> some View {
+    private func layer(fadeEnd: CGFloat) -> some View {
         Rectangle()
-            .fill(material)
+            .fill(SettingsMetrics.contentBackgroundColor)
             .mask(
                 LinearGradient(
                     stops: [
@@ -219,15 +195,53 @@ struct SettingsCaption: View {
 }
 
 /// Wraps an `NSVisualEffectView` for the window's background blur.
+///
+/// Also boosts the saturation of whatever's behind the window before the
+/// blur reaches the sidebar — `.hudWindow` is a deliberately near-monochrome
+/// material (it's built for on-screen HUDs, not for showing off the
+/// backdrop), so raw `.behindWindow` sampling here comes through almost
+/// flat gray. See `saturationFilter` for how that's measured and corrected.
 struct VisualEffectView: NSViewRepresentable {
     var material: NSVisualEffectView.Material = .hudWindow
     var blendingMode: NSVisualEffectView.BlendingMode = .behindWindow
+
+    /// `CALayer.filters` (not `.backgroundFilters`, and not
+    /// `.compositingFilter`) is the one that actually reaches this view's
+    /// rendered content — confirmed empirically, not from documentation:
+    /// with a saturated gradient placed behind a plain `.hudWindow` blur
+    /// window and `screencapture -o` sampling the composited pixels,
+    /// `.filters` and `.compositingFilter` both roughly doubled the
+    /// backdrop's average HSV saturation at `inputSaturation: 1.6`;
+    /// `.backgroundFilters` moved it by less than a third as much. `.filters`
+    /// was picked over `.compositingFilter` as the more conventional/
+    /// supported route for "post-process this layer's own contents".
+    ///
+    /// `2.0` was chosen the same way: saturation scaled roughly linearly
+    /// with `inputSaturation` from 1.0 (flat gray, ~0.023 avg saturation) up
+    /// through 8.0 (an overtly warm/orange tint, ~0.166) with no sign of an
+    /// early ceiling, so there's real headroom either direction. `2.0` reads
+    /// as a visible-but-subtle warm lift rather than a color cast — a
+    /// "slightly saturated" request, not a "vivid" one.
+    private static let saturationFilter: CIFilter = {
+        let filter = CIFilter(name: "CIColorControls")!
+        filter.setValue(1.05, forKey: "inputSaturation")
+        return filter
+    }()
 
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.material = material
         view.blendingMode = blendingMode
-        view.state = .active
+        // `.followsWindowActiveState`, *not* `.active`. This is the whole
+        // reason a native window stops being see-through the moment you
+        // switch apps while ours stayed translucent forever: `.active`
+        // pins the material on permanently, so the blur keeps sampling the
+        // desktop even when the window is neither key nor main. Following
+        // the window's state is what AppKit's own sidebars/toolbars do —
+        // vibrancy while frontmost, a flat opaque background behind.
+        view.state = .followsWindowActiveState
+        view.wantsLayer = true
+        view.layer?.filters = [Self.saturationFilter]
         return view
     }
 
@@ -248,24 +262,33 @@ struct WindowConfigurator: NSViewRepresentable {
     func updateNSView(_ nsView: WindowConfiguringView, context: Context) {}
 }
 
-/// Strips the window down to `.borderless` so the SwiftUI content *is* the
-/// window, with no competing system chrome at all.
+/// Makes the hosting window an ordinary macOS window that simply doesn't
+/// draw a title bar — rather than a custom-shaped window imitating one.
 ///
-/// A `.titled` window (even fully transparent) kept showing a mismatched,
-/// smaller-radius system corner/edge treatment poking out behind the custom
-/// 40pt-radius panel — and real traffic-light buttons can't be repositioned
-/// via any public AppKit API, which the design calls for (more inset from
-/// the corner). Going borderless removes both problems at once: no system
-/// corner competing with ours, and the traffic lights are now
-/// `TrafficLightsView` — hand-drawn, positioned wherever the design wants.
-/// Only the red one is wired to actually close the window; the other two
-/// are permanently inert, matching the earlier greyed-out requirement.
+/// This is a deliberate reversal of an earlier approach that faked the
+/// chrome: a borderless/transparent window, hand-drawn traffic lights, and
+/// a SwiftUI `clipShape` standing in for the window's corners. Every one of
+/// those pieces had to be maintained against the OS instead of by it, and
+/// each drifted:
+///
+///  * the hand-picked corner radius couldn't track macOS 26's much rounder
+///    (and continuous-curve) window corners, and being a clip it could only
+///    ever cut *inside* the real shape, so it silently won;
+///  * hand-drawn traffic lights don't grey out with window state, don't
+///    respond to the hover glyphs, and aren't in the accessibility tree;
+///  * a permanently-`.active` background material never dropped its
+///    vibrancy when the app lost focus, so the window stayed see-through
+///    while every real window around it had gone opaque.
+///
+/// Keeping the real window and only suppressing the titlebar's *drawing*
+/// gets all of that back from AppKit for free. See the individual comments
+/// in `configure` for what each line buys and why removing it regresses.
 ///
 /// Note: no `setFrame`/`setContentSize` on every layout pass — that fought
 /// SwiftUI's own resize-to-fit-content pass in a mutual invalidation loop
 /// and crashed with an AppKit constraint-pass exception in an earlier
 /// version. Size is set exactly once, here, since nothing else can resize
-/// a non-resizable, borderless window afterward.
+/// a non-resizable window afterward.
 final class WindowConfiguringView: NSView {
     private var hasConfigured = false
 
@@ -287,44 +310,70 @@ final class WindowConfiguringView: NSView {
     }
 
     private static func configure(_ window: NSWindow) {
-        // `.titled` is essential and non-obvious: AppKit only lets a window
-        // become *key* if it has a title bar or resize bar, and a window
-        // that is never key draws every control inside it in the inactive
-        // appearance — desaturated, foggy, tint ignored. That's what made
-        // the native toggles/sliders render dark monochrome under the
-        // previous `.borderless` mask. The title bar is then made fully
-        // invisible below, so this costs nothing visually.
+        // `.fullSizeContentView` + transparent titlebar + hidden title is
+        // the *supported* way to get "no title bar": the window keeps all of
+        // its real titlebar machinery — real traffic lights, native frame,
+        // native corner mask, native active/inactive appearance — it just
+        // doesn't draw a chrome band across the top, and our content extends
+        // up underneath it.
         //
-        // (Trying to keep `.borderless` and override `canBecomeKey` via a
-        // runtime subclass does not work: SwiftUI already has KVO observers
-        // on this window, so KVO has itself isa-swizzled it, and swapping
-        // the class out from under that crashes in `_NSSetBoolValueAndNotify`.)
-        window.styleMask = [.titled, .closable, .fullSizeContentView]
+        // `.titled` is also load-bearing beyond appearance: AppKit only lets
+        // a window become *key* if it has a title bar or resize bar, and a
+        // window that is never key draws every control inside it in the
+        // inactive appearance — desaturated, foggy, tint ignored. That's
+        // what made the native toggles/sliders render dark monochrome back
+        // when this was a `.borderless` window. (Keeping `.borderless` and
+        // overriding `canBecomeKey` via a runtime subclass does not work
+        // either: SwiftUI already has KVO observers on this window, so KVO
+        // has itself isa-swizzled it, and swapping the class out from under
+        // that crashes in `_NSSetBoolValueAndNotify`.)
+        //
+        // `.miniaturizable` is present so the yellow button genuinely works.
+        // `.resizable` is deliberately absent, which is also what disables
+        // the green button (`isZoomable` becomes false) — natively, rather
+        // than by drawing a dead control that only looks disabled.
+        window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
 
-        // We draw our own traffic lights (TrafficLightsView) so the design
-        // can place them where it wants; the real ones would otherwise show
-        // through at the system's fixed position.
-        window.standardWindowButton(.closeButton)?.isHidden = true
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        window.standardWindowButton(.zoomButton)?.isHidden = true
+        // An empty, item-less `NSToolbar` — and this is the single thing
+        // that buys the macOS 26 corner radius. Measured, not folklore: with
+        // window alpha masks captured via `screencapture -o -l<windowID>`
+        // and traced, an otherwise identical window rounds to 17.5pt with no
+        // toolbar, 23pt with `.unifiedCompact`, and exactly Finder's radius
+        // (0.00px RMSE over the whole corner curve) with `.unified`. Tahoe
+        // ties the corner radius to the height of the titlebar band, so the
+        // taller unified band is what makes the corner rounder — there is no
+        // corner-radius API to set, and hardcoding a radius is precisely the
+        // thing that made it wrong before.
+        //
+        // Nothing of the toolbar is visible: it has no items, no delegate,
+        // and the titlebar above is transparent with the content drawn
+        // underneath it, so this only reserves the band the traffic lights
+        // sit in (SettingsMetrics.trafficLightBandHeight keeps our sidebar
+        // clear of it).
+        let toolbar = NSToolbar(identifier: "GlanceSettingsToolbar")
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
 
         window.isMovableByWindowBackground = true
-        window.isOpaque = false
-        window.backgroundColor = .clear
         window.hasShadow = true
 
-        // No manual corner-radius override here — deliberately. AppKit
-        // already rounds a `.titled` window's corners on its own, and that
-        // native radius is exactly what should show: it's what makes this
-        // window's corners match System Settings / Control Center rather
-        // than looking like a custom shape pretending to be native. See
-        // SettingsMetrics.outerCornerRadius for how that native radius was
-        // measured and reused for our own SwiftUI-side clipping, so the two
-        // align instead of one fighting the other (which is what caused the
-        // original mismatched-corner artifact, back when our own clip used
-        // an arbitrary, much larger radius than the system's).
+        // Deliberately NOT `isOpaque = false` / `backgroundColor = .clear`.
+        // That pairing is what cost this window its native corners: it makes
+        // AppKit stop drawing (and stop masking to) the window's own rounded
+        // frame, leaving whatever the SwiftUI content clipped itself to as
+        // the only visible shape — which is why the corners were stuck at a
+        // hand-picked radius that no longer matches macOS 26's much rounder
+        // native one, and why nothing here could ever track a future OS
+        // change to it. Left at the AppKit defaults, the system mask applies
+        // and the corner is the real thing, exactly like Finder's.
+        //
+        // Translucency does not need a clear background colour: the
+        // `NSVisualEffectView` behind the content blends with what's behind
+        // the window on its own (see VisualEffectView), and being a real
+        // window background is what lets it go opaque when the app is not
+        // frontmost, the way every native window does.
 
         let target = SettingsMetrics.windowSize
         var frame = window.frame
@@ -343,45 +392,9 @@ final class WindowConfiguringView: NSView {
 
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
-
-        // Captured directly rather than relying on `NSApp.keyWindow` at
-        // click time — simpler than re-deriving it later.
-        SettingsWindowReference.window = window
     }
 }
 
-/// See `WindowConfiguringView` — holds the one settings window so
-/// `TrafficLightsView`'s close button doesn't have to guess at
-/// `NSApp.keyWindow`.
-enum SettingsWindowReference {
-    static weak var window: NSWindow?
-}
-
-
-/// Hand-drawn traffic-light replicas. Necessary once the window went
-/// borderless (see `WindowConfiguringView`) — there's no real title bar left
-/// to host real ones, and repositioning real traffic lights isn't possible
-/// via any public API anyway. Only red is functional.
-///
-/// Real `Button`s rather than a bare `.onTapGesture` — buttons get correct
-/// AppKit click handling (mouseDown/mouseUp through the normal responder
-/// chain) and show up as real, inspectable controls in the accessibility
-/// tree, unlike a tap gesture on a plain shape.
-struct TrafficLightsView: View {
-    private let red = Color(red: 1.0, green: 0.373, blue: 0.341)
-    private let inertGray = Color.white.opacity(0.16)
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Button {
-                SettingsWindowReference.window?.close()
-            } label: {
-                Circle().fill(red).frame(width: 12, height: 12)
-            }
-            .buttonStyle(.plain)
-
-            Circle().fill(inertGray).frame(width: 12, height: 12)
-            Circle().fill(inertGray).frame(width: 12, height: 12)
-        }
-    }
-}
+// (No `SettingsWindowReference` any more: it existed only so the hand-drawn
+// close button had a window to call `close()` on. The real traffic lights
+// are wired up by AppKit.)
