@@ -32,12 +32,10 @@ enum SettingsMetrics {
     /// The content panel's fill — solid, not translucent, so it reads as an
     /// opaque card rather than picking up whatever's behind the window (that
     /// bleed-through via `VisualEffectView`'s materials was the "colored
-    /// glow" the header used to show). Adapts to the system appearance via
-    /// `adaptiveColor`, unlike the rest of this file's colors, which are
-    /// still dark-only — see the type's doc comment.
+    /// glow" the header used to show).
     static let contentBackgroundColor = adaptiveColor(
-        dark: NSColor(red: 0x18 / 255, green: 0x18 / 255, blue: 0x18 / 255, alpha: 1),
-        light: .white
+        dark: NSColor(red: 0x18 / 255, green: 0x18 / 255, blue: 0x18 / 255, alpha: 0.9),
+        light: NSColor(white: 1, alpha: 0.85)
     )
 
     /// The sidebar's fill: the same per-appearance color as the content
@@ -46,7 +44,7 @@ enum SettingsMetrics {
     /// second flat card butted up against the first.
     static let sidebarBackgroundColor = adaptiveColor(
         dark: NSColor(red: 0x33 / 255, green: 0x33 / 255, blue: 0x33 / 255, alpha: 0.35),
-        light: NSColor(white: 1, alpha: 0.55)
+        light: NSColor(white: 1, alpha: 0.35)
     )
 
     /// Gap between the content panel and every window edge — including the
@@ -57,7 +55,15 @@ enum SettingsMetrics {
     static let contentShadowRadius: CGFloat = 12
 
     static let selectedPillRadius: CGFloat = 11
-    static let selectedPillColor = Color.white.opacity(0.06)
+    /// A touch of *lightness* over the sidebar reads as "selected" against
+    /// the sidebar's dark translucent fill; over the light-mode fill (also
+    /// translucent, but toward white) the same white tint would be nearly
+    /// invisible, so light mode instead uses a touch of *darkness* — same
+    /// role, opposite direction, chosen at a matching visual weight.
+    static let selectedPillColor = adaptiveColor(
+        dark: NSColor(white: 1, alpha: 0.06),
+        light: NSColor(white: 0, alpha: 0.05)
+    )
 
     static let sidebarItemHeight: CGFloat = 32
     static let sidebarSectionSpacing: CGFloat = 8
@@ -65,13 +71,37 @@ enum SettingsMetrics {
     static let sectionHeaderFont = Font.system(size: 11, weight: .semibold)
     static let contentTitleFont = Font.system(size: 18, weight: .medium)
 
-    static let textPrimary = Color(red: 0xEE / 255, green: 0xEE / 255, blue: 0xEE / 255)
-    static let textSecondary = Color(red: 0xBF / 255, green: 0xBF / 255, blue: 0xBF / 255)
+    /// Dark-mode values are unchanged, hand-measured-from-Figma literals.
+    /// Light-mode values aren't a separate guess: they're the exact resolved
+    /// alpha AppKit's own `NSColor.labelColor` / `.secondaryLabelColor` use
+    /// in light mode (`black @ 0.85` / `black @ 0.50` — checked directly via
+    /// `NSAppearance.performAsCurrentDrawingAppearance`, not from docs),
+    /// so light-mode text reads with exactly the contrast every other native
+    /// light-mode app uses, while dark mode stays pixel-identical to before.
+    static let textPrimary = adaptiveColor(
+        dark: NSColor(red: 0xEE / 255, green: 0xEE / 255, blue: 0xEE / 255, alpha: 1),
+        light: NSColor(white: 0, alpha: 0.85)
+    )
+    static let textSecondary = adaptiveColor(
+        dark: NSColor(red: 0xBF / 255, green: 0xBF / 255, blue: 0xBF / 255, alpha: 1),
+        light: NSColor(white: 0, alpha: 0.50)
+    )
 
     static let rowHeight: CGFloat = 50
     static let rowRadius: CGFloat = 17
-    static let rowColor = Color.white.opacity(0.05)
-    static let rowBorder = Color.white.opacity(0.07)
+    /// Same "flip the tint direction for a light background" logic as
+    /// `selectedPillColor` above: a white-tinted row reads as a raised card
+    /// against the dark content panel; on the white light-mode panel the
+    /// only way to still read as a distinct card is to go slightly *darker*
+    /// than the page, not lighter.
+    static let rowColor = adaptiveColor(
+        dark: NSColor(white: 1, alpha: 0.05),
+        light: NSColor(white: 0, alpha: 0.04)
+    )
+    static let rowBorder = adaptiveColor(
+        dark: NSColor(white: 1, alpha: 0.07),
+        light: NSColor(white: 0, alpha: 0.08)
+    )
     static let rowFont = Font.system(size: 15, weight: .medium)
     static let rowSpacing: CGFloat = 12
     static let rowHorizontalInset: CGFloat = 19
@@ -81,13 +111,12 @@ enum SettingsMetrics {
 
     /// Wraps an `NSColor(name:dynamicProvider:)` so a color can track the
     /// system appearance rather than being fixed at whatever was true when
-    /// this enum was evaluated. Every other color in this file is a plain
-    /// `Color` literal and stays dark-only regardless of system appearance —
-    /// only `contentBackgroundColor` and `sidebarBackgroundColor` currently
-    /// use this, per an explicit request to make just the panel/sidebar
-    /// fills follow light/dark mode. Text and row colors were left alone, so
-    /// light mode currently has low contrast against a white content panel —
-    /// flagged, not fixed, since re-theming those wasn't asked for.
+    /// this enum was evaluated. Every fill/text/row token in this file now
+    /// goes through this — `GlanceTheme`'s accent/status colors are the only
+    /// ones left as plain literals, since those are fixed brand/semantic
+    /// colors (blue accent, red/green status dots) that are legible against
+    /// both a dark and a light content panel unchanged, not something that
+    /// should shift with appearance.
     private static func adaptiveColor(dark: NSColor, light: NSColor) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
