@@ -3,9 +3,9 @@
 //  glance
 //
 //  Root layout: blurred background showing through a translucent sidebar,
-//  a solid content panel floating above it as its own inset, shadowed card
-//  (see SettingsMetrics.contentBackgroundColor / sidebarBackgroundColor),
-//  a fixed sidebar, and the selected page.
+//  a content panel floating above it as its own inset, shadowed card (see
+//  SettingsMetrics.contentBackgroundColor / sidebarBackgroundColor), a fixed
+//  sidebar, and the selected page.
 //
 
 import SwiftUI
@@ -22,32 +22,39 @@ struct SettingsWindowView: View {
             HStack(spacing: 0) {
                 SettingsSidebar(selection: $selection)
 
-                ZStack(alignment: .top) {
-                    SettingsMetrics.contentBackgroundColor
-                    contentPage
+                ZStack {
+                    // Opaque underlay casts the panel drop shadow. Shadow on
+                    // the translucent content stack would follow SettingsRow
+                    // alpha instead of the card outline.
+                    RoundedRectangle(
+                        cornerRadius: SettingsMetrics.contentCornerRadius,
+                        style: .continuous
+                    )
+                    .fill(SettingsMetrics.contentShadowFill)
+                    .shadow(
+                        color: SettingsMetrics.contentShadowColor,
+                        radius: SettingsMetrics.contentShadowRadius
+                    )
+
+                    ZStack(alignment: .top) {
+                        SettingsMetrics.contentBackgroundColor
+                        contentPage
+                    }
+                    // All four corners now, not just the leading two — the
+                    // panel is a floating card inset from every window edge
+                    // (see .padding below), not flush against the trailing/
+                    // top/bottom edges the way it used to be, so there's no
+                    // reason left for the trailing corners to stay square.
+                    .clipShape(
+                        RoundedRectangle(cornerRadius: SettingsMetrics.contentCornerRadius, style: .continuous)
+                    )
+                    // Hairline stroke on the content (not the underlay) so it
+                    // draws above the clipped page rather than under it.
+                    .overlay(
+                        RoundedRectangle(cornerRadius: SettingsMetrics.contentCornerRadius, style: .continuous)
+                            .strokeBorder(SettingsMetrics.contentStrokeColor, lineWidth: 0.5)
+                    )
                 }
-                // All four corners now, not just the leading two — the
-                // panel is a floating card inset from every window edge
-                // (see .padding below), not flush against the trailing/
-                // top/bottom edges the way it used to be, so there's no
-                // reason left for the trailing corners to stay square.
-                .clipShape(
-                    RoundedRectangle(cornerRadius: SettingsMetrics.contentCornerRadius, style: .continuous)
-                )
-                // A hairline stroke defining the card's own edge — distinct
-                // from the shadow below, which separates the card from the
-                // sidebar rather than outlining the card itself. `.overlay`
-                // rather than `.strokeBorder` directly on the clip shape so
-                // the stroke draws on top of the already-clipped content
-                // instead of being clipped along with it.
-                .overlay(
-                    RoundedRectangle(cornerRadius: SettingsMetrics.contentCornerRadius, style: .continuous)
-                        .strokeBorder(SettingsMetrics.contentStrokeColor, lineWidth: 0.5)
-                )
-                // `x`/`y` are left at their 0 defaults on purpose — an even
-                // halo on every side is what "equal on all sides" means
-                // here, not a drop shadow offset toward one corner.
-                .shadow(color: SettingsMetrics.contentShadowColor, radius: SettingsMetrics.contentShadowRadius)
                 .padding(SettingsMetrics.contentOuterSpacing)
             }
         }
@@ -108,7 +115,7 @@ struct SettingsWindowView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Image(systemName: selection.icon)
-                .font(.system(size: 16))
+                .font(.system(size: 13))
                 .foregroundStyle(SettingsMetrics.textPrimary)
             Text(selection.title)
                 .font(SettingsMetrics.contentTitleFont)
@@ -116,7 +123,7 @@ struct SettingsWindowView: View {
             Spacer()
         }
         .padding(.horizontal, SettingsMetrics.contentHorizontalPadding)
-        .padding(.top, 20)
+        .padding(.top, 16)
         .frame(height: SettingsMetrics.headerHeight, alignment: .leading)
     }
 

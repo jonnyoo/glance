@@ -67,6 +67,13 @@ enum SettingsMetrics {
     static let contentOuterSpacing: CGFloat = 8
     static let contentShadowColor = Color.black.opacity(0.2)
     static let contentShadowRadius: CGFloat = 8
+    /// Opaque fill used only by the panel's shadow-casting underlay — same
+    /// RGB as `contentBackgroundColor`, full alpha — so the drop shadow
+    /// follows the card outline instead of every SettingsRow's silhouette.
+    static let contentShadowFill = adaptiveColor(
+        dark: NSColor(red: 0x10 / 255, green: 0x10 / 255, blue: 0x10 / 255, alpha: 0.2),
+        light: NSColor(white: 1, alpha: 0.2)
+    )
 
     /// A hairline edge around the content panel — an actual grey in both
     /// appearances (unlike `rowBorder`/`selectedPillColor` elsewhere in this
@@ -97,7 +104,7 @@ enum SettingsMetrics {
     static let sidebarSectionSpacing: CGFloat = 8
     static let sidebarItemFont = Font.system(size: 14, weight: .medium)
     static let sectionHeaderFont = Font.system(size: 11, weight: .semibold)
-    static let contentTitleFont = Font.system(size: 18, weight: .medium)
+    static let contentTitleFont = Font.system(size: 16, weight: .medium)
 
     /// Dark-mode values are unchanged, hand-measured-from-Figma literals.
     /// Light-mode values aren't a separate guess: they're the exact resolved
@@ -123,19 +130,19 @@ enum SettingsMetrics {
     /// only way to still read as a distinct card is to go slightly *darker*
     /// than the page, not lighter.
     static let rowColor = adaptiveColor(
-        dark: NSColor(white: 1, alpha: 0.05),
-        light: NSColor(white: 0, alpha: 0.04)
+        dark: NSColor(white: 1, alpha: 0.08),
+        light: NSColor(white: 1, alpha: 0.75)
     )
     static let rowBorder = adaptiveColor(
-        dark: NSColor(white: 1, alpha: 0.07),
-        light: NSColor(white: 0, alpha: 0.08)
+        dark: NSColor(white: 1, alpha: 0.15),
+        light: NSColor(white: 0, alpha: 0.15)
     )
     static let rowFont = Font.system(size: 15, weight: .medium)
     static let rowSpacing: CGFloat = 12
     static let rowHorizontalInset: CGFloat = 19
 
-    static let contentHorizontalPadding: CGFloat = 20
-    static let headerHeight: CGFloat = 50
+    static let contentHorizontalPadding: CGFloat = 16
+    static let headerHeight: CGFloat = 40
 
     /// No blur or scrim sits behind the header — settled on after trying,
     /// and rejecting, everything below. The header floats fully transparent
