@@ -141,46 +141,6 @@ struct SettingsActionRow: View {
     }
 }
 
-/// A scrim behind the header that fades out toward the bottom, instead of
-/// ending in a hard edge where scrolled rows disappear underneath it.
-///
-/// This used to be a stack of `Material` layers (`.ultraThinMaterial` /
-/// `.thinMaterial`) rather than a flat color — but a `behindWindow`-blending
-/// material samples whatever is actually behind the window (see
-/// `VisualEffectView`), so the header picked up a "colored glow" from
-/// whatever was on the desktop behind it. Swapping the material for
-/// `SettingsMetrics.contentBackgroundColor` removes that bleed-through
-/// entirely: the header now reads as the same solid panel color, just
-/// fading into the content below it, with nothing sampled from outside the
-/// window. The stacked-layers-with-staggered-fades trick is kept as-is
-/// (still no native "variable fade" in SwiftUI) since it's still what gives
-/// the fade its non-linear, front-loaded shape rather than a flat ramp.
-struct HeaderScrimView: View {
-    var body: some View {
-        ZStack {
-            layer(fadeEnd: 0.35)
-            layer(fadeEnd: 0.65)
-            layer(fadeEnd: 1.0)
-        }
-        .allowsHitTesting(false)
-    }
-
-    private func layer(fadeEnd: CGFloat) -> some View {
-        Rectangle()
-            .fill(SettingsMetrics.contentBackgroundColor)
-            .mask(
-                LinearGradient(
-                    stops: [
-                        .init(color: .black, location: 0),
-                        .init(color: .clear, location: fadeEnd),
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-    }
-}
-
 /// Section caption used above a group of rows on a settings page (distinct
 /// from the sidebar's own section headers).
 struct SettingsCaption: View {

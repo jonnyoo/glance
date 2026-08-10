@@ -77,9 +77,10 @@ struct SettingsWindowView: View {
     }
 
     /// The header floats over the scroll content in a `ZStack` (rather than
-    /// sitting above it in a `VStack`) so scrolled rows pass *underneath*
-    /// it instead of being pushed down by it — `HeaderScrimView` still
-    /// needs that overlap to fade against the content scrolling past.
+    /// sitting above it in a `VStack`) so scrolled rows pass *underneath* it
+    /// instead of being pushed down by it. It's fully transparent — see the
+    /// note on `SettingsMetrics.headerHeight` for what was tried instead and
+    /// why none of it stuck.
     private var contentPage: some View {
         ZStack(alignment: .top) {
             ScrollView(.vertical) {
@@ -92,9 +93,6 @@ struct SettingsWindowView: View {
                     // between the header and the first row.
                     .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-
-            HeaderScrimView()
-                .frame(height: SettingsMetrics.headerHeight + 30)
 
             header
         }

@@ -123,7 +123,27 @@ enum SettingsMetrics {
     static let contentHorizontalPadding: CGFloat = 20
     static let headerHeight: CGFloat = 50
 
-    /// Wraps an `NSColor(name:dynamicProvider:)` so a color can track the
+    /// No blur or scrim sits behind the header — settled on after trying,
+    /// and rejecting, everything below. The header floats fully transparent
+    /// over the scrolled content instead:
+    ///
+    ///  * a flat colour scrim (any colour, stacked or single) is a tint by
+    ///    definition, which read as an "extra white band" over the panel;
+    ///  * `NSVisualEffectView` blurs correctly but a macOS material is blur
+    ///    *plus* a baked-in tint, with no API to take one without the other,
+    ///    so it hit the same "extra white band" problem;
+    ///  * `CALayer.backgroundFilters` + `CIGaussianBlur` is tint-free but
+    ///    renders nothing inside SwiftUI's hosting view, even with the
+    ///    required `layerUsesCoreImageFilters` opt-in;
+    ///  * a Metal `layerEffect` shader cannot rasterize AppKit-backed views,
+    ///    and this window's content is entirely native controls (Toggle,
+    ///    Slider, Picker, SecureField, the camera preview) — they render as
+    ///    "unsupported" placeholders, and `ScrollView` itself blanks out;
+    ///  * a private-API `CABackdropLayer` + `CAFilter` `variableBlur` did
+    ///    render a real, tint-free, progressive blur — the one approach that
+    ///    actually worked — but wasn't wanted after seeing it in person.
+    ///
+    /// Don't re-attempt any of these without an explicit ask.
     /// system appearance rather than being fixed at whatever was true when
     /// this enum was evaluated. Every fill/text/row token in this file now
     /// goes through this — `GlanceTheme`'s accent/status colors are the only
