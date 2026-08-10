@@ -154,6 +154,12 @@ enum SettingsMetrics {
         dark: NSColor(white: 1, alpha: 0.05),
         light: NSColor(white: 0, alpha: 0.05)
     )
+    /// Fill for trailing menu/picker pills inside settings rows — stronger
+    /// than `optionPreviewFill` so it still reads against `rowColor`.
+    static let pickerPillFill = adaptiveColor(
+        dark: NSColor(white: 1, alpha: 0.05),
+        light: NSColor(white: 0, alpha: 0.10)
+    )
     /// Accent wash over `optionPreviewFill` when the tile is selected.
     static let optionPreviewSelectedTintOpacity: CGFloat = 0.12
     static let optionLabelFont = Font.system(size: 12, weight: .medium)

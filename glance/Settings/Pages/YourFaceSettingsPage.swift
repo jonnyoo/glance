@@ -44,7 +44,6 @@ struct YourFaceSettingsPage: View {
 
     private var lockedState: some View {
         VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
-            SettingsCaption(text: "Authenticate to view your enrolled face.")
             SettingsActionRow(
                 title: "Session locked",
                 buttonTitle: isUnlocking ? "Authenticating…" : "Unlock with Touch ID",

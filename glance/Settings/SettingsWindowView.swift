@@ -113,7 +113,7 @@ struct SettingsWindowView: View {
             ScrollView(.vertical) {
                 pageBody
                     .padding(.horizontal, SettingsMetrics.contentHorizontalPadding)
-                    .padding(.top, SettingsMetrics.headerHeight + 12)
+                    .padding(.top, SettingsMetrics.headerHeight + 8)
                     .padding(.bottom, 30)
                     // Without an explicit top alignment the scroll view
                     // centers short pages vertically, leaving a large gap
@@ -137,7 +137,7 @@ struct SettingsWindowView: View {
             Spacer()
         }
         .padding(.horizontal, SettingsMetrics.contentHorizontalPadding + 4)
-        .padding(.top, 16)
+        .padding(.top, 10)
         .frame(height: SettingsMetrics.headerHeight, alignment: .leading)
     }
 

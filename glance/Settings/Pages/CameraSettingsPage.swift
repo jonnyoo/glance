@@ -12,21 +12,29 @@ struct CameraSettingsPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
-            SettingsCaption(text: "Choose which camera Glance uses for face recognition. Set a single default, or override it separately for when you're using your MacBook's built-in display vs. an external one.")
-
-            cameraPicker(title: "Default camera", selection: $settings.defaultCameraID)
-            cameraPicker(title: "When using built-in display", selection: $settings.builtInDisplayCameraID)
-            cameraPicker(title: "When using external display", selection: $settings.externalDisplayCameraID)
-
-            Button("Refresh camera list") {
-                devices = CameraDeviceCatalog.availableDevices()
+            SettingsGroup {
+                cameraPicker(title: "Default", selection: $settings.defaultCameraID)
+                SettingsGroupDivider()
+                cameraPicker(title: "Built-in display", selection: $settings.builtInDisplayCameraID)
+                SettingsGroupDivider()
+                cameraPicker(title: "External display", selection: $settings.externalDisplayCameraID)
             }
-            .buttonStyle(.plain)
-            .font(.system(size: 12))
-            .foregroundStyle(GlanceTheme.accent)
 
+            HStack {
+                Spacer(minLength: 0)
+                Button("Refresh camera list") {
+                    devices = CameraDeviceCatalog.availableDevices()
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 12))
+                .foregroundStyle(GlanceTheme.textSecondary)
+                .padding(.top, -4)
+            }
+            .padding(.trailing, SettingsMetrics.rowHorizontalInset)
+
+            SettingsSectionTitle(text: "Preview")
             CameraPreviewView(session: previewCamera.session, faces: [])
-                .frame(height: 160)
+                .frame(height: 220)
                 .clipShape(RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius))
                 .overlay(
                     RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius)
@@ -53,15 +61,52 @@ struct CameraSettingsPage: View {
     }
 
     private func cameraPicker(title: String, selection: Binding<String?>) -> some View {
-        SettingsRow(title: title) {
-            Picker("", selection: selection) {
-                Text("System default").tag(String?.none)
-                ForEach(devices) { device in
-                    Text(device.name).tag(String?.some(device.id))
+        SettingsRowContent(title: title) {
+            // Capsule chrome sits *behind* the Menu — macOS Menu labels
+            // discard backgrounds applied inside the label hierarchy.
+            ZStack {
+                Capsule()
+                    .fill(SettingsMetrics.pickerPillFill)
+
+                Menu {
+                    Button("System default") { selection.wrappedValue = nil }
+                    ForEach(devices) { device in
+                        Button(device.name) { selection.wrappedValue = device.id }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(cameraLabel(for: selection.wrappedValue))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .foregroundStyle(SettingsMetrics.textPrimary)
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 7, weight: .semibold))
+                            .foregroundStyle(SettingsMetrics.textSecondary)
+                    }
+                    .font(.system(size: 11))
+                    .padding(.horizontal, 8)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .contentShape(Capsule())
                 }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .buttonStyle(.plain)
+                // Window-level accent tint otherwise paints the menu label blue.
+                .tint(SettingsMetrics.textPrimary)
             }
-            .labelsHidden()
-            .frame(width: 200)
+            .frame(width: 160, height: 28)
+            .overlay {
+                Capsule()
+                    .strokeBorder(SettingsMetrics.rowBorder, lineWidth: SettingsMetrics.rowBorderWidth)
+            }
         }
+    }
+
+    private func cameraLabel(for id: String?) -> String {
+        guard let id, let device = devices.first(where: { $0.id == id }) else {
+            return "System default"
+        }
+        return device.name
     }
 }

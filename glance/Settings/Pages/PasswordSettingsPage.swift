@@ -21,7 +21,6 @@ struct PasswordSettingsPage: View {
             if !isSessionUnlocked {
                 SettingsActionRow(
                     title: "Session locked",
-                    subtitle: "Authenticate to change your stored password",
                     buttonTitle: isUnlocking ? "Authenticating…" : "Unlock with Touch ID",
                     isEnabled: !isUnlocking,
                     action: unlock
