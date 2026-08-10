@@ -77,7 +77,8 @@ struct PasswordSettingsPage: View {
     // MARK: - No password stored
 
     private var noPasswordState: some View {
-        centeredState(
+        SettingsEmptyStateView(
+            icon: "lock.fill",
             message: "Set up a password",
             buttonTitle: "Set password",
             caption: statusMessage,
@@ -88,43 +89,14 @@ struct PasswordSettingsPage: View {
     // MARK: - Locked
 
     private var lockedState: some View {
-        centeredState(
+        SettingsEmptyStateView(
+            icon: "lock.fill",
             message: "Session locked",
             buttonTitle: isUnlocking ? "Authenticating…" : "Unlock session",
             isButtonEnabled: !isUnlocking,
             caption: sessionError,
             action: unlock
         )
-    }
-
-    /// Shared layout for the two centered, icon-led states — same chrome,
-    /// different text/button/caption. `noPasswordState` and `lockedState`
-    /// look identical apart from those three things by design (see
-    /// `PageState`'s doc comment for why they're separate states at all).
-    private func centeredState(
-        message: String,
-        buttonTitle: String,
-        isButtonEnabled: Bool = true,
-        caption: String?,
-        action: @escaping () -> Void
-    ) -> some View {
-        VStack(spacing: SettingsMetrics.emptyStateSpacing) {
-            Image(systemName: "lock.fill")
-                .font(.system(size: SettingsMetrics.emptyStateIconSize, weight: .regular))
-                .foregroundStyle(SettingsMetrics.textTertiary)
-
-            Text(message)
-                .font(SettingsMetrics.rowFont)
-                .foregroundStyle(SettingsMetrics.textSecondary)
-
-            SettingsPrimaryButton(title: buttonTitle, isEnabled: isButtonEnabled, action: action)
-
-            if let caption {
-                SettingsCaption(text: caption)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .frame(maxWidth: .infinity, minHeight: SettingsMetrics.emptyStateMinHeight)
     }
 
     // MARK: - Unlocked
@@ -160,9 +132,7 @@ struct PasswordSettingsPage: View {
 
                 SettingsGroupDivider()
 
-                SettingsRowContent(
-                    title: "Remove password",
-                ) {
+                SettingsRowContent(title: "Remove password") {
                     HoldToConfirmButton(title: "Remove", action: removePassword)
                 }
             }

@@ -294,6 +294,40 @@ struct SettingsPrimaryButton: View {
     }
 }
 
+/// Centered icon + message + primary button — a settings page's "needs
+/// unlocking" or "nothing set up yet" state. Shared by Password (locked /
+/// no-password-stored) and Your Face (locked / not-enrolled) rather than
+/// each page keeping its own copy, since all four are the exact same
+/// layout differing only in icon, text, and what the button does.
+struct SettingsEmptyStateView: View {
+    let icon: String
+    let message: String
+    let buttonTitle: String
+    var isButtonEnabled: Bool = true
+    var caption: String? = nil
+    let action: () -> Void
+
+    var body: some View {
+        VStack(spacing: SettingsMetrics.emptyStateSpacing) {
+            Image(systemName: icon)
+                .font(.system(size: SettingsMetrics.emptyStateIconSize, weight: .regular))
+                .foregroundStyle(SettingsMetrics.textTertiary)
+
+            Text(message)
+                .font(SettingsMetrics.rowFont)
+                .foregroundStyle(SettingsMetrics.textSecondary)
+
+            SettingsPrimaryButton(title: buttonTitle, isEnabled: isButtonEnabled, action: action)
+
+            if let caption {
+                SettingsCaption(text: caption)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: SettingsMetrics.emptyStateMinHeight)
+    }
+}
+
 /// Section caption used above a group of rows on a settings page (distinct
 /// from the sidebar's own section headers).
 struct SettingsCaption: View {

@@ -17,17 +17,55 @@ struct YourFaceSettingsPage: View {
         store.identities.first
     }
 
+    /// Locked takes priority over enrollment status for a reason specific to
+    /// this store, not just copied from Password's page: `FaceIdentity` data
+    /// is encrypted under the session key (see `FaceEnrollmentStore
+    /// .reloadIfUnlocked`), so whether anyone is enrolled is simply *unknown*
+    /// until the session is unlocked — unlike a stored password, whose
+    /// existence is a plain Keychain check needing no decryption at all.
+    /// There is no way to show "not enrolled" before that.
+    private enum PageStateKind: Equatable {
+        case locked
+        case notEnrolled
+        case enrolled
+    }
+
+    private var stateKind: PageStateKind {
+        if store.isLocked { return .locked }
+        return identity == nil ? .notEnrolled : .enrolled
+    }
+
     var body: some View {
-        Group {
-            if store.isLocked {
-                lockedState
-            } else if let identity {
+        ZStack(alignment: .top) {
+            lockedState
+                .opacity(stateKind == .locked ? 1 : 0)
+                .allowsHitTesting(stateKind == .locked)
+                .accessibilityHidden(stateKind != .locked)
+
+            notEnrolledState
+                .opacity(stateKind == .notEnrolled ? 1 : 0)
+                .allowsHitTesting(stateKind == .notEnrolled)
+                .accessibilityHidden(stateKind != .notEnrolled)
+
+            if let identity {
                 enrolledState(identity)
-            } else {
-                emptyState
+                    .opacity(stateKind == .enrolled ? 1 : 0)
+                    .allowsHitTesting(stateKind == .enrolled)
+                    .accessibilityHidden(stateKind != .enrolled)
             }
         }
+        .animation(SettingsMetrics.stateTransitionAnimation, value: stateKind)
         .onAppear { store.reloadIfUnlocked() }
+        // The enrollment flow runs in the notch, entirely outside this
+        // window's view hierarchy — this view never disappears while it's
+        // open, so nothing else would prompt a re-check once it closes.
+        // Without this, finishing "Set up FaceID" (or "Redo Face Enrollment")
+        // would leave this page on its old state until the user happened to
+        // switch tabs and back.
+        .onChange(of: NotchOverlayController.shared.phase) { _, newPhase in
+            guard newPhase == .closed else { return }
+            store.reloadIfUnlocked()
+        }
         .confirmationDialog(
             "Delete your enrolled face?",
             isPresented: $showDeleteConfirmation,
@@ -42,28 +80,31 @@ struct YourFaceSettingsPage: View {
         }
     }
 
+    // MARK: - Locked
+
     private var lockedState: some View {
-        VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
-            SettingsActionRow(
-                title: "Session locked",
-                buttonTitle: isUnlocking ? "Authenticating…" : "Unlock with Touch ID",
-                isEnabled: !isUnlocking,
-                action: unlock
-            )
-            if let sessionError {
-                SettingsCaption(text: sessionError)
-            }
-        }
+        SettingsEmptyStateView(
+            icon: "lock.fill",
+            message: "Session locked",
+            buttonTitle: isUnlocking ? "Authenticating…" : "Unlock session",
+            isButtonEnabled: !isUnlocking,
+            caption: sessionError,
+            action: unlock
+        )
     }
 
-    private var emptyState: some View {
-        VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
-            SettingsCaption(text: "You haven't enrolled your face yet.")
-            SettingsActionRow(title: "Face enrollment", buttonTitle: "Set Up Face Recognition") {
-                OnboardingController.startEnrollmentOnly()
-            }
-        }
+    // MARK: - Not enrolled
+
+    private var notEnrolledState: some View {
+        SettingsEmptyStateView(
+            icon: "faceid",
+            message: "Face enrollment",
+            buttonTitle: "Set up FaceID",
+            action: { OnboardingController.startEnrollmentOnly() }
+        )
     }
+
+    // MARK: - Enrolled
 
     private func enrolledState(_ identity: FaceIdentity) -> some View {
         let posesCaptured = Set(identity.samples.compactMap(\.pose)).count
@@ -101,6 +142,8 @@ struct YourFaceSettingsPage: View {
             }
         }
     }
+
+    // MARK: - Actions
 
     private func unlock() {
         isUnlocking = true

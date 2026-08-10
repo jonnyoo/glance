@@ -579,20 +579,26 @@ final class OnboardingController {
         camera.stop()
 
         if isEnrollmentOnly {
-            await saveEnrollmentOnlySamplesAndDismiss()
+            await saveEnrollmentOnlySamplesAndFinish()
         } else {
             navDirection = .forward
             withAnimation(OnboardingMetrics.stepAnimation) { step = .password }
         }
     }
 
-    /// Re-enrollment path used by Settings' "Redo Face Enrollment". Replaces
-    /// any existing identity under the same name rather than appending to
-    /// it — `addSample` otherwise appends, and old + new samples from a
-    /// "redo" shouldn't be blended together. No password step: the caller
+    /// Enrollment-only path used by both Settings' "Set up FaceID" (no prior
+    /// enrollment) and "Redo Face Enrollment" (replacing one). Replaces any
+    /// existing identity under the same name rather than appending to it —
+    /// `addSample` otherwise appends, and old + new samples from a "redo"
+    /// shouldn't be blended together. No password step: the caller
     /// (`startEnrollmentOnly`) already guaranteed an unlocked session before
     /// this flow ever started.
-    private func saveEnrollmentOnlySamplesAndDismiss() async {
+    ///
+    /// Ends on the same `.complete` ("You're all set") screen as the full
+    /// setup flow, via the same `scheduleCompletionDismiss` delay, rather
+    /// than dismissing the instant samples are saved — that used to happen
+    /// with zero confirmation that anything succeeded.
+    private func saveEnrollmentOnlySamplesAndFinish() async {
         store.reloadIfUnlocked()
         if let existing = store.identities.first(where: { $0.name == Self.ownerName }) {
             try? store.delete(existing)
@@ -601,8 +607,9 @@ final class OnboardingController {
         for sample in collectedSamples {
             _ = try? store.addSample(name: Self.ownerName, embedding: sample.embedding, embedder: embedder, pose: sample.pose.name)
         }
-        teardown()
-        NotchOverlayController.shared.dismissOnboarding()
+        navDirection = .forward
+        withAnimation(OnboardingMetrics.stepAnimation) { step = .complete }
+        scheduleCompletionDismiss()
     }
 
     private static let ownerName: String = {
