@@ -20,8 +20,13 @@ final class AppEnvironment {
     let pocController = POCController()
     let faceLabController = FaceLabController()
     let faceUnlockCoordinator: FaceUnlockCoordinator
+    /// Held (not just constructed and dropped) because it owns a repeating
+    /// timer — letting it deallocate would silently stop enforcing the
+    /// auto-lock interval.
+    let sessionAutoLocker: SessionAutoLocker
 
     init() {
         faceUnlockCoordinator = FaceUnlockCoordinator(pocController: pocController)
+        sessionAutoLocker = SessionAutoLocker(pocController: pocController)
     }
 }

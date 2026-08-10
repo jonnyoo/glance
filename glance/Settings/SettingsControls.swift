@@ -180,6 +180,120 @@ struct SettingsActionRow: View {
     }
 }
 
+/// A grouped row whose control is a discrete slider: title on the leading
+/// edge, the currently-selected option's label on the trailing edge of that
+/// same line, and the slider itself beneath both.
+///
+/// Sized by its content rather than `SettingsMetrics.rowHeight` (which the
+/// single-line `SettingsRowContent` uses) since it needs two stacked lines.
+struct SettingsSteppedSliderRowContent: View {
+    let title: String
+    let valueLabel: String
+    /// Index into the option list, not a real quantity — see
+    /// `AutoLockInterval.sliderIndex`. Whole-number `step` is also what
+    /// makes AppKit draw tick marks at each stop.
+    @Binding var index: Double
+    let stopCount: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(title)
+                    .font(SettingsMetrics.rowFont)
+                    .foregroundStyle(SettingsMetrics.textPrimary)
+                Spacer(minLength: 8)
+                Text(valueLabel)
+                    .font(SettingsMetrics.rowFont)
+                    .foregroundStyle(SettingsMetrics.textSecondary)
+            }
+            Slider(value: $index, in: 0...Double(max(stopCount - 1, 1)), step: 1)
+                .controlSize(.regular)
+                .tint(GlanceTheme.accent)
+                .padding(.top, 8)
+        }
+        .padding(.horizontal, SettingsMetrics.rowHorizontalInset)
+        .padding(.vertical, SettingsMetrics.sliderRowVerticalPadding)
+    }
+}
+
+/// A destructive button that only fires after being held down continuously,
+/// filling with red left-to-right as confirmation of progress.
+///
+/// Used instead of a confirmation dialog for password removal: the action is
+/// irreversible, and a hold makes the commitment continuous and cancellable
+/// (release at any point and nothing happens) rather than a single click
+/// that's easy to fire by reflex.
+struct HoldToConfirmButton: View {
+    let title: String
+    var holdDuration: TimeInterval = 3
+    let action: () -> Void
+
+    @State private var fillProgress: CGFloat = 0
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(SettingsMetrics.textPrimary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .background {
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        SettingsMetrics.neutralButtonFill
+                        // A plain rectangle, not a capsule: a capsule scaled
+                        // to a few points wide renders as a shrunken pill
+                        // floating inside the button instead of a growing
+                        // edge. The outer clip below re-rounds it.
+                        Rectangle()
+                            .fill(SettingsMetrics.destructiveFill)
+                            .frame(width: proxy.size.width * fillProgress)
+                    }
+                }
+            }
+            .clipShape(Capsule())
+            .contentShape(Capsule())
+            .onLongPressGesture(minimumDuration: holdDuration) {
+                action()
+            } onPressingChanged: { isPressing in
+                // Drives the fill purely off press state, so releasing early
+                // rewinds it — the animation *is* the progress indicator,
+                // there's no separate timer that could drift out of step
+                // with the gesture's own `minimumDuration`.
+                withAnimation(.linear(duration: isPressing ? holdDuration : 0.18)) {
+                    fillProgress = isPressing ? 1 : 0
+                }
+            }
+    }
+}
+
+/// Standalone accent-filled button matching `SettingsActionRow`'s trailing
+/// button. Used both inside rows (`compact`) and on its own in centered
+/// empty/locked states — an explicit button rather than SwiftUI's default,
+/// which renders as a bordered accent-*text* control and reads as a
+/// different species of control next to `HoldToConfirmButton`'s capsule.
+struct SettingsPrimaryButton: View {
+    let title: String
+    var isEnabled: Bool = true
+    /// Row-height padding; `false` gives the roomier standalone size.
+    var compact: Bool = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, compact ? 14 : 16)
+                .padding(.vertical, compact ? 6 : 7)
+                .background(GlanceTheme.accent)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.4)
+    }
+}
+
 /// Section caption used above a group of rows on a settings page (distinct
 /// from the sidebar's own section headers).
 struct SettingsCaption: View {

@@ -12,6 +12,33 @@
 import Foundation
 import Observation
 
+/// How long the Touch-ID-unlocked session may sit idle before it re-locks
+/// and Touch ID is required again. Backed by the raw day count so the
+/// persisted value stays readable and the four options can be reordered or
+/// extended without invalidating what's already stored.
+enum AutoLockInterval: Int, CaseIterable, Identifiable {
+    case oneDay = 1
+    case sevenDays = 7
+    case fourteenDays = 14
+    case thirtyDays = 30
+
+    var id: Int { rawValue }
+
+    var title: String { rawValue == 1 ? "1 day" : "\(rawValue) days" }
+
+    var duration: TimeInterval { TimeInterval(rawValue) * 24 * 60 * 60 }
+
+    /// Position in `allCases`, used to drive the discrete 4-stop slider.
+    var sliderIndex: Double {
+        Double(Self.allCases.firstIndex(of: self) ?? 0)
+    }
+
+    static func from(sliderIndex: Double) -> AutoLockInterval {
+        let clamped = Int(sliderIndex.rounded())
+        return allCases.indices.contains(clamped) ? allCases[clamped] : .sevenDays
+    }
+}
+
 /// Unlock success/failure animation style shown in the notch overlay.
 enum UnlockAnimationStyle: String, CaseIterable, Identifiable {
     case none
@@ -43,6 +70,7 @@ final class GlanceSettings {
         /// Legacy bool key — read once during migration, then ignored.
         static let playUnlockAnimation = "GlanceSettings.playUnlockAnimation"
         static let autoCheckForUpdates = "GlanceSettings.autoCheckForUpdates"
+        static let autoLockIntervalDays = "GlanceSettings.autoLockIntervalDays"
         static let defaultCameraID = "GlanceSettings.defaultCameraID"
         static let builtInDisplayCameraID = "GlanceSettings.builtInDisplayCameraID"
         static let externalDisplayCameraID = "GlanceSettings.externalDisplayCameraID"
@@ -79,6 +107,11 @@ final class GlanceSettings {
     var autoCheckForUpdates: Bool {
         didSet { defaults.set(autoCheckForUpdates, forKey: Key.autoCheckForUpdates) }
     }
+    /// Enforced by `SessionAutoLocker`, not here — this is only the stored
+    /// preference.
+    var autoLockInterval: AutoLockInterval {
+        didSet { defaults.set(autoLockInterval.rawValue, forKey: Key.autoLockIntervalDays) }
+    }
     /// Device `uniqueID`s, not device objects — devices can disconnect/
     /// reconnect between launches, but their unique ID is stable.
     var defaultCameraID: String? {
@@ -106,6 +139,11 @@ final class GlanceSettings {
             unlockAnimationStyle = .original
         }
         autoCheckForUpdates = defaults.object(forKey: Key.autoCheckForUpdates) as? Bool ?? true
+        // Defaults to 7 days: long enough not to nag someone who uses face
+        // unlock daily, short enough that an abandoned Mac doesn't keep a
+        // usable session key in memory indefinitely.
+        autoLockInterval = (defaults.object(forKey: Key.autoLockIntervalDays) as? Int)
+            .flatMap(AutoLockInterval.init(rawValue:)) ?? .sevenDays
         defaultCameraID = defaults.string(forKey: Key.defaultCameraID)
         builtInDisplayCameraID = defaults.string(forKey: Key.builtInDisplayCameraID)
         externalDisplayCameraID = defaults.string(forKey: Key.externalDisplayCameraID)

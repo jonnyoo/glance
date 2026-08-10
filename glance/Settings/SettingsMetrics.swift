@@ -145,6 +145,25 @@ enum SettingsMetrics {
     static let rowFont = Font.system(size: 13, weight: .regular)
     static let rowSpacing: CGFloat = 12
     static let rowHorizontalInset: CGFloat = 14
+    /// Two-line slider rows size to their content instead of `rowHeight`;
+    /// this keeps their total height visually in step with single-line rows
+    /// in the same group.
+    static let sliderRowVerticalPadding: CGFloat = 12
+
+    /// Neutral (non-accent, non-destructive) button fill — the resting state
+    /// of `HoldToConfirmButton`, which only turns red as it fills.
+    static let neutralButtonFill = adaptiveColor(
+        dark: NSColor(white: 1, alpha: 0.14),
+        light: NSColor(white: 0, alpha: 0.10)
+    )
+    static let destructiveFill = Color(red: 0xE0 / 255, green: 0x3B / 255, blue: 0x2F / 255)
+
+    /// Centered empty/locked-state block (icon, caption, action button).
+    static let emptyStateIconSize: CGFloat = 34
+    static let emptyStateSpacing: CGFloat = 12
+    static let emptyStateMinHeight: CGFloat = 340
+    /// Crossfade between the locked and unlocked states of the Password page.
+    static let stateTransitionAnimation = Animation.easeInOut(duration: 0.28)
 
     /// Taller card used by multi-option pickers (e.g. Unlock Animation).
     static let optionCardVerticalPadding: CGFloat = 14

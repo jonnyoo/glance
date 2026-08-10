@@ -137,6 +137,11 @@ final class OnboardingController {
     /// completion instead of continuing on to the password step.
     private let isEnrollmentOnly: Bool
 
+    /// True when started by `startPasswordOnly()` — the mirror image of
+    /// `isEnrollmentOnly`: jumps straight to `.password` and treats Back as
+    /// "cancel" rather than stepping into a setup flow that isn't running.
+    private let isPasswordOnly: Bool
+
     enum NavDirection { case forward, backward }
     /// Which way the step just changed — read by OnboardingNotchView to
     /// pick the scroll direction for the blur transition.
@@ -166,6 +171,22 @@ final class OnboardingController {
                 }
             }
             let controller = OnboardingController(isEnrollmentOnly: true)
+            NotchOverlayController.shared.presentOnboarding(controller)
+        }
+    }
+
+    /// Entry point used by Settings' "Change password" — presents only the
+    /// password step in the notch, reusing the same field, validation and
+    /// save path as first-run setup rather than duplicating them in a
+    /// settings-only form.
+    ///
+    /// No Touch ID prompt here, unlike `startEnrollmentOnly()`: the only
+    /// caller is the Password page's unlocked state, which by definition
+    /// already has a live session. `finish(password:)` re-asserts that
+    /// anyway, so a session that lapsed in between still can't save silently.
+    static func startPasswordOnly() {
+        Task { @MainActor in
+            let controller = OnboardingController(isPasswordOnly: true)
             NotchOverlayController.shared.presentOnboarding(controller)
         }
     }
@@ -284,8 +305,9 @@ final class OnboardingController {
     private(set) var passwordError: String?
     private(set) var isSavingPassword = false
 
-    init(isEnrollmentOnly: Bool = false) {
+    init(isEnrollmentOnly: Bool = false, isPasswordOnly: Bool = false) {
         self.isEnrollmentOnly = isEnrollmentOnly
+        self.isPasswordOnly = isPasswordOnly
         observeFrames()
         if isEnrollmentOnly {
             step = .enroll
@@ -293,6 +315,10 @@ final class OnboardingController {
             // when transitioning into `.enroll` normally — see the comment
             // there.
             Task { @MainActor [weak self] in self?.beginEnrollment() }
+        } else if isPasswordOnly {
+            // No camera and no deferral needed: the password step starts
+            // nothing heavy, so it can be the initial step outright.
+            step = .password
         }
     }
 
@@ -332,6 +358,15 @@ final class OnboardingController {
     /// on their way forward again.
     func back() {
         navDirection = .backward
+        // In the password-only flow there is no earlier step to return to —
+        // stepping back to `.preSetup` (the normal behaviour below) would
+        // drop the user into a face-enrollment flow they never started.
+        // Back is a plain cancel here.
+        if isPasswordOnly {
+            teardown()
+            NotchOverlayController.shared.dismissOnboarding()
+            return
+        }
         if step == .password {
             resetEnrollmentState()
             withAnimation(OnboardingMetrics.stepAnimation) { step = .preSetup }
