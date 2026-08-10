@@ -190,25 +190,43 @@ struct VisualEffectView: NSViewRepresentable {
     /// `.compositingFilter` as the more conventional/supported route for
     /// "post-process this layer's own contents".
     ///
-    /// `3.0`: measured directly against the real desktop wallpaper (not a
-    /// synthetic gradient), sampling the same window position at several
-    /// `inputSaturation` values. `1.0` (no boost) and low boosts up to ~1.5
-    /// were indistinguishable from flat gray against this material — the
-    /// material's own desaturation dominates at that range. Visible pastel
-    /// tint (matching the level a reference app's own tinted sidebar shows)
-    /// starts becoming clear around `2.5`–`3.0`; higher was not explored
-    /// further since `3.0` already matched that reference. If a future
-    /// material or backdrop needs re-tuning, re-measure the same way rather
-    /// than guessing — the relationship between `inputSaturation` and
-    /// visible result is not linear near the low end.
-    private static let saturationFilter: CIFilter = {
+    /// `1.75` for light mode: measured directly against the real desktop
+    /// wallpaper (not a synthetic gradient), sampling the same window
+    /// position at several `inputSaturation` values. `1.0` (no boost) and
+    /// low boosts up to ~1.5 were indistinguishable from flat gray against
+    /// this material — the material's own desaturation dominates at that
+    /// range. Visible pastel tint (matching the level a reference app's own
+    /// tinted sidebar shows) starts becoming clear around `1.75`.
+    ///
+    /// `2.5` for dark mode — measured completely separately, against the
+    /// same reference app's own dark-mode sidebar, and it is *not* simply
+    /// "lower than light mode": a sweep of 1.15/1.4/1.6 all read as flat,
+    /// unwarmed gray against this darker backdrop (no visible improvement
+    /// between them), while 4.0 overshot past the reference into an overtly
+    /// saturated rust wash. `2.5` was the value that actually matched —
+    /// confirmed by sampling the rendered R/B channel ratio, a proxy for
+    /// perceived warmth, against the reference's own sidebar under the same
+    /// backdrop: 1.154 here vs. 1.156 there. Higher-than-light-mode is
+    /// counterintuitive but consistent with the underlying cause: this is a
+    /// visibly darker, muddier region of the same wallpaper, and the
+    /// material's desaturation curve isn't symmetric across the tonal range
+    /// it's fighting against, let alone across appearances. Re-measure both
+    /// values the same empirical way if the backdrop or material changes —
+    /// don't infer one from the other by a ratio or formula.
+    private static let lightSaturationFilter: CIFilter = {
         let filter = CIFilter(name: "CIColorControls")!
         filter.setValue(1.75, forKey: "inputSaturation")
         return filter
     }()
 
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
+    private static let darkSaturationFilter: CIFilter = {
+        let filter = CIFilter(name: "CIColorControls")!
+        filter.setValue(1.2, forKey: "inputSaturation")
+        return filter
+    }()
+
+    func makeNSView(context: Context) -> AppearanceAdaptiveVisualEffectView {
+        let view = AppearanceAdaptiveVisualEffectView()
         view.material = material
         view.blendingMode = blendingMode
         // `.followsWindowActiveState`, *not* `.active`. This is the whole
@@ -220,13 +238,35 @@ struct VisualEffectView: NSViewRepresentable {
         // vibrancy while frontmost, a flat opaque background behind.
         view.state = .followsWindowActiveState
         view.wantsLayer = true
-        view.layer?.filters = [Self.saturationFilter]
+        view.lightFilter = Self.lightSaturationFilter
+        view.darkFilter = Self.darkSaturationFilter
+        view.applyFilterForCurrentAppearance()
         return view
     }
 
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+    func updateNSView(_ nsView: AppearanceAdaptiveVisualEffectView, context: Context) {
         nsView.material = material
         nsView.blendingMode = blendingMode
+    }
+}
+
+/// Swaps between `VisualEffectView`'s light/dark saturation filters live —
+/// overriding `viewDidChangeEffectiveAppearance()` is what makes this react
+/// to the user actually toggling System Settings' appearance while the
+/// window is open, not just whatever appearance was active at launch.
+final class AppearanceAdaptiveVisualEffectView: NSVisualEffectView {
+    var lightFilter: CIFilter?
+    var darkFilter: CIFilter?
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyFilterForCurrentAppearance()
+    }
+
+    func applyFilterForCurrentAppearance() {
+        let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let filter = isDark ? darkFilter : lightFilter
+        layer?.filters = filter.map { [$0] }
     }
 }
 

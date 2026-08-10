@@ -57,7 +57,7 @@ enum SettingsMetrics {
     /// vibrant `NSVisualEffectView` through a heavily-desaturating material,
     /// same as this one.
     static let sidebarBackgroundColor = adaptiveColor(
-        dark: NSColor(red: 0x33 / 255, green: 0x33 / 255, blue: 0x33 / 255, alpha: 0.05),
+        dark: NSColor(red: 0x37 / 255, green: 0x37 / 255, blue: 0x37 / 255, alpha: 0.05),
         light: NSColor(red: 0xFF / 255, green: 0xFF / 255, blue: 0xFF / 255, alpha: 0.05)
     )
 
