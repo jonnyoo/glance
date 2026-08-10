@@ -48,11 +48,25 @@ struct SettingsWindowView: View {
                     .clipShape(
                         RoundedRectangle(cornerRadius: SettingsMetrics.contentCornerRadius, style: .continuous)
                     )
+                    // Outer black ring (dark mode only) — same treatment as the
+                    // Unlock Animation preview tiles.
+                    .overlay(
+                        RoundedRectangle(
+                            cornerRadius: SettingsMetrics.contentCornerRadius
+                                + SettingsMetrics.optionPreviewOuterStrokeWidth,
+                            style: .continuous
+                        )
+                        .strokeBorder(
+                            SettingsMetrics.optionPreviewOuterStroke,
+                            lineWidth: SettingsMetrics.optionPreviewOuterStrokeWidth
+                        )
+                        .padding(-SettingsMetrics.optionPreviewOuterStrokeWidth)
+                    )
                     // Hairline stroke on the content (not the underlay) so it
                     // draws above the clipped page rather than under it.
                     .overlay(
                         RoundedRectangle(cornerRadius: SettingsMetrics.contentCornerRadius, style: .continuous)
-                            .strokeBorder(SettingsMetrics.contentStrokeColor, lineWidth: 0.5)
+                            .strokeBorder(SettingsMetrics.contentStrokeColor, lineWidth: 1)
                     )
                 }
                 .padding(SettingsMetrics.contentOuterSpacing)

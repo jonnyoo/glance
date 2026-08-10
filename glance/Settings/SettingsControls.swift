@@ -100,6 +100,7 @@ struct GlanceToggle: View {
         Toggle("", isOn: $isOn)
             .toggleStyle(.switch)
             .labelsHidden()
+            .controlSize(.small)
             .tint(GlanceTheme.accent)
     }
 }

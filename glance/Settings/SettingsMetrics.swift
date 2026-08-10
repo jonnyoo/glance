@@ -123,10 +123,10 @@ enum SettingsMetrics {
     )
     static let textTertiary = adaptiveColor(
         dark: NSColor(red: 0x99 / 255, green: 0x99 / 255, blue: 0x99 / 255, alpha: 1),
-        light: NSColor(white: 0, alpha: 0.30)
+        light: NSColor(white: 0, alpha: 0.4)
     )
 
-    static let rowHeight: CGFloat = 46
+    static let rowHeight: CGFloat = 44
     static let rowRadius: CGFloat = 16
     /// Same "flip the tint direction for a light background" logic as
     /// `selectedPillColor` above: a white-tinted row reads as a raised card
@@ -142,9 +142,9 @@ enum SettingsMetrics {
         light: NSColor(white: 0, alpha: 0.15)
     )
     static let rowBorderWidth: CGFloat = 1
-    static let rowFont = Font.system(size: 14, weight: .regular)
+    static let rowFont = Font.system(size: 13, weight: .regular)
     static let rowSpacing: CGFloat = 12
-    static let rowHorizontalInset: CGFloat = 12
+    static let rowHorizontalInset: CGFloat = 14
 
     /// Taller card used by multi-option pickers (e.g. Unlock Animation).
     static let optionCardVerticalPadding: CGFloat = 14
@@ -172,7 +172,7 @@ enum SettingsMetrics {
     )
     static let optionPreviewOuterStrokeWidth: CGFloat = 1
     static let optionPreviewBorderWidth: CGFloat = 1
-    static let sectionTitleFont = Font.system(size: 14, weight: .medium)
+    static let sectionTitleFont = Font.system(size: 13, weight: .medium)
     static let sectionTitleHorizontalInset: CGFloat = 10
     static let sectionTitleVerticalPadding: CGFloat = 8
 
