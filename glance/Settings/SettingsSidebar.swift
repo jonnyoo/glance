@@ -45,7 +45,7 @@ struct SettingsSidebar: View {
                 if let section {
                     Text(section.rawValue)
                         .font(SettingsMetrics.sectionHeaderFont)
-                        .foregroundStyle(SettingsMetrics.textSecondary)
+                        .foregroundStyle(SettingsMetrics.textTertiary)
                         .padding(.horizontal, 10)
                         .padding(.top, 14)
                         .padding(.bottom, 4)

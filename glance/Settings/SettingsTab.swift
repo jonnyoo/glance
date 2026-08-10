@@ -10,9 +10,9 @@
 import Foundation
 
 enum SettingsSection: String, CaseIterable, Hashable {
-    case authentication = "AUTHENTICATION"
-    case glance = "GLANCE"
-    case debug = "DEBUG"
+    case authentication = "Authentication"
+    case glance = "Glance"
+    case debug = "Debug"
 }
 
 enum SettingsTab: String, CaseIterable, Identifiable, Hashable {

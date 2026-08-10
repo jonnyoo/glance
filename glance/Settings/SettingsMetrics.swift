@@ -102,8 +102,8 @@ enum SettingsMetrics {
 
     static let sidebarItemHeight: CGFloat = 32
     static let sidebarSectionSpacing: CGFloat = 8
-    static let sidebarItemFont = Font.system(size: 14, weight: .medium)
-    static let sectionHeaderFont = Font.system(size: 12, weight: .semibold)
+    static let sidebarItemFont = Font.system(size: 14, weight: .regular)
+    static let sectionHeaderFont = Font.system(size: 14, weight: .medium)
     static let contentTitleFont = Font.system(size: 16, weight: .medium)
 
     /// Dark-mode values are unchanged, hand-measured-from-Figma literals.
