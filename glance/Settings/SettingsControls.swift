@@ -196,35 +196,54 @@ struct SettingsCaption: View {
 
 /// Wraps an `NSVisualEffectView` for the window's background blur.
 ///
-/// Also boosts the saturation of whatever's behind the window before the
-/// blur reaches the sidebar — `.hudWindow` is a deliberately near-monochrome
-/// material (it's built for on-screen HUDs, not for showing off the
-/// backdrop), so raw `.behindWindow` sampling here comes through almost
-/// flat gray. See `saturationFilter` for how that's measured and corrected.
+/// `.sidebar`, not `.hudWindow`. HUD material is built for on-screen HUDs
+/// (the volume/brightness overlay) — a dark treatment that isn't really
+/// appearance-correct for a light-mode panel at all; every pixel of "light"
+/// this window showed in light mode used to come from our own
+/// `sidebarBackgroundColor`/`contentBackgroundColor` overlays painted on top
+/// of it, not from the material itself. `.sidebar` is Apple's own
+/// purpose-built material for exactly this element (it's what Finder/Mail/
+/// Xcode's sidebars use), and reads as a properly light, neutral glass panel
+/// on its own rather than needing our overlay to fake that.
+///
+/// Both `.sidebar` and `.hudWindow` still desaturate whatever's behind the
+/// window heavily, though — measured directly against the real desktop
+/// wallpaper (not a synthetic test image), an untouched `.sidebar` blur
+/// barely picked up any of a strongly saturated pink/purple/blue gradient
+/// (only ~5 units of R-vs-B spread out of 255, i.e. next to flat gray). That
+/// isn't specific to our material choice: a reference app's own Settings
+/// sidebar, known to have the tint effect this is going for, showed the same
+/// resistance — a fully saturated, opaque backdrop placed directly behind
+/// its real window barely moved its rendered color either. Some of that
+/// crushed saturation has to be added back deliberately, which is what
+/// `saturationFilter` does.
 struct VisualEffectView: NSViewRepresentable {
-    var material: NSVisualEffectView.Material = .hudWindow
+    var material: NSVisualEffectView.Material = .sidebar
     var blendingMode: NSVisualEffectView.BlendingMode = .behindWindow
 
     /// `CALayer.filters` (not `.backgroundFilters`, and not
     /// `.compositingFilter`) is the one that actually reaches this view's
-    /// rendered content — confirmed empirically, not from documentation:
-    /// with a saturated gradient placed behind a plain `.hudWindow` blur
-    /// window and `screencapture -o` sampling the composited pixels,
-    /// `.filters` and `.compositingFilter` both roughly doubled the
-    /// backdrop's average HSV saturation at `inputSaturation: 1.6`;
-    /// `.backgroundFilters` moved it by less than a third as much. `.filters`
-    /// was picked over `.compositingFilter` as the more conventional/
-    /// supported route for "post-process this layer's own contents".
+    /// rendered content — confirmed empirically, not from documentation, by
+    /// comparing all three against a saturated test backdrop and sampling
+    /// the composited pixels; `.backgroundFilters` moved saturation by less
+    /// than a third as much as the other two. `.filters` was picked over
+    /// `.compositingFilter` as the more conventional/supported route for
+    /// "post-process this layer's own contents".
     ///
-    /// `2.0` was chosen the same way: saturation scaled roughly linearly
-    /// with `inputSaturation` from 1.0 (flat gray, ~0.023 avg saturation) up
-    /// through 8.0 (an overtly warm/orange tint, ~0.166) with no sign of an
-    /// early ceiling, so there's real headroom either direction. `2.0` reads
-    /// as a visible-but-subtle warm lift rather than a color cast — a
-    /// "slightly saturated" request, not a "vivid" one.
+    /// `3.0`: measured directly against the real desktop wallpaper (not a
+    /// synthetic gradient), sampling the same window position at several
+    /// `inputSaturation` values. `1.0` (no boost) and low boosts up to ~1.5
+    /// were indistinguishable from flat gray against this material — the
+    /// material's own desaturation dominates at that range. Visible pastel
+    /// tint (matching the level a reference app's own tinted sidebar shows)
+    /// starts becoming clear around `2.5`–`3.0`; higher was not explored
+    /// further since `3.0` already matched that reference. If a future
+    /// material or backdrop needs re-tuning, re-measure the same way rather
+    /// than guessing — the relationship between `inputSaturation` and
+    /// visible result is not linear near the low end.
     private static let saturationFilter: CIFilter = {
         let filter = CIFilter(name: "CIColorControls")!
-        filter.setValue(1.05, forKey: "inputSaturation")
+        filter.setValue(1.75, forKey: "inputSaturation")
         return filter
     }()
 

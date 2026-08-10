@@ -34,17 +34,31 @@ enum SettingsMetrics {
     /// bleed-through via `VisualEffectView`'s materials was the "colored
     /// glow" the header used to show).
     static let contentBackgroundColor = adaptiveColor(
-        dark: NSColor(red: 0x18 / 255, green: 0x18 / 255, blue: 0x18 / 255, alpha: 0.9),
-        light: NSColor(white: 1, alpha: 0.85)
+        dark: NSColor(red: 0x18 / 255, green: 0x18 / 255, blue: 0x18 / 255, alpha: 0.15),
+        light: NSColor(white: 1, alpha: 0.15)
     )
 
     /// The sidebar's fill: the same per-appearance color as the content
     /// panel, but translucent, so the sidebar still reads as a distinct,
     /// lighter layer floating over `VisualEffectView`'s blur rather than a
     /// second flat card butted up against the first.
+    ///
+    /// Alpha dropped from 0.35 deliberately, not just for looks: at 0.35 this
+    /// flat wash was strong enough to bury almost all of the real vibrancy
+    /// coming through `VisualEffectView` underneath it, which is what made
+    /// the sidebar read as a static gray panel instead of actual glass. A
+    /// wallpaper-file-reading hack was tried and reverted (see git history)
+    /// to fix that — the simpler, correct fix was just to stop hiding the
+    /// genuine `.behindWindow` blur that was already there. Confirmed
+    /// against a reference app (Alcove's own Settings window) known to have
+    /// the desired look: placing a fully saturated, opaque backdrop directly
+    /// behind its window barely moved its rendered color, meaning it isn't
+    /// running a special sampling trick either — it's a real, honestly
+    /// vibrant `NSVisualEffectView` through a heavily-desaturating material,
+    /// same as this one.
     static let sidebarBackgroundColor = adaptiveColor(
-        dark: NSColor(red: 0x33 / 255, green: 0x33 / 255, blue: 0x33 / 255, alpha: 0.35),
-        light: NSColor(white: 1, alpha: 0.35)
+        dark: NSColor(red: 0x33 / 255, green: 0x33 / 255, blue: 0x33 / 255, alpha: 0.05),
+        light: NSColor(red: 0xFF / 255, green: 0xFF / 255, blue: 0xFF / 255, alpha: 0.05)
     )
 
     /// Gap between the content panel and every window edge — including the
@@ -62,7 +76,7 @@ enum SettingsMetrics {
     /// role, opposite direction, chosen at a matching visual weight.
     static let selectedPillColor = adaptiveColor(
         dark: NSColor(white: 1, alpha: 0.06),
-        light: NSColor(white: 0, alpha: 0.05)
+        light: NSColor(white: 1, alpha: 0.4)
     )
 
     static let sidebarItemHeight: CGFloat = 32
