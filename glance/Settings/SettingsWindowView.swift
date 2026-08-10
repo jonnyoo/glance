@@ -122,7 +122,7 @@ struct SettingsWindowView: View {
                 .foregroundStyle(SettingsMetrics.textPrimary)
             Spacer()
         }
-        .padding(.horizontal, SettingsMetrics.contentHorizontalPadding)
+        .padding(.horizontal, SettingsMetrics.contentHorizontalPadding + 4)
         .padding(.top, 16)
         .frame(height: SettingsMetrics.headerHeight, alignment: .leading)
     }

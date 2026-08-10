@@ -47,8 +47,8 @@ struct SettingsSidebar: View {
                         .font(SettingsMetrics.sectionHeaderFont)
                         .foregroundStyle(SettingsMetrics.textSecondary)
                         .padding(.horizontal, 10)
-                        .padding(.top, 6)
-                        .padding(.bottom, 2)
+                        .padding(.top, 14)
+                        .padding(.bottom, 4)
                 }
                 ForEach(tabs) { tab in
                     sidebarRow(tab)

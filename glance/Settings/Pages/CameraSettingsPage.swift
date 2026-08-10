@@ -30,7 +30,7 @@ struct CameraSettingsPage: View {
                 .clipShape(RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius))
                 .overlay(
                     RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius)
-                        .strokeBorder(SettingsMetrics.rowBorder, lineWidth: 0.5)
+                        .strokeBorder(SettingsMetrics.rowBorder, lineWidth: SettingsMetrics.rowBorderWidth)
                 )
 
             if let error = previewCamera.errorMessage {

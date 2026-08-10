@@ -270,7 +270,7 @@ final class NotchOverlayController {
         resolveTask?.cancel()
         scanTimeoutTask?.cancel()
 
-        // "Play unlock animation" off just skips the success/failure video
+        // Unlock Animation → None just skips the success/failure video
         // — the phase (and hence the failure hover-to-retry behavior) is
         // unaffected, only what's shown while resolving.
         let shouldAnimate = GlanceSettings.shared.playUnlockAnimation

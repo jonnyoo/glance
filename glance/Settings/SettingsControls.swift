@@ -23,6 +23,23 @@ struct SettingsRow<Trailing: View>: View {
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
+        SettingsRowContent(title: title, subtitle: subtitle, trailing: trailing)
+            .background(SettingsMetrics.rowColor)
+            .overlay(
+                RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius)
+                    .strokeBorder(SettingsMetrics.rowBorder, lineWidth: SettingsMetrics.rowBorderWidth)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius))
+    }
+}
+
+/// Inner label + trailing control shared by standalone rows and grouped cards.
+struct SettingsRowContent<Trailing: View>: View {
+    let title: String
+    var subtitle: String? = nil
+    @ViewBuilder var trailing: () -> Trailing
+
+    var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
@@ -39,12 +56,33 @@ struct SettingsRow<Trailing: View>: View {
         }
         .padding(.horizontal, SettingsMetrics.rowHorizontalInset)
         .frame(height: SettingsMetrics.rowHeight)
+    }
+}
+
+/// Multiple `SettingsRowContent` rows in one card, separated by hairline
+/// dividers that match `rowBorder`.
+struct SettingsGroup<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            content()
+        }
         .background(SettingsMetrics.rowColor)
         .overlay(
             RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius)
-                .strokeBorder(SettingsMetrics.rowBorder, lineWidth: 0.5)
+                .strokeBorder(SettingsMetrics.rowBorder, lineWidth: SettingsMetrics.rowBorderWidth)
         )
         .clipShape(RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius))
+    }
+}
+
+/// Full-bleed hairline between rows inside a `SettingsGroup`.
+struct SettingsGroupDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(SettingsMetrics.rowBorder)
+            .frame(height: SettingsMetrics.rowBorderWidth)
     }
 }
 
@@ -107,7 +145,7 @@ struct SettingsSlider: View {
         .background(SettingsMetrics.rowColor)
         .overlay(
             RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius)
-                .strokeBorder(SettingsMetrics.rowBorder, lineWidth: 0.5)
+                .strokeBorder(SettingsMetrics.rowBorder, lineWidth: SettingsMetrics.rowBorderWidth)
         )
         .clipShape(RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius))
     }
@@ -151,6 +189,133 @@ struct SettingsCaption: View {
             .font(.system(size: 12))
             .foregroundStyle(SettingsMetrics.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// Left-aligned section title sitting above a settings card.
+struct SettingsSectionTitle: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(SettingsMetrics.sectionTitleFont)
+            .foregroundStyle(SettingsMetrics.textTertiary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, SettingsMetrics.sectionTitleHorizontalInset)
+            .padding(.top, SettingsMetrics.sectionTitleVerticalPadding)
+    }
+}
+
+/// Three-option unlock animation picker: preview tiles in a taller settings
+/// card, with the selected tile stroked in the accent color.
+struct UnlockAnimationPicker: View {
+    @Binding var selection: UnlockAnimationStyle
+
+    var body: some View {
+        HStack(spacing: SettingsMetrics.optionItemSpacing) {
+            ForEach(UnlockAnimationStyle.allCases) { style in
+                option(style)
+            }
+        }
+        .padding(.horizontal, SettingsMetrics.rowHorizontalInset)
+        .padding(.vertical, SettingsMetrics.optionCardVerticalPadding)
+        .background(
+            RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius)
+                .fill(SettingsMetrics.rowColor)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius)
+                .strokeBorder(SettingsMetrics.rowBorder, lineWidth: SettingsMetrics.rowBorderWidth)
+        )
+    }
+
+    private func option(_ style: UnlockAnimationStyle) -> some View {
+        let isSelected = selection == style
+        return Button {
+            selection = style
+        } label: {
+            VStack(spacing: 8) {
+                preview(for: style, isSelected: isSelected)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: SettingsMetrics.optionPreviewHeight)
+                    .background {
+                        SettingsMetrics.optionPreviewFill
+                        if isSelected {
+                            GlanceTheme.accent.opacity(SettingsMetrics.optionPreviewSelectedTintOpacity)
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: SettingsMetrics.optionPreviewCornerRadius, style: .continuous))
+                    // Shadow the filled tile alone — selection stroke is overlaid
+                    // after so it never changes shadow weight across options.
+                    .compositingGroup()
+                    .shadow(
+                        color: SettingsMetrics.optionPreviewShadowColor,
+                        radius: SettingsMetrics.optionPreviewShadowRadius,
+                        x: 0,
+                        y: 0
+                    )
+                    .overlay(
+                        // Outer black ring (dark mode only) — sits just outside
+                        // the rowBorder stroke.
+                        RoundedRectangle(
+                            cornerRadius: SettingsMetrics.optionPreviewCornerRadius
+                                + SettingsMetrics.optionPreviewOuterStrokeWidth,
+                            style: .continuous
+                        )
+                        .strokeBorder(
+                            SettingsMetrics.optionPreviewOuterStroke,
+                            lineWidth: SettingsMetrics.optionPreviewOuterStrokeWidth
+                        )
+                        .padding(-SettingsMetrics.optionPreviewOuterStrokeWidth)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: SettingsMetrics.optionPreviewCornerRadius, style: .continuous)
+                            .strokeBorder(
+                                SettingsMetrics.rowBorder,
+                                lineWidth: SettingsMetrics.optionPreviewBorderWidth
+                            )
+                    )
+                    .overlay {
+                        if isSelected {
+                            // Accent ring ~4pt outside the tile, in addition to
+                            // the always-on rowBorder above.
+                            let expansion = SettingsMetrics.optionSelectionOutset
+                                + SettingsMetrics.optionSelectionStrokeWidth
+                            RoundedRectangle(
+                                cornerRadius: SettingsMetrics.optionPreviewCornerRadius + expansion,
+                                style: .continuous
+                            )
+                            .strokeBorder(
+                                GlanceTheme.accent,
+                                lineWidth: SettingsMetrics.optionSelectionStrokeWidth
+                            )
+                            .padding(-expansion)
+                        }
+                    }
+
+                Text(style.title)
+                    .font(SettingsMetrics.optionLabelFont)
+                    .foregroundStyle(isSelected ? SettingsMetrics.textPrimary : SettingsMetrics.textSecondary)
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func preview(for style: UnlockAnimationStyle, isSelected: Bool) -> some View {
+        switch style {
+        case .none:
+            Image(systemName: "nosign")
+                .font(.system(size: 20, weight: .regular))
+                .foregroundStyle(SettingsMetrics.textSecondary)
+        case .minimal, .original:
+            // Placeholder until looping preview videos are wired in.
+            Image(systemName: "video")
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(isSelected ? SettingsMetrics.textPrimary.opacity(0.55) : SettingsMetrics.textSecondary.opacity(0.7))
+        }
     }
 }
 

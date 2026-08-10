@@ -12,6 +12,23 @@
 import Foundation
 import Observation
 
+/// Unlock success/failure animation style shown in the notch overlay.
+enum UnlockAnimationStyle: String, CaseIterable, Identifiable {
+    case none
+    case minimal
+    case original
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .none: return "None"
+        case .minimal: return "Minimal"
+        case .original: return "Original"
+        }
+    }
+}
+
 @Observable
 @MainActor
 final class GlanceSettings {
@@ -22,6 +39,8 @@ final class GlanceSettings {
         static let matchThreshold = "GlanceSettings.matchThreshold"
         static let minimumFaceWidth = "GlanceSettings.minimumFaceWidth"
         static let unlockOnWake = "GlanceSettings.unlockOnWake"
+        static let unlockAnimationStyle = "GlanceSettings.unlockAnimationStyle"
+        /// Legacy bool key — read once during migration, then ignored.
         static let playUnlockAnimation = "GlanceSettings.playUnlockAnimation"
         static let autoCheckForUpdates = "GlanceSettings.autoCheckForUpdates"
         static let defaultCameraID = "GlanceSettings.defaultCameraID"
@@ -50,9 +69,12 @@ final class GlanceSettings {
     var unlockOnWake: Bool {
         didSet { defaults.set(unlockOnWake, forKey: Key.unlockOnWake) }
     }
-    var playUnlockAnimation: Bool {
-        didSet { defaults.set(playUnlockAnimation, forKey: Key.playUnlockAnimation) }
+    var unlockAnimationStyle: UnlockAnimationStyle {
+        didSet { defaults.set(unlockAnimationStyle.rawValue, forKey: Key.unlockAnimationStyle) }
     }
+
+    /// Convenience for call sites that only care whether any unlock animation plays.
+    var playUnlockAnimation: Bool { unlockAnimationStyle != .none }
     /// UI-only for now — no update mechanism exists yet.
     var autoCheckForUpdates: Bool {
         didSet { defaults.set(autoCheckForUpdates, forKey: Key.autoCheckForUpdates) }
@@ -74,7 +96,15 @@ final class GlanceSettings {
         matchThreshold = defaults.object(forKey: Key.matchThreshold) as? Float ?? 0.6
         minimumFaceWidth = defaults.object(forKey: Key.minimumFaceWidth) as? Float ?? 0.18
         unlockOnWake = defaults.object(forKey: Key.unlockOnWake) as? Bool ?? false
-        playUnlockAnimation = defaults.object(forKey: Key.playUnlockAnimation) as? Bool ?? true
+        if let raw = defaults.string(forKey: Key.unlockAnimationStyle),
+           let style = UnlockAnimationStyle(rawValue: raw) {
+            unlockAnimationStyle = style
+        } else if let legacy = defaults.object(forKey: Key.playUnlockAnimation) as? Bool {
+            // Migrate the old on/off toggle: off → none, on → original.
+            unlockAnimationStyle = legacy ? .original : .none
+        } else {
+            unlockAnimationStyle = .original
+        }
         autoCheckForUpdates = defaults.object(forKey: Key.autoCheckForUpdates) as? Bool ?? true
         defaultCameraID = defaults.string(forKey: Key.defaultCameraID)
         builtInDisplayCameraID = defaults.string(forKey: Key.builtInDisplayCameraID)

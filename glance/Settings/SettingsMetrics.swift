@@ -103,7 +103,7 @@ enum SettingsMetrics {
     static let sidebarItemHeight: CGFloat = 32
     static let sidebarSectionSpacing: CGFloat = 8
     static let sidebarItemFont = Font.system(size: 14, weight: .medium)
-    static let sectionHeaderFont = Font.system(size: 11, weight: .semibold)
+    static let sectionHeaderFont = Font.system(size: 12, weight: .semibold)
     static let contentTitleFont = Font.system(size: 16, weight: .medium)
 
     /// Dark-mode values are unchanged, hand-measured-from-Figma literals.
@@ -121,9 +121,13 @@ enum SettingsMetrics {
         dark: NSColor(red: 0xBF / 255, green: 0xBF / 255, blue: 0xBF / 255, alpha: 1),
         light: NSColor(white: 0, alpha: 0.50)
     )
+    static let textTertiary = adaptiveColor(
+        dark: NSColor(red: 0x99 / 255, green: 0x99 / 255, blue: 0x99 / 255, alpha: 1),
+        light: NSColor(white: 0, alpha: 0.30)
+    )
 
-    static let rowHeight: CGFloat = 50
-    static let rowRadius: CGFloat = 17
+    static let rowHeight: CGFloat = 46
+    static let rowRadius: CGFloat = 16
     /// Same "flip the tint direction for a light background" logic as
     /// `selectedPillColor` above: a white-tinted row reads as a raised card
     /// against the dark content panel; on the white light-mode panel the
@@ -134,12 +138,43 @@ enum SettingsMetrics {
         light: NSColor(white: 1, alpha: 0.75)
     )
     static let rowBorder = adaptiveColor(
-        dark: NSColor(white: 1, alpha: 0.15),
+        dark: NSColor(white: 0.8, alpha: 0.12),
         light: NSColor(white: 0, alpha: 0.15)
     )
-    static let rowFont = Font.system(size: 15, weight: .medium)
+    static let rowBorderWidth: CGFloat = 1
+    static let rowFont = Font.system(size: 14, weight: .regular)
     static let rowSpacing: CGFloat = 12
-    static let rowHorizontalInset: CGFloat = 19
+    static let rowHorizontalInset: CGFloat = 12
+
+    /// Taller card used by multi-option pickers (e.g. Unlock Animation).
+    static let optionCardVerticalPadding: CGFloat = 14
+    static let optionPreviewHeight: CGFloat = 58
+    static let optionPreviewCornerRadius: CGFloat = 13
+    static let optionPreviewFill = adaptiveColor(
+        dark: NSColor(white: 1, alpha: 0.05),
+        light: NSColor(white: 0, alpha: 0.05)
+    )
+    /// Accent wash over `optionPreviewFill` when the tile is selected.
+    static let optionPreviewSelectedTintOpacity: CGFloat = 0.12
+    static let optionLabelFont = Font.system(size: 12, weight: .medium)
+    /// Blue selection ring sits this far outside the preview tile's edge.
+    static let optionSelectionOutset: CGFloat = 2.5
+    static let optionSelectionStrokeWidth: CGFloat = 3.5
+    static let optionItemSpacing: CGFloat = 10
+    /// Zero-offset soft edge so the preview tiles lift evenly on all sides.
+    static let optionPreviewShadowColor = Color.black.opacity(0.15)
+    static let optionPreviewShadowRadius: CGFloat = 4
+    /// Dark-mode-only ring drawn just outside the rowBorder stroke.
+    /// Clear in light mode so the overlay can stay unconditional.
+    static let optionPreviewOuterStroke = adaptiveColor(
+        dark: NSColor(white: 0.1, alpha: 0.6),
+        light: NSColor(white: 0, alpha: 0)
+    )
+    static let optionPreviewOuterStrokeWidth: CGFloat = 1
+    static let optionPreviewBorderWidth: CGFloat = 1
+    static let sectionTitleFont = Font.system(size: 14, weight: .medium)
+    static let sectionTitleHorizontalInset: CGFloat = 10
+    static let sectionTitleVerticalPadding: CGFloat = 8
 
     static let contentHorizontalPadding: CGFloat = 16
     static let headerHeight: CGFloat = 40
