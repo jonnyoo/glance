@@ -34,13 +34,19 @@ struct SettingsWindowView: View {
                 .clipShape(
                     RoundedRectangle(cornerRadius: SettingsMetrics.contentCornerRadius, style: .continuous)
                 )
-                // No stroke here any more: a hairline seam highlight made
-                // sense when the panel sat flush against the sidebar, but
-                // once there's a visible gap (padding, below) a border just
-                // duplicates the shadow's job of separating the two. `x`/`y`
-                // are left at their 0 defaults on purpose — an even halo on
-                // every side is what "equal on all sides" means here, not a
-                // drop shadow offset toward one corner.
+                // A hairline stroke defining the card's own edge — distinct
+                // from the shadow below, which separates the card from the
+                // sidebar rather than outlining the card itself. `.overlay`
+                // rather than `.strokeBorder` directly on the clip shape so
+                // the stroke draws on top of the already-clipped content
+                // instead of being clipped along with it.
+                .overlay(
+                    RoundedRectangle(cornerRadius: SettingsMetrics.contentCornerRadius, style: .continuous)
+                        .strokeBorder(SettingsMetrics.contentStrokeColor, lineWidth: 0.5)
+                )
+                // `x`/`y` are left at their 0 defaults on purpose — an even
+                // halo on every side is what "equal on all sides" means
+                // here, not a drop shadow offset toward one corner.
                 .shadow(color: SettingsMetrics.contentShadowColor, radius: SettingsMetrics.contentShadowRadius)
                 .padding(SettingsMetrics.contentOuterSpacing)
             }

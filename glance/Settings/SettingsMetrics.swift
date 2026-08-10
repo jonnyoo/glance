@@ -34,8 +34,8 @@ enum SettingsMetrics {
     /// bleed-through via `VisualEffectView`'s materials was the "colored
     /// glow" the header used to show).
     static let contentBackgroundColor = adaptiveColor(
-        dark: NSColor(red: 0x18 / 255, green: 0x18 / 255, blue: 0x18 / 255, alpha: 0.15),
-        light: NSColor(white: 1, alpha: 0.15)
+        dark: NSColor(red: 0x10 / 255, green: 0x10 / 255, blue: 0x10 / 255, alpha: 0.25),
+        light: NSColor(white: 1, alpha: 0.25)
     )
 
     /// The sidebar's fill: the same per-appearance color as the content
@@ -57,16 +57,30 @@ enum SettingsMetrics {
     /// vibrant `NSVisualEffectView` through a heavily-desaturating material,
     /// same as this one.
     static let sidebarBackgroundColor = adaptiveColor(
-        dark: NSColor(red: 0x37 / 255, green: 0x37 / 255, blue: 0x37 / 255, alpha: 0.05),
-        light: NSColor(red: 0xFF / 255, green: 0xFF / 255, blue: 0xFF / 255, alpha: 0.05)
+        dark: NSColor(red: 0x37 / 255, green: 0x37 / 255, blue: 0x37 / 255, alpha: 0),
+        light: NSColor(red: 0xFF / 255, green: 0xFF / 255, blue: 0xFF / 255, alpha: 0)
     )
 
     /// Gap between the content panel and every window edge — including the
     /// sidebar seam — now that the panel floats as its own card instead of
     /// sitting flush against the window frame.
     static let contentOuterSpacing: CGFloat = 8
-    static let contentShadowColor = Color.black.opacity(0.12)
-    static let contentShadowRadius: CGFloat = 12
+    static let contentShadowColor = Color.black.opacity(0.2)
+    static let contentShadowRadius: CGFloat = 8
+
+    /// A hairline edge around the content panel — an actual grey in both
+    /// appearances (unlike `rowBorder`/`selectedPillColor` elsewhere in this
+    /// file, which fake "grey" via a translucent black or white tint). The
+    /// panel already carries its own appearance-correct fill; the stroke
+    /// just needs to read as a slightly darker (light mode) or slightly
+    /// lighter (dark mode) edge against it, not introduce another tint of
+    /// its own. Kept deliberately faint — `0.3` alpha over a hairline
+    /// `0.5pt` width — so it defines the card's edge without competing with
+    /// the shadow that already separates it from the sidebar.
+    static let contentStrokeColor = adaptiveColor(
+        dark: NSColor(white: 0.5, alpha: 0.3),
+        light: NSColor(white: 0.5, alpha: 0.3)
+    )
 
     static let selectedPillRadius: CGFloat = 11
     /// A touch of *lightness* over the sidebar reads as "selected" against
