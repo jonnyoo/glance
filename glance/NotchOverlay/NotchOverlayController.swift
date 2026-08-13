@@ -80,6 +80,15 @@ final class NotchOverlayController {
     /// to the phase state machine itself.
     private(set) var isArmed = false
 
+    /// Pill style only (see NotchOverlayView): whether the pill is parked on
+    /// screen at rest, rather than off-screen above the top edge. True for
+    /// the duration of an armed lock-screen session, so a failed or timed-out
+    /// attempt shrinks back to a resting capsule; false everywhere else, so
+    /// the panel slides fully away when it's done. Deliberately separate from
+    /// `isArmed`: it lags it by a frame on the way in (that's what makes the
+    /// pill *slide* into the lock screen) and leads it on the way out.
+    private(set) var isPillDocked = false
+
     /// What a hover-driven activation should do — set by `arm()` (persists
     /// across scan cycles) or by one-shot `present(onRetry:)` (single use).
     private var onActivate: (() -> Void)?
@@ -110,6 +119,13 @@ final class NotchOverlayController {
 
     private init() {
         windowController.contentView = NSHostingView(rootView: NotchOverlayView(controller: self))
+        // Geometry is otherwise only sampled when a flow starts; a display
+        // being connected or disconnected mid-flow can flip the panel between
+        // notch and pill style, so keep it current.
+        windowController.onScreenParametersChanged = { [weak self] in
+            guard let self else { return }
+            self.geometry = self.windowController.currentGeometry
+        }
     }
 
     // MARK: - Armed mode (FaceUnlockCoordinator)
@@ -124,9 +140,26 @@ final class NotchOverlayController {
         geometry = windowController.currentGeometry
         phase = .closed
         content = .scan(.idle)
+        isPillDocked = false
         windowController.show()
         hasPrimedWindow = true // already shown+rendered while closed, same effect as primeWindowIfNeeded
         updateInteractivity()
+
+        guard geometry.style == .pill else {
+            // The notch silhouette has nowhere to travel from — it's drawn on
+            // top of hardware that's already there.
+            isPillDocked = true
+            return
+        }
+        // Same priming trick as `primeWindowIfNeeded`: render one real frame
+        // with the pill still parked off-screen, so flipping the flag next
+        // runloop animates it *down* into place instead of having it appear
+        // already docked.
+        windowController.displaySynchronously()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isArmed else { return }
+            self.isPillDocked = true
+        }
     }
 
     /// Truly hides the window. Only call this once the lock-screen attempt
@@ -144,13 +177,33 @@ final class NotchOverlayController {
     func disarm() {
         isArmed = false
         onActivate = nil
+        // Undocked *before* the guard below: when a success collapse is
+        // already in flight this is the only thing that runs, and it's what
+        // turns that collapse into a full slide-off-screen exit rather than a
+        // shrink back to a resting pill.
+        isPillDocked = false
         guard phase != .success, phase != .collapsing else { return }
         resolveTask?.cancel(); resolveTask = nil
         scanTimeoutTask?.cancel(); scanTimeoutTask = nil
         phase = .closed
         content = .scan(.idle)
         windowController.setInteractive(false)
-        windowController.hide()
+
+        guard geometry.style == .pill, windowController.isVisible else {
+            windowController.hide()
+            return
+        }
+        // The pill is visible at rest, so ordering the window out right now
+        // would blink it out of existence — which is exactly what happens
+        // when the user unlocks by typing their password instead. Give the
+        // slide-up time to play first. (`disarm()` also fires on every
+        // lock-state change with nothing on screen, hence the visibility
+        // check above — no point scheduling a teardown for a hidden window.)
+        Task { [weak self] in
+            try? await Task.sleep(for: self?.collapseAnimationDuration ?? .milliseconds(700))
+            guard let self, !self.isArmed, self.phase == .closed else { return }
+            self.windowController.hide()
+        }
     }
 
     /// Begins a scanning window: shows the idle still, and auto-collapses
@@ -340,6 +393,7 @@ final class NotchOverlayController {
         scanTimeoutTask?.cancel(); scanTimeoutTask = nil
         phase = .closed
         content = .scan(.idle)
+        isPillDocked = false
         windowController.setInteractive(false)
         windowController.hide()
     }

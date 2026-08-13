@@ -21,6 +21,12 @@ final class NotchWindowController {
         didSet { window?.contentView = contentView }
     }
 
+    /// Fired when the display configuration changes, so the overlay
+    /// controller can re-read `currentGeometry`. Matters more than it used
+    /// to: plugging in (or unplugging) a notched display now changes the
+    /// panel's *shape*, not just its width.
+    var onScreenParametersChanged: (@MainActor () -> Void)?
+
     init() {
         NotificationCenter.default.addObserver(
             self,
@@ -84,6 +90,10 @@ final class NotchWindowController {
         window.makeKeyAndOrderFront(nil)
     }
 
+    /// Whether the overlay window is actually on screen right now. Callers
+    /// use this to decide whether a teardown needs to animate at all.
+    var isVisible: Bool { window?.isVisible ?? false }
+
     /// Current geometry for the preferred screen — read by
     /// NotchOverlayView/NotchOverlayController to size the closed/open
     /// silhouette without needing their own screen-selection logic.
@@ -112,6 +122,7 @@ final class NotchWindowController {
     }
 
     @objc private func screenParametersChanged() {
+        onScreenParametersChanged?()
         guard let window, window.isVisible else { return }
         reposition(window)
     }

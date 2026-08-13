@@ -86,7 +86,14 @@ enum OnboardingMetrics {
     /// the very top of the panel, so title/text content needs real
     /// clearance below it or it reads as clipped.
     static let titleTopInset: CGFloat = 50
+    /// Pill style has no housing to clear — the panel floats free of the
+    /// screen edge — so the same inset just leaves content sitting low.
+    static let pillTitleTopInset: CGFloat = 32
     static let contentBottomInset: CGFloat = 40
+
+    static func titleTopInset(for style: NotchPanelStyle) -> CGFloat {
+        style == .pill ? pillTitleTopInset : titleTopInset
+    }
 
     static let pillButtonHeight: CGFloat = 38
     static let pillButtonRadius: CGFloat = 17
@@ -130,4 +137,22 @@ enum OnboardingMetrics {
     static let guideTextSpacing: CGFloat = 20
     static let guideFadeIn: Double = 0.3
     static let guideFadeOut: Double = 0.35
+}
+
+extension View {
+    /// Top inset for a step view's content, sized to whichever silhouette the
+    /// panel is currently wearing (see `NotchPanelStyle`). Reads the style
+    /// from the environment rather than taking a parameter so every step view
+    /// stays a plain `(controller) -> View`.
+    func panelTitleTopInset() -> some View {
+        modifier(PanelTitleTopInset())
+    }
+}
+
+private struct PanelTitleTopInset: ViewModifier {
+    @Environment(\.notchPanelStyle) private var style
+
+    func body(content: Content) -> some View {
+        content.padding(.top, OnboardingMetrics.titleTopInset(for: style))
+    }
 }

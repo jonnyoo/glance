@@ -38,7 +38,7 @@ struct IntroStepView: View {
                 .padding(.top, 4)
         }
         .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding)
-        .padding(.top, OnboardingMetrics.titleTopInset)
+        .panelTitleTopInset()
         .padding(.bottom, OnboardingMetrics.contentBottomInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(GlanceTheme.panel)
@@ -92,7 +92,7 @@ struct PermissionsStepView: View {
             }
         }
         .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding)
-        .padding(.top, OnboardingMetrics.titleTopInset)
+        .panelTitleTopInset()
         .padding(.bottom, OnboardingMetrics.contentBottomInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(GlanceTheme.panel)
@@ -135,7 +135,7 @@ struct PreSetupStepView: View {
             }
         }
         .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding)
-        .padding(.top, OnboardingMetrics.titleTopInset)
+        .panelTitleTopInset()
         .padding(.bottom, OnboardingMetrics.contentBottomInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(GlanceTheme.panel)
@@ -221,7 +221,7 @@ struct PasswordStepView: View {
             }
         }
         .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding)
-        .padding(.top, OnboardingMetrics.titleTopInset)
+        .panelTitleTopInset()
         .padding(.bottom, OnboardingMetrics.contentBottomInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(GlanceTheme.panel)

@@ -2,22 +2,27 @@
 //  NotchGeometry.swift
 //  glance
 //
-//  Pure geometry — no AppKit window knowledge. Computes where the physical
-//  (or synthetic) notch sits on a given screen and how big the overlay
-//  window should be, so NotchWindowController just asks "where" and "how
-//  big" without knowing how those numbers were derived.
+//  Pure geometry — no AppKit window knowledge. Computes where the panel sits
+//  on a given screen (on the physical notch, or as a detached pill where
+//  there isn't one) and how big the overlay window should be, so
+//  NotchWindowController just asks "where" and "how big" without knowing how
+//  those numbers were derived.
 //
 
 import AppKit
 import CoreGraphics
 
 struct NotchGeometry {
-    /// Size of the closed (collapsed) notch silhouette, in the screen's own
-    /// point space.
+    /// Size of the closed (collapsed) silhouette, in the screen's own point
+    /// space — the physical notch's own dimensions, or `pillClosedSize`.
     let closedSize: CGSize
-    /// True if this screen has a real physical notch (vs. the synthetic
-    /// fallback drawn for external/non-notched displays).
+    /// True if this screen has a real physical notch (vs. the pill fallback
+    /// drawn for external/non-notched displays).
     let isPhysicalNotch: Bool
+
+    /// Which silhouette this screen's panel wears. Screens with real hardware
+    /// to sit on get the notch; everything else gets the detached pill.
+    var style: NotchPanelStyle { isPhysicalNotch ? .notch : .pill }
 
     /// Fixed footprint the scan-mode overlay content (armed lock-screen
     /// flow, Face Lab previews) animates within when expanded. Sized for
@@ -37,7 +42,45 @@ struct NotchGeometry {
     /// Horizontal padding the flare consumes on each side. A shape drawn in
     /// a rect of width `w` has a visible body of `w - 2 * topRadius`, so
     /// callers add this to a desired body width to get the frame width.
-    static func flareAllowance(topRadius: CGFloat) -> CGFloat { topRadius * 2 }
+    /// Zero in pill style — that shape has no flare, its body *is* the rect.
+    static func flareAllowance(topRadius: CGFloat, style: NotchPanelStyle) -> CGFloat {
+        style == .notch ? topRadius * 2 : 0
+    }
+
+    // MARK: - Pill style (non-notched displays) — EDIT HERE
+    //
+    // The dynamic-island fallback. Collapsed it's a capsule; expanded it's a
+    // floating rounded rectangle at the same footprints the notch uses (scan
+    // `openSize`, or whatever step onboarding is on).
+
+    /// Resting/entering pill footprint. Deliberately narrower than every
+    /// expanded footprint (the smallest is scan mode's 220pt) so the growth
+    /// is visible rather than a barely-perceptible nudge.
+    static let pillClosedSize = CGSize(width: 150, height: 32)
+
+    /// How far below the top of the screen the pill and the expanded panel
+    /// sit — the whole point of the pill is that it's *detached* from the
+    /// edge, so this should never be zero.
+    static let pillTopGap: CGFloat = 6
+
+    /// Corner radius of the expanded rounded rectangle. Uniform on all four
+    /// corners, unlike the notch (whose heavy bottom radius exists to
+    /// balance the flare at the top).
+    static let pillOpenCornerRadius: CGFloat = 32
+
+    /// Blur applied to the whole panel — pill body included — while it's
+    /// off-screen, resolving to zero as it slides into place.
+    static let pillEnterBlur: CGFloat = 12
+
+    /// Extra distance past the top of the screen the pill parks at while
+    /// hidden. Comfortably more than `pillEnterBlur` on purpose: a Gaussian
+    /// blur spreads well past its nominal radius, and without the margin the
+    /// parked pill smears a faint dark band across the top of the screen.
+    static let pillOffscreenSlack: CGFloat = 28
+
+    /// Scan-mode top padding in pill style. Larger than the notch's, which
+    /// is tuned tight because the camera housing already eats that space.
+    static let pillContentPaddingTop: CGFloat = 30
 
     /// Black padding between the notch shape's edge and the video/image
     /// content inside it — edit these four to adjust how much breathing
@@ -65,25 +108,29 @@ struct NotchGeometry {
         let contentHeight = max(openSize.height, OnboardingMetrics.maxPanelHeight)
         return CGSize(
             width: contentWidth + shadowPadding * 2 + hoverBump,
-            height: contentHeight + shadowPadding + hoverBump
+            // `pillTopGap` because the pill style pushes its whole panel
+            // down by that much — without it the extra travel eats into the
+            // shadow margin at the bottom.
+            height: contentHeight + shadowPadding + hoverBump + pillTopGap
         )
     }
 
-    /// Synthetic fallback for displays with no physical notch (external
-    /// monitors, older MacBooks) — a consistent visual home for the overlay
-    /// everywhere, centered at the top edge.
-    private static let syntheticClosedSize = CGSize(width: 200, height: 32)
+    /// Floor for a *physical* notch's measured width — the auxiliary-area
+    /// arithmetic below can come up implausibly small on odd display
+    /// configurations. Unrelated to `pillClosedSize`, which is a design
+    /// choice rather than a guard rail.
+    private static let minimumNotchWidth: CGFloat = 200
 
     static func forMainScreen() -> NotchGeometry {
         guard let screen = NSScreen.main else {
-            return NotchGeometry(closedSize: syntheticClosedSize, isPhysicalNotch: false)
+            return NotchGeometry(closedSize: pillClosedSize, isPhysicalNotch: false)
         }
         return forScreen(screen)
     }
 
     static func forScreen(_ screen: NSScreen) -> NotchGeometry {
         guard screen.safeAreaInsets.top > 0 else {
-            return NotchGeometry(closedSize: syntheticClosedSize, isPhysicalNotch: false)
+            return NotchGeometry(closedSize: pillClosedSize, isPhysicalNotch: false)
         }
 
         // Width derived from the menu-bar areas flanking the notch — the
@@ -92,7 +139,7 @@ struct NotchGeometry {
         // relying on these being present.
         let leftPadding = screen.auxiliaryTopLeftArea?.width ?? 0
         let rightPadding = screen.auxiliaryTopRightArea?.width ?? 0
-        let width = max(screen.frame.width - leftPadding - rightPadding, syntheticClosedSize.width)
+        let width = max(screen.frame.width - leftPadding - rightPadding, minimumNotchWidth)
         let height = screen.safeAreaInsets.top
 
         return NotchGeometry(closedSize: CGSize(width: width, height: height), isPhysicalNotch: true)

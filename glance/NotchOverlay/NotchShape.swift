@@ -15,12 +15,20 @@
 //  accounts for it so a requested body width lands exactly on the physical
 //  notch width.
 //
+//  In `.pill` style none of that applies: the shape is an ordinary rounded
+//  rectangle filling the whole rect (a capsule when the radii reach half its
+//  height), because it floats free of the screen edge. `style` is fixed for
+//  the lifetime of a given screen and so is deliberately *not* part of
+//  `animatableData` — only the radii interpolate, which is what carries the
+//  capsule → rounded-rectangle transition.
+//
 
 import SwiftUI
 
 struct NotchShape: Shape {
     var topRadius: CGFloat
     var bottomRadius: CGFloat
+    var style: NotchPanelStyle = .notch
 
     var animatableData: AnimatablePair<CGFloat, CGFloat> {
         get { AnimatablePair(topRadius, bottomRadius) }
@@ -31,6 +39,13 @@ struct NotchShape: Shape {
     }
 
     func path(in rect: CGRect) -> Path {
+        switch style {
+        case .notch: return notchPath(in: rect)
+        case .pill: return pillPath(in: rect)
+        }
+    }
+
+    private func notchPath(in rect: CGRect) -> Path {
         // Clamp so a small closed size can't produce self-intersecting
         // curves when the radii exceed half the available width/height.
         let top = max(0, min(topRadius, rect.width / 2))
@@ -69,10 +84,51 @@ struct NotchShape: Shape {
         path.closeSubpath()
         return path
     }
+
+    /// Rounded rectangle filling the whole rect, with independently-rounded
+    /// top and bottom corners. Circular arcs rather than the notch path's
+    /// quad-curve approximation, because at the collapsed size the radii
+    /// reach half the height and only a true arc gives an honest capsule —
+    /// a quadratic corner reads visibly pinched there.
+    private func pillPath(in rect: CGRect) -> Path {
+        let limit = min(rect.width, rect.height) / 2
+        let top = max(0, min(topRadius, limit))
+        let bottom = max(0, min(bottomRadius, limit))
+
+        let topLeft = CGPoint(x: rect.minX, y: rect.minY)
+        let topRight = CGPoint(x: rect.maxX, y: rect.minY)
+        let bottomRight = CGPoint(x: rect.maxX, y: rect.maxY)
+        let bottomLeft = CGPoint(x: rect.minX, y: rect.maxY)
+
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addArc(tangent1End: topRight, tangent2End: bottomRight, radius: top)
+        path.addArc(tangent1End: bottomRight, tangent2End: bottomLeft, radius: bottom)
+        path.addArc(tangent1End: bottomLeft, tangent2End: topLeft, radius: bottom)
+        path.addArc(tangent1End: topLeft, tangent2End: topRight, radius: top)
+        path.closeSubpath()
+        return path
+    }
 }
 
-#Preview {
+#Preview("Notch") {
     NotchShape(topRadius: 10, bottomRadius: 28)
         .frame(width: 280, height: 220)
         .padding(20)
+}
+
+#Preview("Pill — collapsed") {
+    NotchShape(topRadius: 16, bottomRadius: 16, style: .pill)
+        .frame(width: NotchGeometry.pillClosedSize.width, height: NotchGeometry.pillClosedSize.height)
+        .padding(20)
+}
+
+#Preview("Pill — expanded") {
+    NotchShape(
+        topRadius: NotchGeometry.pillOpenCornerRadius,
+        bottomRadius: NotchGeometry.pillOpenCornerRadius,
+        style: .pill
+    )
+    .frame(width: 380, height: 220)
+    .padding(20)
 }
