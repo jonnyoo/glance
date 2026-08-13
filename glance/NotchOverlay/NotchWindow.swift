@@ -3,7 +3,7 @@
 //  glance
 //
 //  Borderless, transparent, click-through panel. Created once at
-//  `NotchGeometry.windowSize` and never resized — the spike (Phase 0)
+//  `NotchGeometry.windowSize(for:)` and never resized — the spike (Phase 0)
 //  confirmed standard AppKit window levels are NOT visible on the real
 //  lock screen, so `NotchSkyLight` is used to bridge that gap, toggled on
 //  only while the screen is actually locked.

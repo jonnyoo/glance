@@ -103,7 +103,11 @@ final class NotchWindowController {
 
     private func windowIfNeeded() -> NotchWindow {
         if let window { return window }
-        let size = NotchGeometry.windowSize
+        // Sized for whichever style is active on the current display right
+        // now — the window is never resized afterward (see NotchWindow.swift),
+        // so a display change that swaps styles mid-session keeps whatever
+        // margin this style was created with.
+        let size = NotchGeometry.windowSize(for: currentGeometry.style)
         let rect = NSRect(x: 0, y: 0, width: size.width, height: size.height)
         let newWindow = NotchWindow(contentRect: rect)
         newWindow.contentView = contentView

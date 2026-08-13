@@ -71,7 +71,7 @@ enum OnboardingMetrics {
     }
 
     /// The envelope the fixed notch window itself must be sized to fit —
-    /// see `NotchGeometry.windowSize`, which combines this with the
+    /// see `NotchGeometry.windowSize(for:)`, which combines this with the
     /// pre-existing scan-mode footprint.
     static let maxPanelWidth: CGFloat = max(panelWidth, enrollPanelSize.width)
     static let maxPanelHeight: CGFloat = [
