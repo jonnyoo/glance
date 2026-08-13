@@ -39,7 +39,7 @@ struct NotchGeometry {
     static let openTopRadius: CGFloat = 16
     /// Deliberately generous — the expanded panel should read as strongly
     /// rounded at the bottom.
-    static let openBottomRadius: CGFloat = 65
+    static let openBottomRadius: CGFloat = 60
 
     /// Horizontal padding the flare consumes on each side. A shape drawn in
     /// a rect of width `w` has a visible body of `w - 2 * topRadius`, so
