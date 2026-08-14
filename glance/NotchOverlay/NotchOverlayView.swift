@@ -124,16 +124,17 @@ struct NotchOverlayView: View {
         style == .notch ? NotchGeometry.notchOpenSize : NotchGeometry.pillOpenSize
     }
 
-    /// The minimal style's "expanded" footprint. In notch style the height
-    /// is deliberately unchanged from the resting silhouette — only the
-    /// width grows, adding a flank of black either side of the physical
-    /// cutout for the content to live in.
+    /// The minimal style's "expanded" footprint. In notch style the width
+    /// grows to add a flank of black either side of the physical cutout,
+    /// and the height grows by `minimalNotchHeightBump` — the closed
+    /// silhouette itself (the physical notch's own height) can't change,
+    /// so this appears as extra black *below* it once expanded.
     private var minimalOpenBodySize: CGSize {
         switch style {
         case .notch:
             return CGSize(
                 width: closedBodySize.width + NotchGeometry.minimalNotchFlankWidth * 2,
-                height: closedBodySize.height
+                height: closedBodySize.height + NotchGeometry.minimalNotchHeightBump
             )
         case .pill:
             return CGSize(
@@ -290,6 +291,15 @@ struct NotchOverlayView: View {
                 // where the flank actually becomes visible.
                 edgeInset: NotchGeometry.minimalContentEdgeInset
                     + (style == .notch ? topRadius : 0),
+                // Notch's minimal panel is taller (`minimalNotchHeightBump`)
+                // — bigger icon/media sizes so that extra room is a
+                // deliberate, consistent enlargement rather than an
+                // incidental one that depends on exactly how tall a given
+                // Mac's physical notch happens to be.
+                lockIconSize: style == .notch
+                    ? NotchGeometry.minimalNotchLockIconSize : NotchGeometry.minimalLockIconSize,
+                mediaWidth: style == .notch
+                    ? NotchGeometry.minimalNotchMediaWidth : NotchGeometry.minimalMediaWidth,
                 pulseScale: scanPulseScale,
                 pulseOpacity: scanPulseOpacity
             )

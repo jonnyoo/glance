@@ -20,6 +20,11 @@
 //  The middle `Spacer` is what makes one layout cover both: it absorbs
 //  whatever the panel's width happens to be (which differs per style, and
 //  grows further on hover) without this view needing to know any of it.
+//  `lockIconSize`/`mediaWidth` are resolved by the caller (notch gets
+//  bigger ones, to match its taller minimal panel — see
+//  `NotchGeometry.minimalNotchLockIconSize`/`minimalNotchMediaWidth`)
+//  rather than read from `NotchGeometry` directly, so this view stays
+//  style-agnostic.
 //
 //  The media is `ScanAnimationView` unchanged — it already maps `.idle` to
 //  the still and `.success`/`.failure` to their videos, and holds the final
@@ -39,6 +44,8 @@ struct MinimalUnlockView: View {
     /// Inset from the silhouette's left/right edges. The caller adds the
     /// notch's flare allowance into this where it applies.
     let edgeInset: CGFloat
+    var lockIconSize: CGFloat = NotchGeometry.minimalLockIconSize
+    var mediaWidth: CGFloat = NotchGeometry.minimalMediaWidth
     /// The scan "breathing" pulse — applied to the video only, not the lock
     /// icon or the panel as a whole. Both default to identity so callers
     /// outside `.scanning` (or previews) don't need to pass anything.
@@ -48,7 +55,7 @@ struct MinimalUnlockView: View {
     var body: some View {
         HStack(spacing: 0) {
             Image(systemName: isUnlocked ? "lock.open.fill" : "lock.fill")
-                .font(.system(size: NotchGeometry.minimalLockIconSize, weight: .semibold))
+                .font(.system(size: lockIconSize, weight: .semibold))
                 .foregroundStyle(GlanceTheme.textPrimary)
                 // Magic replace morphs the shackle between the two glyphs
                 // instead of cross-fading them. It only animates if the
@@ -61,13 +68,13 @@ struct MinimalUnlockView: View {
                     .smooth(duration: NotchGeometry.minimalLockAnimationDuration),
                     value: isUnlocked
                 )
-                .frame(width: NotchGeometry.minimalMediaWidth)
+                .frame(width: mediaWidth)
 
             Spacer(minLength: 0)
 
             ScanAnimationView(media: media)
                 .padding(.vertical, NotchGeometry.minimalMediaVerticalInset + 4)
-                .frame(width: NotchGeometry.minimalMediaWidth)
+                .frame(width: mediaWidth)
                 // Scoped to the video alone — the lock icon on the left
                 // must stay steady while this breathes.
                 .scaleEffect(pulseScale)

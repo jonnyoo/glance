@@ -156,7 +156,7 @@ struct NotchGeometry {
     /// body width is `geometry.closedSize.width + 2 * this`. Ceiling: the
     /// fixed window is ~434pt wide (see `windowSize(for:)`), and a notch
     /// measures ~200-220pt, so much past 100 will start to clip.
-    static let minimalNotchFlankWidth: CGFloat = 44
+    static let minimalNotchFlankWidth: CGFloat = 40
 
     /// The pill's minimal footprint. Taller than `pillClosedSize.height` so
     /// the icon and video are legible — the corner radius stays
@@ -165,26 +165,47 @@ struct NotchGeometry {
     static let minimalPillOpenWidth: CGFloat = 150
     static let minimalPillOpenHeight: CGFloat = 40
 
-    /// Radii for the widened notch. Default to the closed values because
-    /// the height doesn't change — these exist only so the widened notch
-    /// can be rounded differently from the resting one if wanted.
-    static let minimalNotchTopRadius: CGFloat = closedTopRadius
-    static let minimalNotchBottomRadius: CGFloat = closedBottomRadius
+    /// Extra height added *only* in notch style once expanded for minimal
+    /// unlock. The physical notch's own height can't change (that's the
+    /// cutout), so this appears as extra black below it — the panel is
+    /// top-aligned and always grows downward (see `NotchOverlayView`'s
+    /// `verticalOffset` header comment), so the bump is real, visible
+    /// display, not more cutout. Pill style is untouched by this entire
+    /// section; its minimal footprint is `minimalPillOpenWidth/Height` only.
+    static let minimalNotchHeightBump: CGFloat = 12
+
+    /// Radii for the widened notch — noticeably more rounded than the
+    /// resting silhouette's `closedTopRadius`/`closedBottomRadius` (8/12),
+    /// the bottom more so than the top, same ratio the full-expand style
+    /// uses (`openTopRadius`/`openBottomRadius`, 16/60).
+    static let minimalNotchTopRadius: CGFloat = 12
+    static let minimalNotchBottomRadius: CGFloat = 22
 
     /// Inset from the silhouette's left/right edges to the content. In
     /// notch style the flare occupies `topRadius` of that margin already,
     /// so this is added on top of it.
     static let minimalContentEdgeInset: CGFloat = 4
-    /// Point size of the lock glyph.
+
+    /// Point size of the lock glyph, pill style (and the shared fallback).
     static let minimalLockIconSize: CGFloat = 14
     /// Width of each content region — the lock on one end, the video on the
     /// other. The video is square and aspect-fit, so its rendered size is
     /// really `min(this, panelHeight - 2 * minimalMediaVerticalInset)`.
+    /// Pill style (and the shared fallback).
     static let minimalMediaWidth: CGFloat = 34
-    /// Breathing room above and below the video. Without it the square
-    /// aspect-fits to the *full* panel height and touches both edges, which
-    /// reads as cramped — the panel is only as tall as the notch here.
-    static let minimalMediaVerticalInset: CGFloat = 3
+    /// Breathing room above and below the video, both styles. Without it
+    /// the square aspect-fits to the *full* panel height and touches both
+    /// edges, which reads as cramped.
+    static let minimalMediaVerticalInset: CGFloat = 7
+
+    /// Notch-style counterparts of the two above — bumped up to match
+    /// `minimalNotchHeightBump`, so the icon and video actually fill the
+    /// taller panel rather than just sitting in more empty space around
+    /// them. Vertical inset isn't split: it stays the same for both styles,
+    /// so all of the height bump flows into the video getting bigger rather
+    /// than being partly eaten back up by more padding.
+    static let minimalNotchLockIconSize: CGFloat = 16
+    static let minimalNotchMediaWidth: CGFloat = 40
 
     /// Delay between the unlock landing and the lock glyph flipping open,
     /// so it can be nudged to land with the video's own resolve beat
