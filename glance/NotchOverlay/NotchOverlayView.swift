@@ -300,6 +300,9 @@ struct NotchOverlayView: View {
                     ? NotchGeometry.minimalNotchLockIconSize : NotchGeometry.minimalLockIconSize,
                 mediaWidth: style == .notch
                     ? NotchGeometry.minimalNotchMediaWidth : NotchGeometry.minimalMediaWidth,
+                mediaVerticalInset: style == .notch
+                    ? NotchGeometry.minimalNotchMediaVerticalInset
+                    : NotchGeometry.minimalMediaVerticalInset,
                 pulseScale: scanPulseScale,
                 pulseOpacity: scanPulseOpacity
             )

@@ -156,7 +156,7 @@ struct NotchGeometry {
     /// body width is `geometry.closedSize.width + 2 * this`. Ceiling: the
     /// fixed window is ~434pt wide (see `windowSize(for:)`), and a notch
     /// measures ~200-220pt, so much past 100 will start to clip.
-    static let minimalNotchFlankWidth: CGFloat = 40
+    static let minimalNotchFlankWidth: CGFloat = 42
 
     /// The pill's minimal footprint. Taller than `pillClosedSize.height` so
     /// the icon and video are legible — the corner radius stays
@@ -193,19 +193,19 @@ struct NotchGeometry {
     /// really `min(this, panelHeight - 2 * minimalMediaVerticalInset)`.
     /// Pill style (and the shared fallback).
     static let minimalMediaWidth: CGFloat = 34
-    /// Breathing room above and below the video, both styles. Without it
+    /// Breathing room above and below the video, pill style. Without it
     /// the square aspect-fits to the *full* panel height and touches both
     /// edges, which reads as cramped.
-    static let minimalMediaVerticalInset: CGFloat = 7
+    static let minimalMediaVerticalInset: CGFloat = 8
 
-    /// Notch-style counterparts of the two above — bumped up to match
+    /// Notch-style counterparts of the three above — bumped up to match
     /// `minimalNotchHeightBump`, so the icon and video actually fill the
     /// taller panel rather than just sitting in more empty space around
-    /// them. Vertical inset isn't split: it stays the same for both styles,
-    /// so all of the height bump flows into the video getting bigger rather
-    /// than being partly eaten back up by more padding.
+    /// them. The vertical inset is larger than the pill's so the video
+    /// doesn't sit flush against the extra black below the cutout.
     static let minimalNotchLockIconSize: CGFloat = 16
     static let minimalNotchMediaWidth: CGFloat = 40
+    static let minimalNotchMediaVerticalInset: CGFloat = 11
 
     /// Delay between the unlock landing and the lock glyph flipping open,
     /// so it can be nudged to land with the video's own resolve beat

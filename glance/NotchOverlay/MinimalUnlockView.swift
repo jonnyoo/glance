@@ -20,11 +20,11 @@
 //  The middle `Spacer` is what makes one layout cover both: it absorbs
 //  whatever the panel's width happens to be (which differs per style, and
 //  grows further on hover) without this view needing to know any of it.
-//  `lockIconSize`/`mediaWidth` are resolved by the caller (notch gets
-//  bigger ones, to match its taller minimal panel — see
-//  `NotchGeometry.minimalNotchLockIconSize`/`minimalNotchMediaWidth`)
-//  rather than read from `NotchGeometry` directly, so this view stays
-//  style-agnostic.
+//  `lockIconSize`/`mediaWidth`/`mediaVerticalInset` are resolved by the
+//  caller (notch gets bigger ones, to match its taller minimal panel —
+//  see `NotchGeometry.minimalNotchLockIconSize`/`minimalNotchMediaWidth`/
+//  `minimalNotchMediaVerticalInset`) rather than read from `NotchGeometry`
+//  directly, so this view stays style-agnostic.
 //
 //  The media is `ScanAnimationView` unchanged — it already maps `.idle` to
 //  the still and `.success`/`.failure` to their videos, and holds the final
@@ -46,6 +46,7 @@ struct MinimalUnlockView: View {
     let edgeInset: CGFloat
     var lockIconSize: CGFloat = NotchGeometry.minimalLockIconSize
     var mediaWidth: CGFloat = NotchGeometry.minimalMediaWidth
+    var mediaVerticalInset: CGFloat = NotchGeometry.minimalMediaVerticalInset
     /// The scan "breathing" pulse — applied to the video only, not the lock
     /// icon or the panel as a whole. Both default to identity so callers
     /// outside `.scanning` (or previews) don't need to pass anything.
@@ -73,7 +74,7 @@ struct MinimalUnlockView: View {
             Spacer(minLength: 0)
 
             ScanAnimationView(media: media)
-                .padding(.vertical, NotchGeometry.minimalMediaVerticalInset + 4)
+                .padding(.vertical, mediaVerticalInset)
                 .frame(width: mediaWidth)
                 // Scoped to the video alone — the lock icon on the left
                 // must stay steady while this breathes.
