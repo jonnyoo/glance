@@ -169,7 +169,7 @@ struct NotchGeometry {
     /// exact "expansion finished" signal to hook (springs don't have a hard
     /// end time), so this is a hand-tuned approximation — bump it up if the
     /// pulse still visibly starts before the panel looks settled.
-    static let scanPulseStartDelay: Double = 0.5
+    static let scanPulseStartDelay: Double = 0.6
 
     /// Black padding between the notch shape's edge and the scan-mode
     /// video/image content inside it, in notch style — edit these four to
