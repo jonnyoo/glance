@@ -136,6 +136,41 @@ struct NotchGeometry {
     /// underway.
     static let pillExitSlideDelay: Double = 0.18
 
+    // MARK: - Scan "breathing" pulse — EDIT HERE
+    //
+    // While `.scanning` (the camera actively looking for a face), the whole
+    // unlock content slowly ping-pongs between full size/opacity and
+    // `scanPulseScale`/`scanPulseOpacity`, so the panel reads as *searching*
+    // rather than frozen. The moment the scan resolves — success or failure,
+    // either way — the pulse stops and returns to full, animating from
+    // wherever it happens to be at that instant rather than snapping. Shared
+    // by both styles. See `NotchOverlayView.startScanPulse()`.
+
+    /// Scale at the dimmed end of the ping-pong. 1.0 disables the size part.
+    static let scanPulseScale: CGFloat = 0.97
+    /// Opacity at the dimmed end. 1.0 disables the fade part.
+    static let scanPulseOpacity: Double = 0.65
+    /// One half-cycle — full → dimmed, or dimmed → full.
+    static let scanPulseHalfCycleDuration: Double = 0.4
+    /// Pause at each end of the ping-pong before reversing. 0 makes it a
+    /// continuous breathe with no rest at the extremes.
+    static let scanPulseHoldDuration: Double = 0.05
+    /// How long the return-to-full takes when the scan resolves mid-pulse.
+    /// Deliberately quicker than a half-cycle so the content is back at full
+    /// while the success/failure animation is still early in its playback.
+    static let scanPulseSettleDuration: Double = 0.2
+
+    /// Extra wait, once `.scanning` begins, before the first pulse cycle
+    /// starts — so the content only starts breathing once the panel has
+    /// actually finished expanding, not while it's still mid-grow. In pill
+    /// style this is added on top of `pillEnterExpansionDelay` (the
+    /// expansion itself doesn't even *start* until that elapses); in notch
+    /// style there's no such delay, so this is the only wait. There's no
+    /// exact "expansion finished" signal to hook (springs don't have a hard
+    /// end time), so this is a hand-tuned approximation — bump it up if the
+    /// pulse still visibly starts before the panel looks settled.
+    static let scanPulseStartDelay: Double = 0.5
+
     /// Black padding between the notch shape's edge and the scan-mode
     /// video/image content inside it, in notch style — edit these four to
     /// adjust how much breathing room the media has on each side. Used in

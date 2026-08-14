@@ -58,6 +58,13 @@ struct NotchOverlayView: View {
     /// cancelled and replaced whenever a new target supersedes it.
     @State private var choreographyTask: Task<Void, Never>?
 
+    /// Whether the scan "breathing" pulse is currently at its dimmed end.
+    /// Only ever mutated inside an explicit `withAnimation`, so it never
+    /// jumps — see `startScanPulse()`/`stopScanPulse()`.
+    @State private var isScanPulseDimmed = false
+    /// The running ping-pong loop while `.scanning`, if any.
+    @State private var scanPulseTask: Task<Void, Never>?
+
     private var style: NotchPanelStyle {
         controller.geometry.style
     }
@@ -198,6 +205,23 @@ struct NotchOverlayView: View {
         .easeOut(duration: NotchGeometry.pillSlideDuration)
     }
 
+    // MARK: - Scan pulse
+
+    /// True only while the camera is actively looking for a face. Success
+    /// and failure both leave `.scanning`, which is what ends the pulse —
+    /// the resolve animation should play against steady content.
+    private var isScanning: Bool {
+        controller.phase == .scanning
+    }
+
+    private var scanPulseScale: CGFloat {
+        isScanPulseDimmed ? NotchGeometry.scanPulseScale : 1
+    }
+
+    private var scanPulseOpacity: Double {
+        isScanPulseDimmed ? NotchGeometry.scanPulseOpacity : 1
+    }
+
     var body: some View {
         ZStack {
             Group {
@@ -212,6 +236,12 @@ struct NotchOverlayView: View {
                         .padding(.trailing, scanContentPaddingTrailing)
                         .padding(.top, scanContentPaddingTop)
                         .padding(.bottom, scanContentPaddingBottom)
+                        // Applied outside the padding so the pulse scales
+                        // the entire unlock content as one piece, about its
+                        // center, rather than just the media inside its
+                        // padding box.
+                        .scaleEffect(scanPulseScale)
+                        .opacity(scanPulseOpacity)
                 }
             }
             // Content dissolves as the panel shrinks: increasing blur
@@ -256,8 +286,16 @@ struct NotchOverlayView: View {
             // first appearance.
             visualIsExpanded = targetIsExpanded
             visualIsPositioned = targetIsPositioned
+            updateScanPulse()
         }
-        .onChange(of: controller.phase) { _, _ in scheduleChoreography() }
+        .onDisappear {
+            scanPulseTask?.cancel()
+            scanPulseTask = nil
+        }
+        .onChange(of: controller.phase) { _, _ in
+            scheduleChoreography()
+            updateScanPulse()
+        }
         .onChange(of: controller.isPillDocked) { _, _ in scheduleChoreography() }
         .frame(
             width: NotchGeometry.windowSize(for: style).width,
@@ -315,6 +353,78 @@ struct NotchOverlayView: View {
                 guard !Task.isCancelled else { return }
                 withAnimation(animation) { self.visualIsPositioned = wantPositioned }
             }
+        }
+    }
+
+    // MARK: - Scan pulse
+
+    private func updateScanPulse() {
+        if isScanning {
+            startScanPulse()
+        } else {
+            stopScanPulse()
+        }
+    }
+
+    /// Runs the ping-pong until cancelled, after first waiting out
+    /// `entryDelay` so the pulse doesn't start until the panel has actually
+    /// finished expanding.
+    ///
+    /// Each half-cycle is its own finite `withAnimation` rather than one
+    /// `.repeatForever(autoreverses:)` — that distinction is the whole
+    /// reason this can stop gracefully. A `repeatForever` animation owns the
+    /// property for its entire (infinite) lifetime, and removing it snaps
+    /// the value back to whatever the model says, which is exactly the
+    /// sudden jump this must not do. With discrete half-cycles, the value is
+    /// always a plain animatable target, so `stopScanPulse()` can retarget
+    /// it mid-flight and SwiftUI interpolates from the current *rendered*
+    /// value.
+    private func startScanPulse() {
+        // Already breathing (or waiting to start) — don't stack a second
+        // loop on top.
+        guard scanPulseTask == nil else { return }
+
+        // Pill style doesn't even *start* expanding until
+        // `pillEnterExpansionDelay` elapses (see `scheduleChoreography()`),
+        // so that's added on top here — otherwise the pulse's own start
+        // delay would begin counting down while the panel is still sitting
+        // there as a pill, before it's even begun growing.
+        let entryDelay = (style == .pill ? NotchGeometry.pillEnterExpansionDelay : 0)
+            + NotchGeometry.scanPulseStartDelay
+        let half = NotchGeometry.scanPulseHalfCycleDuration
+        let hold = NotchGeometry.scanPulseHoldDuration
+        scanPulseTask = Task {
+            try? await Task.sleep(for: .seconds(entryDelay))
+            while !Task.isCancelled {
+                withAnimation(.easeInOut(duration: half)) { self.isScanPulseDimmed = true }
+                try? await Task.sleep(for: .seconds(half + hold))
+                guard !Task.isCancelled else { break }
+
+                withAnimation(.easeInOut(duration: half)) { self.isScanPulseDimmed = false }
+                try? await Task.sleep(for: .seconds(half + hold))
+            }
+        }
+    }
+
+    /// Ends the pulse and settles back to full scale/opacity from wherever
+    /// it currently is.
+    ///
+    /// Three cases, all handled by the same two lines:
+    /// - **Mid-way, heading toward dimmed** (`isScanPulseDimmed == true`):
+    ///   retargeting to `false` makes SwiftUI animate from the current
+    ///   rendered value straight back to full, reversing without a jump.
+    /// - **Sitting at dimmed** (also `true`): same retarget, just starting
+    ///   from the extreme.
+    /// - **Already at — or already heading toward — full** (`false`): the
+    ///   guard returns without touching anything, so a settled panel stays
+    ///   put and an in-flight return finishes on its existing curve rather
+    ///   than being restarted at a different speed.
+    private func stopScanPulse() {
+        scanPulseTask?.cancel()
+        scanPulseTask = nil
+        guard isScanPulseDimmed else { return }
+        withAnimation(.easeOut(duration: NotchGeometry.scanPulseSettleDuration)) {
+            isScanPulseDimmed = false
         }
     }
 }
