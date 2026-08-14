@@ -219,9 +219,9 @@ struct NotchOverlayView: View {
             // clipped by the collapsing shape. Rides whatever animation is
             // active on `visualIsExpanded` (set explicitly in
             // `scheduleChoreography()`) — no separate `.animation` needed.
-            .blur(radius: visualIsExpanded ? 0 : 14)
+            .blur(radius: visualIsExpanded ? 0 : 40)
             .opacity(visualIsExpanded ? 1 : 0)
-            .scaleEffect(visualIsExpanded ? 1 : 0.88)
+            .scaleEffect(visualIsExpanded ? 1 : 0.3)
             .environment(\.notchPanelStyle, style)
         }
         .frame(width: currentSize.width, height: currentSize.height)
