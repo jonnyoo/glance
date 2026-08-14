@@ -89,6 +89,15 @@ final class NotchOverlayController {
     /// pill *slide* into the lock screen) and leads it on the way out.
     private(set) var isPillDocked = false
 
+    /// The unlock-animation style the *current* scan cycle is running under,
+    /// snapshotted from `GlanceSettings` at each point a cycle begins rather
+    /// than read live. Two reasons: the panel's expanded size depends on it
+    /// (`.minimal` only widens, see NotchOverlayView), so reading it live
+    /// would let a settings change resize the panel mid-video; and
+    /// `finish(success:)` is guaranteed to resolve under the same style the
+    /// cycle started with.
+    private(set) var activeUnlockStyle: UnlockAnimationStyle = .original
+
     /// What a hover-driven activation should do — set by `arm()` (persists
     /// across scan cycles) or by one-shot `present(onRetry:)` (single use).
     private var onActivate: (() -> Void)?
@@ -214,6 +223,7 @@ final class NotchOverlayController {
         resolveTask?.cancel(); resolveTask = nil
         scanTimeoutTask?.cancel()
         geometry = windowController.currentGeometry
+        activeUnlockStyle = GlanceSettings.shared.unlockAnimationStyle
         content = .scan(.idle)
         phase = .scanning
         updateInteractivity()
@@ -266,6 +276,7 @@ final class NotchOverlayController {
         resolveTask?.cancel(); resolveTask = nil
         scanTimeoutTask?.cancel(); scanTimeoutTask = nil
         geometry = windowController.currentGeometry
+        activeUnlockStyle = GlanceSettings.shared.unlockAnimationStyle
         primeWindowIfNeeded { [weak self] in
             guard let self else { return }
             content = .scan(.idle)
@@ -325,8 +336,11 @@ final class NotchOverlayController {
 
         // Unlock Animation → None just skips the success/failure video
         // — the phase (and hence the failure hover-to-retry behavior) is
-        // unaffected, only what's shown while resolving.
-        let shouldAnimate = GlanceSettings.shared.playUnlockAnimation
+        // unaffected, only what's shown while resolving. Read off the
+        // cycle's captured style rather than live settings, so a change
+        // made mid-attempt can't resolve under different rules than the
+        // ones the panel opened with.
+        let shouldAnimate = activeUnlockStyle != .none
         content = shouldAnimate ? .scan(success ? .success : .failure) : .scan(.idle)
         phase = success ? .success : .failure
         updateInteractivity()
@@ -352,6 +366,10 @@ final class NotchOverlayController {
             }
             resolveTask?.cancel(); resolveTask = nil
             if !isArmed {
+                // Starts a fresh cycle right here, so it captures its own
+                // style. The armed path doesn't need to: `onActivate()`
+                // routes through `beginScanning()`, which captures.
+                activeUnlockStyle = GlanceSettings.shared.unlockAnimationStyle
                 content = .scan(.idle)
                 phase = .scanning
                 updateInteractivity()

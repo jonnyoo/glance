@@ -58,6 +58,15 @@ struct NotchOverlayView: View {
     /// cancelled and replaced whenever a new target supersedes it.
     @State private var choreographyTask: Task<Void, Never>?
 
+    /// Minimal style only: whether the lock glyph is showing its open form.
+    /// A mirror of "phase is `.success`" rather than the phase itself, so
+    /// the flip can be delayed (`minimalLockUnlockDelay`) to land with the
+    /// video's own resolve beat, and so it can be *held* open across the
+    /// collapse instead of snapping shut mid-shrink.
+    @State private var isMinimalLockOpen = false
+    /// The pending delayed unlock, if any.
+    @State private var lockUnlockTask: Task<Void, Never>?
+
     /// Whether the scan "breathing" pulse is currently at its dimmed end.
     /// Only ever mutated inside an explicit `withAnimation`, so it never
     /// jumps — see `startScanPulse()`/`stopScanPulse()`.
@@ -100,14 +109,43 @@ struct NotchOverlayView: View {
         return nil
     }
 
+    /// True when this cycle should render the minimal unlock style: a
+    /// width-only widening with a lock glyph and the video in it, rather
+    /// than the full-panel expansion. Onboarding always uses the full panel,
+    /// and `.none` keeps the full expansion too (it only drops the video) —
+    /// so this is specifically `.minimal` scan content.
+    private var isMinimalScan: Bool {
+        onboardingController == nil && controller.activeUnlockStyle == .minimal
+    }
+
     /// Scan-mode footprint for the active style — independently editable via
     /// `NotchGeometry.notchOpenSize`/`pillOpenSize`.
     private var scanOpenSize: CGSize {
         style == .notch ? NotchGeometry.notchOpenSize : NotchGeometry.pillOpenSize
     }
 
+    /// The minimal style's "expanded" footprint. In notch style the height
+    /// is deliberately unchanged from the resting silhouette — only the
+    /// width grows, adding a flank of black either side of the physical
+    /// cutout for the content to live in.
+    private var minimalOpenBodySize: CGSize {
+        switch style {
+        case .notch:
+            return CGSize(
+                width: closedBodySize.width + NotchGeometry.minimalNotchFlankWidth * 2,
+                height: closedBodySize.height
+            )
+        case .pill:
+            return CGSize(
+                width: NotchGeometry.minimalPillOpenWidth,
+                height: NotchGeometry.minimalPillOpenHeight
+            )
+        }
+    }
+
     private var openBodySize: CGSize {
-        onboardingController?.panelSize ?? scanOpenSize
+        if let onboardingController { return onboardingController.panelSize }
+        return isMinimalScan ? minimalOpenBodySize : scanOpenSize
     }
 
     /// The physical notch's measured size, or `NotchGeometry.pillClosedSize`
@@ -118,6 +156,15 @@ struct NotchOverlayView: View {
 
     private var topRadius: CGFloat {
         if visualIsExpanded {
+            if isMinimalScan {
+                // Pill stays a true capsule as it stretches — the radius
+                // tracks the (also animating) minimal height, so the two
+                // interpolate together and it never reads as a rounded
+                // rectangle mid-flight.
+                return style == .notch
+                    ? NotchGeometry.minimalNotchTopRadius
+                    : minimalOpenBodySize.height / 2
+            }
             return style == .notch ? NotchGeometry.openTopRadius : NotchGeometry.pillOpenCornerRadius
         }
         // Half the height is exactly a capsule end, in pill style.
@@ -126,6 +173,11 @@ struct NotchOverlayView: View {
 
     private var bottomRadius: CGFloat {
         if visualIsExpanded {
+            if isMinimalScan {
+                return style == .notch
+                    ? NotchGeometry.minimalNotchBottomRadius
+                    : minimalOpenBodySize.height / 2
+            }
             guard style == .notch else {
                 // Uniform corners in pill style: onboarding's per-step
                 // bottom radius exists to balance the notch's flare, which
@@ -222,26 +274,46 @@ struct NotchOverlayView: View {
         isScanPulseDimmed ? NotchGeometry.scanPulseOpacity : 1
     }
 
+    /// The scan-mode content — minimal or original. The breathing pulse is
+    /// applied here, wrapping whichever one is showing, so it covers the
+    /// entire unlock content in both styles (and never onboarding). It sits
+    /// outside the padding/layout so it scales the content as one piece
+    /// about its center, rather than just the media inside its box.
+    @ViewBuilder
+    private var scanContent: some View {
+        Group {
+            if isMinimalScan {
+                MinimalUnlockView(
+                    media: controller.media,
+                    isUnlocked: isMinimalLockOpen,
+                    // The notch's flare eats `topRadius` of each edge before
+                    // any real black starts, so the inset is measured from
+                    // where the flank actually becomes visible.
+                    edgeInset: NotchGeometry.minimalContentEdgeInset
+                        + (style == .notch ? topRadius : 0)
+                )
+            } else {
+                ScanAnimationView(media: controller.media)
+                    .padding(.leading, scanContentPaddingLeading)
+                    .padding(.trailing, scanContentPaddingTrailing)
+                    .padding(.top, scanContentPaddingTop)
+                    .padding(.bottom, scanContentPaddingBottom)
+            }
+        }
+        .scaleEffect(scanPulseScale)
+        .opacity(scanPulseOpacity)
+    }
+
     var body: some View {
         ZStack {
             Group {
                 if let onboardingController {
                     // Onboarding's step views lay themselves out to exactly
                     // fill `panelSize` — no shared content padding here,
-                    // unlike the scan animation below.
+                    // unlike the scan content below.
                     OnboardingNotchView(controller: onboardingController)
                 } else {
-                    ScanAnimationView(media: controller.media)
-                        .padding(.leading, scanContentPaddingLeading)
-                        .padding(.trailing, scanContentPaddingTrailing)
-                        .padding(.top, scanContentPaddingTop)
-                        .padding(.bottom, scanContentPaddingBottom)
-                        // Applied outside the padding so the pulse scales
-                        // the entire unlock content as one piece, about its
-                        // center, rather than just the media inside its
-                        // padding box.
-                        .scaleEffect(scanPulseScale)
-                        .opacity(scanPulseOpacity)
+                    scanContent
                 }
             }
             // Content dissolves as the panel shrinks: increasing blur
@@ -287,14 +359,18 @@ struct NotchOverlayView: View {
             visualIsExpanded = targetIsExpanded
             visualIsPositioned = targetIsPositioned
             updateScanPulse()
+            updateMinimalLock()
         }
         .onDisappear {
             scanPulseTask?.cancel()
             scanPulseTask = nil
+            lockUnlockTask?.cancel()
+            lockUnlockTask = nil
         }
         .onChange(of: controller.phase) { _, _ in
             scheduleChoreography()
             updateScanPulse()
+            updateMinimalLock()
         }
         .onChange(of: controller.isPillDocked) { _, _ in scheduleChoreography() }
         .frame(
@@ -363,6 +439,43 @@ struct NotchOverlayView: View {
             startScanPulse()
         } else {
             stopScanPulse()
+        }
+    }
+
+    // MARK: - Minimal lock glyph
+
+    /// Drives the lock → unlock flip. The animation itself lives on the
+    /// glyph (`MinimalUnlockView` applies `.animation(_, value:)`), so
+    /// setting the state plainly here is already animated.
+    private func updateMinimalLock() {
+        let shouldOpen: Bool
+        switch controller.phase {
+        case .success:
+            shouldOpen = true
+        case .collapsing:
+            // Hold whatever it currently is. Re-locking here would play the
+            // shackle snapping shut *while* the panel is visibly shrinking
+            // away, which reads as the unlock being undone.
+            return
+        case .closed, .scanning, .failure, .onboarding:
+            shouldOpen = false
+        }
+
+        lockUnlockTask?.cancel()
+        lockUnlockTask = nil
+        guard shouldOpen != isMinimalLockOpen else { return }
+
+        // Only the unlock is delayable; re-locking happens while the panel
+        // is closed and invisible, so it may as well be immediate.
+        let delay = NotchGeometry.minimalLockUnlockDelay
+        guard shouldOpen, delay > 0 else {
+            isMinimalLockOpen = shouldOpen
+            return
+        }
+        lockUnlockTask = Task {
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            self.isMinimalLockOpen = true
         }
     }
 

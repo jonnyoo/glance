@@ -452,6 +452,9 @@ struct UnlockAnimationPicker: View {
         .buttonStyle(.plain)
     }
 
+    /// Static silhouettes standing in for what each style actually does to
+    /// the notch/pill: `.minimal` only widens it into a capsule strip,
+    /// `.original` expands it into a full rounded panel.
     @ViewBuilder
     private func preview(for style: UnlockAnimationStyle, isSelected: Bool) -> some View {
         switch style {
@@ -459,12 +462,21 @@ struct UnlockAnimationPicker: View {
             Image(systemName: "nosign")
                 .font(.system(size: 20, weight: .regular))
                 .foregroundStyle(SettingsMetrics.textSecondary)
-        case .minimal, .original:
-            // Placeholder until looping preview videos are wired in.
-            Image(systemName: "video")
-                .font(.system(size: 18, weight: .regular))
-                .foregroundStyle(isSelected ? SettingsMetrics.textPrimary.opacity(0.55) : SettingsMetrics.textSecondary.opacity(0.7))
+        case .minimal:
+            Capsule(style: .continuous)
+                .fill(previewTint(isSelected))
+                .frame(width: 46, height: 13)
+        case .original:
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(previewTint(isSelected))
+                .frame(width: 38, height: 30)
         }
+    }
+
+    private func previewTint(_ isSelected: Bool) -> Color {
+        isSelected
+            ? SettingsMetrics.textPrimary.opacity(0.55)
+            : SettingsMetrics.textSecondary.opacity(0.7)
     }
 }
 

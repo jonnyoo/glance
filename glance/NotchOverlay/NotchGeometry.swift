@@ -136,6 +136,65 @@ struct NotchGeometry {
     /// underway.
     static let pillExitSlideDelay: Double = 0.18
 
+    // MARK: - Minimal unlock style — EDIT HERE
+    //
+    // `UnlockAnimationStyle.minimal` never does the full-panel expansion.
+    // Instead the silhouette *widens only*, revealing a lock icon on the
+    // left and the unlock video on the right:
+    //
+    //   [ lock ][ · · · gap · · · ][ video ]
+    //
+    // In notch style the "gap" is the physical notch cutout itself, which
+    // has no display behind it — so the two content regions must live in
+    // the black flanks this widening creates on either side of it. In pill
+    // style there's no cutout, so the same layout just reads as a lock and
+    // a video at opposite ends. One layout, both styles; see
+    // MinimalUnlockView.
+
+    /// Black width added on *each* side of the physical notch cutout, which
+    /// is what creates the visible flanks the content sits in. Total notch
+    /// body width is `geometry.closedSize.width + 2 * this`. Ceiling: the
+    /// fixed window is ~434pt wide (see `windowSize(for:)`), and a notch
+    /// measures ~200-220pt, so much past 100 will start to clip.
+    static let minimalNotchFlankWidth: CGFloat = 44
+
+    /// The pill's minimal footprint. Taller than `pillClosedSize.height` so
+    /// the icon and video are legible — the corner radius stays
+    /// `height / 2` at both ends, so it remains a true capsule while it
+    /// stretches.
+    static let minimalPillOpenWidth: CGFloat = 160
+    static let minimalPillOpenHeight: CGFloat = 34
+
+    /// Radii for the widened notch. Default to the closed values because
+    /// the height doesn't change — these exist only so the widened notch
+    /// can be rounded differently from the resting one if wanted.
+    static let minimalNotchTopRadius: CGFloat = closedTopRadius
+    static let minimalNotchBottomRadius: CGFloat = closedBottomRadius
+
+    /// Inset from the silhouette's left/right edges to the content. In
+    /// notch style the flare occupies `topRadius` of that margin already,
+    /// so this is added on top of it.
+    static let minimalContentEdgeInset: CGFloat = 4
+    /// Point size of the lock glyph.
+    static let minimalLockIconSize: CGFloat = 14
+    /// Width of each content region — the lock on one end, the video on the
+    /// other. The video is square and aspect-fit, so its rendered size is
+    /// really `min(this, panelHeight - 2 * minimalMediaVerticalInset)`.
+    static let minimalMediaWidth: CGFloat = 34
+    /// Breathing room above and below the video. Without it the square
+    /// aspect-fits to the *full* panel height and touches both edges, which
+    /// reads as cramped — the panel is only as tall as the notch here.
+    static let minimalMediaVerticalInset: CGFloat = 3
+
+    /// Delay between the unlock landing and the lock glyph flipping open,
+    /// so it can be nudged to land with the video's own resolve beat
+    /// instead of firing on the same frame.
+    static let minimalLockUnlockDelay: Double = 0
+    /// Duration of the lock → unlock symbol transition. A raw number rather
+    /// than an `Animation`, matching the springs above — this file stays
+    /// SwiftUI-free and the view builds the curve.
+    static let minimalLockAnimationDuration: Double = 0.4
+
     // MARK: - Scan "breathing" pulse — EDIT HERE
     //
     // While `.scanning` (the camera actively looking for a face), the whole
