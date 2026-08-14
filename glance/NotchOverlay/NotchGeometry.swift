@@ -173,14 +173,14 @@ struct NotchGeometry {
         switch style {
         case .notch:
             let contentWidth = max(notchOpenSize.width, OnboardingMetrics.maxPanelWidth)
-            let contentHeight = max(notchOpenSize.height, OnboardingMetrics.maxPanelHeight)
+            let contentHeight = max(notchOpenSize.height, OnboardingMetrics.maxPanelHeight(for: .notch))
             return CGSize(
                 width: contentWidth + notchShadowPadding * 2 + hoverBump,
                 height: contentHeight + notchShadowPadding + hoverBump
             )
         case .pill:
             let contentWidth = max(pillOpenSize.width, OnboardingMetrics.maxPanelWidth)
-            let contentHeight = max(pillOpenSize.height, OnboardingMetrics.maxPanelHeight)
+            let contentHeight = max(pillOpenSize.height, OnboardingMetrics.maxPanelHeight(for: .pill))
             return CGSize(
                 width: contentWidth + pillShadowPadding * 2 + hoverBump,
                 // `pillTopGap` because the pill sits detached from the top

@@ -32,14 +32,13 @@ struct IntroStepView: View {
                     controller.advance()
                 }
             }
+            .padding(.leading, 4)
             Spacer(minLength: 4)
             GlanceLogoView()
                 .frame(width: 106, height: 106)
                 .padding(.top, 4)
         }
-        .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding)
-        .panelTitleTopInset()
-        .padding(.bottom, OnboardingMetrics.contentBottomInset)
+        .onboardingContentPadding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(GlanceTheme.panel)
     }
@@ -91,9 +90,7 @@ struct PermissionsStepView: View {
                 }
             }
         }
-        .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding)
-        .panelTitleTopInset()
-        .padding(.bottom, OnboardingMetrics.contentBottomInset)
+        .onboardingContentPadding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(GlanceTheme.panel)
     }
@@ -119,6 +116,7 @@ struct PreSetupStepView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.top, 10)
+                .padding(.leading, 4)
                 Spacer(minLength: 0)
                 UnlockGlyphView()
                     .frame(width: 120, height: 120)
@@ -134,9 +132,7 @@ struct PreSetupStepView: View {
                 }
             }
         }
-        .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding)
-        .panelTitleTopInset()
-        .padding(.bottom, OnboardingMetrics.contentBottomInset)
+        .onboardingContentPadding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(GlanceTheme.panel)
     }
@@ -220,9 +216,7 @@ struct PasswordStepView: View {
                 }
             }
         }
-        .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding)
-        .panelTitleTopInset()
-        .padding(.bottom, OnboardingMetrics.contentBottomInset)
+        .onboardingContentPadding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(GlanceTheme.panel)
     }
@@ -240,7 +234,7 @@ struct CompleteStepView: View {
             AnimatedCheckmark(color: .white, lineWidth: 5)
                 .frame(width: 20, height: 15)
         }
-        .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding)
+        .onboardingContentHorizontalPadding()
         .padding(.top, 18)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .background(GlanceTheme.panel)

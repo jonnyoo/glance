@@ -193,7 +193,15 @@ final class OnboardingController {
 
     // MARK: - Panel sizing (read by NotchOverlayView)
 
-    var panelSize: CGSize { OnboardingMetrics.panelSize(for: step) }
+    /// The silhouette the panel is currently wearing — read fresh off the
+    /// preferred screen each time rather than cached, same as
+    /// `NotchWindowController.currentGeometry`, so it stays correct across a
+    /// display change mid-flow.
+    private var currentPanelStyle: NotchPanelStyle {
+        NotchGeometry.preferredScreen().map(NotchGeometry.forScreen)?.style ?? .notch
+    }
+
+    var panelSize: CGSize { OnboardingMetrics.panelSize(for: step, style: currentPanelStyle) }
     var panelBottomRadius: CGFloat { OnboardingMetrics.panelBottomRadius(for: step) }
 
     // MARK: - Permissions

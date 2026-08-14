@@ -20,47 +20,55 @@ enum OnboardingMetrics {
     // MARK: - Panel size — EDIT HERE
     //
     // `panelWidth` is shared by every onboarding step *except* `.enroll`
-    // (the camera step), which keeps its own independent size in
-    // `enrollPanelSize` below, unchanged by anything here. Every other step
-    // gets its own height, so panels can be short (Permissions) or tall
-    // (Password) without affecting one another — the notch panel animates
-    // between them automatically whenever `OnboardingController.step`
-    // changes.
+    // (the camera step), which keeps its own independent width in
+    // `enrollPanelWidth` below — widths are NOT split per style (only
+    // heights are). Height, though, is fully independent per step *and* per
+    // style: 12 numbers total, edit any one without affecting any other —
+    // the panel animates to the new height the moment that step becomes
+    // active on whichever style is currently showing.
 
     /// Width used by every step except `.enroll`. Increase/decrease this
     /// one number to make the whole flow (minus the camera step) wider or
-    /// narrower.
+    /// narrower, in both styles.
     static let panelWidth: CGFloat = 380
 
-    /// Height of each individual step. Edit any one of these independently
-    /// — the panel will animate to the new height the moment that step
-    /// becomes active.
-    static let introHeight: CGFloat = 175
-    static let permissionsHeight: CGFloat = 245
-    static let preSetupHeight: CGFloat = 220
-    static let passwordHeight: CGFloat = 260
-    static let completeHeight: CGFloat = 95
+    /// The camera/enrollment step's width — deliberately independent of
+    /// `panelWidth` (kept at its original, pre-redesign-tweak footprint).
+    static let enrollPanelWidth: CGFloat = 320
 
-    /// The camera/enrollment step's panel — deliberately independent of
-    /// `panelWidth`/the per-step heights above (kept at its original,
-    /// pre-redesign-tweak footprint). Edit this pair directly if the
-    /// camera step ever needs to change size on its own.
-    static let enrollPanelSize = CGSize(width: 320, height: 310)
+    static let notchIntroHeight: CGFloat = 175
+    static let pillIntroHeight: CGFloat = 175
+    static let notchPermissionsHeight: CGFloat = 245
+    static let pillPermissionsHeight: CGFloat = 245
+    static let notchPreSetupHeight: CGFloat = 220
+    static let pillPreSetupHeight: CGFloat = 220
+    static let notchEnrollHeight: CGFloat = 310
+    static let pillEnrollHeight: CGFloat = 310
+    static let notchPasswordHeight: CGFloat = 260
+    static let pillPasswordHeight: CGFloat = 260
+    static let notchCompleteHeight: CGFloat = 95
+    static let pillCompleteHeight: CGFloat = 95
 
-    static func panelSize(for step: OnboardingStep) -> CGSize {
-        if step == .enroll { return enrollPanelSize }
-        return CGSize(width: panelWidth, height: panelHeight(for: step))
+    static func panelHeight(for step: OnboardingStep, style: NotchPanelStyle) -> CGFloat {
+        switch (step, style) {
+        case (.intro, .notch): return notchIntroHeight
+        case (.intro, .pill): return pillIntroHeight
+        case (.permissions, .notch): return notchPermissionsHeight
+        case (.permissions, .pill): return pillPermissionsHeight
+        case (.preSetup, .notch): return notchPreSetupHeight
+        case (.preSetup, .pill): return pillPreSetupHeight
+        case (.enroll, .notch): return notchEnrollHeight
+        case (.enroll, .pill): return pillEnrollHeight
+        case (.password, .notch): return notchPasswordHeight
+        case (.password, .pill): return pillPasswordHeight
+        case (.complete, .notch): return notchCompleteHeight
+        case (.complete, .pill): return pillCompleteHeight
+        }
     }
 
-    static func panelHeight(for step: OnboardingStep) -> CGFloat {
-        switch step {
-        case .intro: return introHeight
-        case .permissions: return permissionsHeight
-        case .preSetup: return preSetupHeight
-        case .enroll: return enrollPanelSize.height
-        case .password: return passwordHeight
-        case .complete: return completeHeight
-        }
+    static func panelSize(for step: OnboardingStep, style: NotchPanelStyle) -> CGSize {
+        let width = step == .enroll ? enrollPanelWidth : panelWidth
+        return CGSize(width: width, height: panelHeight(for: step, style: style))
     }
 
     static func panelBottomRadius(for step: OnboardingStep) -> CGFloat {
@@ -72,28 +80,68 @@ enum OnboardingMetrics {
 
     /// The envelope the fixed notch window itself must be sized to fit —
     /// see `NotchGeometry.windowSize(for:)`, which combines this with the
-    /// pre-existing scan-mode footprint.
-    static let maxPanelWidth: CGFloat = max(panelWidth, enrollPanelSize.width)
-    static let maxPanelHeight: CGFloat = [
-        introHeight, permissionsHeight, preSetupHeight, enrollPanelSize.height, passwordHeight, completeHeight,
-    ].max() ?? enrollPanelSize.height
+    /// pre-existing scan-mode footprint. Width isn't split per style, so
+    /// stays a single value; height is, so it's a per-style max.
+    static let maxPanelWidth: CGFloat = max(panelWidth, enrollPanelWidth)
 
-    // MARK: - Shared control geometry
+    static func maxPanelHeight(for style: NotchPanelStyle) -> CGFloat {
+        switch style {
+        case .notch:
+            return [
+                notchIntroHeight, notchPermissionsHeight, notchPreSetupHeight,
+                notchEnrollHeight, notchPasswordHeight, notchCompleteHeight,
+            ].max() ?? notchEnrollHeight
+        case .pill:
+            return [
+                pillIntroHeight, pillPermissionsHeight, pillPreSetupHeight,
+                pillEnrollHeight, pillPasswordHeight, pillCompleteHeight,
+            ].max() ?? pillEnrollHeight
+        }
+    }
 
-    static let contentHorizontalPadding: CGFloat = 28
-    static let controlHorizontalPadding: CGFloat = 24
-    /// Deliberately generous: the physical notch's camera housing overlaps
-    /// the very top of the panel, so title/text content needs real
-    /// clearance below it or it reads as clipped.
+    // MARK: - Content insets, per style — EDIT HERE
+    //
+    // Independent top/left/right/bottom insets for onboarding step content
+    // — notch and pill can be tuned entirely separately, and neither
+    // touches the other. This does NOT apply to the scan/unlock content
+    // (see `NotchGeometry.notchContentPadding*`/`pillContentPadding*` for
+    // that instead) — onboarding only.
+
+    /// Deliberately generous in notch style: the physical notch's camera
+    /// housing overlaps the very top of the panel, so title/text content
+    /// needs real clearance below it or it reads as clipped.
     static let titleTopInset: CGFloat = 50
     /// Pill style has no housing to clear — the panel floats free of the
     /// screen edge — so the same inset just leaves content sitting low.
     static let pillTitleTopInset: CGFloat = 32
-    static let contentBottomInset: CGFloat = 40
+
+    static let notchContentLeadingInset: CGFloat = 28
+    static let notchContentTrailingInset: CGFloat = 28
+    static let notchContentBottomInset: CGFloat = 40
+
+    static let pillContentLeadingInset: CGFloat = 30
+    static let pillContentTrailingInset: CGFloat = 30
+    static let pillContentBottomInset: CGFloat = 36
 
     static func titleTopInset(for style: NotchPanelStyle) -> CGFloat {
         style == .pill ? pillTitleTopInset : titleTopInset
     }
+
+    static func contentLeadingInset(for style: NotchPanelStyle) -> CGFloat {
+        style == .pill ? pillContentLeadingInset : notchContentLeadingInset
+    }
+
+    static func contentTrailingInset(for style: NotchPanelStyle) -> CGFloat {
+        style == .pill ? pillContentTrailingInset : notchContentTrailingInset
+    }
+
+    static func contentBottomInset(for style: NotchPanelStyle) -> CGFloat {
+        style == .pill ? pillContentBottomInset : notchContentBottomInset
+    }
+
+    // MARK: - Shared control geometry
+
+    static let controlHorizontalPadding: CGFloat = 24
 
     static let pillButtonHeight: CGFloat = 38
     static let pillButtonRadius: CGFloat = 17
@@ -140,19 +188,40 @@ enum OnboardingMetrics {
 }
 
 extension View {
-    /// Top inset for a step view's content, sized to whichever silhouette the
-    /// panel is currently wearing (see `NotchPanelStyle`). Reads the style
-    /// from the environment rather than taking a parameter so every step view
-    /// stays a plain `(controller) -> View`.
-    func panelTitleTopInset() -> some View {
-        modifier(PanelTitleTopInset())
+    /// All four content-edge insets for a step view — leading, trailing,
+    /// top, and bottom — sized to whichever silhouette the panel is
+    /// currently wearing (see `NotchPanelStyle`). Reads the style from the
+    /// environment rather than taking a parameter so every step view stays a
+    /// plain `(controller) -> View`.
+    func onboardingContentPadding() -> some View {
+        modifier(OnboardingContentPadding())
+    }
+
+    /// Just the left/right insets — for steps (like `.complete`) that use
+    /// their own top/bottom spacing instead of the standard title/content
+    /// insets.
+    func onboardingContentHorizontalPadding() -> some View {
+        modifier(OnboardingContentHorizontalPadding())
     }
 }
 
-private struct PanelTitleTopInset: ViewModifier {
+private struct OnboardingContentHorizontalPadding: ViewModifier {
     @Environment(\.notchPanelStyle) private var style
 
     func body(content: Content) -> some View {
-        content.padding(.top, OnboardingMetrics.titleTopInset(for: style))
+        content
+            .padding(.leading, OnboardingMetrics.contentLeadingInset(for: style))
+            .padding(.trailing, OnboardingMetrics.contentTrailingInset(for: style))
+    }
+}
+
+private struct OnboardingContentPadding: ViewModifier {
+    @Environment(\.notchPanelStyle) private var style
+
+    func body(content: Content) -> some View {
+        content
+            .onboardingContentHorizontalPadding()
+            .padding(.top, OnboardingMetrics.titleTopInset(for: style))
+            .padding(.bottom, OnboardingMetrics.contentBottomInset(for: style))
     }
 }
