@@ -10,6 +10,22 @@ import AppKit
 import CoreGraphics
 import Observation
 
+/// Which signal most recently fired. `withObservationTracking`'s `onChange`
+/// doesn't say *which* tracked property changed, so observers that need to
+/// tell "the screen just locked" from "the Mac woke up" from "the user
+/// jiggled something at an already-locked screen" read this alongside the
+/// monotonic `eventCount`.
+enum LockEventKind {
+    case screenLocked
+    case screenUnlocked
+    case willSleep
+    /// A wake that followed an actual system sleep.
+    case systemWake
+    /// A display wake with no sleep in flight, or the screensaver stopping —
+    /// i.e. the user did something at a screen that was already locked.
+    case userActivity
+}
+
 @Observable
 final class LockMonitor {
     /// Cheap, notification-derived flag. NOT trustworthy on its own: any
@@ -40,6 +56,13 @@ final class LockMonitor {
     /// trigger (`wakeEventCount`) once this flips back to false.
     private(set) var isSleeping: Bool = false
 
+    /// The most recent signal, and a counter that increments with it.
+    /// Observers track `eventCount` (it changes on *every* event, including
+    /// two of the same kind in a row, which `lastEvent` alone wouldn't
+    /// register) and then read `lastEvent` to decide what happened.
+    private(set) var lastEvent: LockEventKind?
+    private(set) var eventCount: Int = 0
+
     private var distributedObservers: [NSObjectProtocol] = []
     private var workspaceObservers: [NSObjectProtocol] = []
 
@@ -66,6 +89,7 @@ final class LockMonitor {
             queue: .main
         ) { [weak self] _ in
             self?.isScreenLocked = true
+            self?.record(.screenLocked)
         })
         distributedObservers.append(distributed.addObserver(
             forName: Notification.Name("com.apple.screenIsUnlocked"),
@@ -73,6 +97,19 @@ final class LockMonitor {
             queue: .main
         ) { [weak self] _ in
             self?.isScreenLocked = false
+            self?.record(.screenUnlocked)
+        })
+        // The user dismissing the screensaver is the clearest "I want back
+        // in" signal available. Observing the *key press* that did it isn't
+        // possible — the lock screen runs under Secure Event Input, which
+        // suppresses keyboard event taps regardless of Accessibility trust —
+        // so this notification stands in for it.
+        distributedObservers.append(distributed.addObserver(
+            forName: Notification.Name("com.apple.screensaver.didstop"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.record(.userActivity)
         })
 
         let workspace = NSWorkspace.shared.notificationCenter
@@ -82,6 +119,7 @@ final class LockMonitor {
             queue: .main
         ) { [weak self] _ in
             self?.isSleeping = true
+            self?.record(.willSleep)
         })
         // Both display-level and system-level wake are observed and treated
         // as equivalent triggers: in testing they land within ~100ms of each
@@ -92,17 +130,31 @@ final class LockMonitor {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.isSleeping = false
-            self?.wakeEventCount += 1
+            self?.recordWake()
         })
         workspaceObservers.append(workspace.addObserver(
             forName: NSWorkspace.didWakeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.isSleeping = false
-            self?.wakeEventCount += 1
+            self?.recordWake()
         })
+    }
+
+    /// Classifies a wake by whether a sleep was actually in flight. A wake
+    /// with `isSleeping` already false is a display-only wake — the Mac
+    /// never slept, the user just touched something at a locked screen —
+    /// which is a meaningfully different trigger from resuming from sleep.
+    private func recordWake() {
+        let kind: LockEventKind = isSleeping ? .systemWake : .userActivity
+        isSleeping = false
+        wakeEventCount += 1
+        record(kind)
+    }
+
+    private func record(_ kind: LockEventKind) {
+        lastEvent = kind
+        eventCount += 1
     }
 
     /// Authoritative lock state, queried directly from the CoreGraphics session

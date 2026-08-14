@@ -57,9 +57,12 @@ final class FaceUnlockCoordinator {
     private let minMargin: Float = 0.05
     /// Each scan cycle runs for this long looking for either a confident
     /// live match or a consistently-wrong face before giving up quietly.
-    /// Matches NotchOverlayController's own scanning timeout so the
-    /// background loop stops in step with the UI collapsing.
-    private let scanWindowDuration: TimeInterval = 5
+    /// Both this and NotchOverlayController's own scanning timeout read the
+    /// same setting, which is what keeps the background loop stopping in
+    /// step with the UI collapsing.
+    private var scanWindowDuration: TimeInterval {
+        TimeInterval(GlanceSettings.shared.faceDetectionSeconds)
+    }
     /// A face that scores below threshold for this many *consecutive*
     /// frames is treated as "confidently a different person" and shows the
     /// failure animation — a single bad-angle frame from the right person
@@ -70,7 +73,15 @@ final class FaceUnlockCoordinator {
     private(set) var lastOutcome: String?
 
     private var hasArmedForCurrentLock = false
+    /// One-shot per lock session, like `hasArmedForCurrentLock` — an
+    /// auto-retry that could itself auto-retry would loop the camera for the
+    /// whole time the Mac sits locked.
+    private var hasAutoRetriedForCurrentLock = false
     private var scanTask: Task<Void, Never>?
+    /// The pending auto-retry, held separately from `scanTask` because it's
+    /// scheduled *from inside* the scan task it follows — reusing `scanTask`
+    /// would have that task cancel itself before the retry ever ran.
+    private var autoRetryTask: Task<Void, Never>?
 
     init(pocController: POCController) {
         self.pocController = pocController
@@ -87,6 +98,9 @@ final class FaceUnlockCoordinator {
             _ = lockMonitor.isScreenLocked
             _ = lockMonitor.wakeEventCount
             _ = lockMonitor.isSleeping
+            // Also tracked so screensaver-stop and display-only wakes —
+            // neither of which touches the three above — still wake this up.
+            _ = lockMonitor.eventCount
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 self?.observeLockAndWakeEvents()
@@ -102,11 +116,22 @@ final class FaceUnlockCoordinator {
     private func evaluateTrigger() {
         guard LockMonitor.isScreenActuallyLocked() else {
             hasArmedForCurrentLock = false
+            hasAutoRetriedForCurrentLock = false
             disarmOverlay()
             return
         }
         guard !lockMonitor.isSleeping else { return }
+
+        // The user showing up at an already-locked screen is an explicit
+        // "let me back in" — clear the one-shot guard so it re-arms even if
+        // an earlier attempt this lock session already came and went.
+        if lockMonitor.lastEvent == .userActivity {
+            hasArmedForCurrentLock = false
+        }
+
         guard isEnabled, !hasArmedForCurrentLock else { return }
+        guard let trigger = requiredTrigger(for: lockMonitor.lastEvent),
+              GlanceSettings.shared.unlockTriggers.contains(trigger) else { return }
 
         guard SecureCredentialManager.isSessionUnlocked else {
             statusMessage = "Face unlock is on, but the session is locked — authenticate once via the Credentials tab first."
@@ -130,9 +155,26 @@ final class FaceUnlockCoordinator {
         }
     }
 
+    /// Which user-facing trigger a given signal corresponds to, or nil for
+    /// signals that shouldn't arm anything on their own. `.screenUnlocked`
+    /// and `.willSleep` are handled by the guards above rather than here,
+    /// and a nil `lastEvent` (nothing has happened yet this launch) must not
+    /// arm — otherwise the very first observation would fire regardless of
+    /// what the user selected.
+    private func requiredTrigger(for event: LockEventKind?) -> UnlockTrigger? {
+        switch event {
+        case .systemWake: return .onWake
+        case .screenLocked: return .onLock
+        case .userActivity: return .onActivity
+        case .screenUnlocked, .willSleep, nil: return nil
+        }
+    }
+
     private func disarmOverlay() {
         scanTask?.cancel()
         scanTask = nil
+        autoRetryTask?.cancel()
+        autoRetryTask = nil
         camera.stop()
         NotchOverlayController.shared.disarm()
     }
@@ -177,11 +219,35 @@ final class FaceUnlockCoordinator {
         case .consistentlyWrongFace:
             NotchOverlayController.shared.finish(success: false)
             statusMessage = "Face not recognized — hover the notch to try again."
+            scheduleAutoRetryIfEnabled(after: NotchOverlayController.shared.failureHoldDuration)
         case .noResolution:
             // No explicit collapse call: NotchOverlayController's own
             // scanning timeout (started by beginScanning() above) fires on
-            // the same ~5s mark and quietly collapses on its own.
+            // the same mark and quietly collapses on its own.
             statusMessage = "No face detected — hover the notch to try again."
+            scheduleAutoRetryIfEnabled(after: NotchOverlayController.shared.collapseAnimationDuration)
+        }
+    }
+
+    /// Runs one more scan cycle after a failed attempt, if the user asked
+    /// for it and this lock session hasn't already used its retry.
+    ///
+    /// `delay` waits out whatever the overlay is still showing — the held
+    /// failure frame, or the quiet collapse after a timeout — so the retry
+    /// doesn't start a fresh scan underneath the previous outcome.
+    private func scheduleAutoRetryIfEnabled(after delay: Duration) {
+        guard GlanceSettings.shared.autoRetryOnce, !hasAutoRetriedForCurrentLock else { return }
+        hasAutoRetriedForCurrentLock = true
+        autoRetryTask?.cancel()
+        autoRetryTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self else { return }
+            // Re-check rather than trust the delay: the user may have
+            // unlocked by password, or hovered to retry manually, while this
+            // was waiting.
+            guard LockMonitor.isScreenActuallyLocked(), self.isEnabled,
+                  NotchOverlayController.shared.phase == .closed else { return }
+            self.startScanCycle()
         }
     }
 

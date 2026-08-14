@@ -115,16 +115,22 @@ final class NotchOverlayController {
     /// so the final frame is actually read before collapsing.
     private let successHoldDuration: Duration = .milliseconds(1_700)
     /// How long a held failure frame waits for a hover-retry before quietly
-    /// collapsing on its own.
-    private let failureHoldDuration: Duration = .seconds(5)
+    /// collapsing on its own. Non-private so FaceUnlockCoordinator's
+    /// auto-retry can wait this out rather than duplicating the number.
+    let failureHoldDuration: Duration = .seconds(5)
     /// How long `.scanning` waits with no resolution before quietly
     /// collapsing — no failure animation, since nothing conclusive happened.
-    private let scanTimeoutDuration: Duration = .seconds(5)
+    /// Reads the same setting as `FaceUnlockCoordinator.scanWindowDuration`;
+    /// the two are separate timers that must expire together, and sourcing
+    /// both from one setting is what guarantees it.
+    private var scanTimeoutDuration: Duration {
+        .seconds(GlanceSettings.shared.faceDetectionSeconds)
+    }
     /// Long enough for the closing spring to fully settle before the window
     /// is ordered out (or, while armed, before it's just left at rest,
     /// closed) — collapsing the *state* early is what made the window
     /// visibly "pop" out of existence instead of shrinking away.
-    private let collapseAnimationDuration: Duration = .milliseconds(700)
+    let collapseAnimationDuration: Duration = .milliseconds(700)
 
     private init() {
         windowController.contentView = NSHostingView(rootView: NotchOverlayView(controller: self))
@@ -223,7 +229,7 @@ final class NotchOverlayController {
         resolveTask?.cancel(); resolveTask = nil
         scanTimeoutTask?.cancel()
         geometry = windowController.currentGeometry
-        activeUnlockStyle = GlanceSettings.shared.unlockAnimationStyle
+        activeUnlockStyle = GlanceSettings.shared.effectiveUnlockAnimationStyle
         content = .scan(.idle)
         phase = .scanning
         updateInteractivity()
@@ -276,7 +282,7 @@ final class NotchOverlayController {
         resolveTask?.cancel(); resolveTask = nil
         scanTimeoutTask?.cancel(); scanTimeoutTask = nil
         geometry = windowController.currentGeometry
-        activeUnlockStyle = GlanceSettings.shared.unlockAnimationStyle
+        activeUnlockStyle = GlanceSettings.shared.effectiveUnlockAnimationStyle
         primeWindowIfNeeded { [weak self] in
             guard let self else { return }
             content = .scan(.idle)
@@ -358,6 +364,11 @@ final class NotchOverlayController {
     /// from a held failure frame. No-op during scanning/success/collapsing —
     /// hovering then is just the visual bump, nothing to trigger.
     func activate() {
+        // Gated here rather than in `updateInteractivity()` on purpose:
+        // leaving the window's hit-testing alone keeps the cosmetic hover
+        // bump and everything else that depends on interactivity unchanged,
+        // and only removes the retry itself.
+        guard GlanceSettings.shared.retryOnHover else { return }
         switch phase {
         case .closed, .failure:
             guard let onActivate else {
@@ -369,7 +380,7 @@ final class NotchOverlayController {
                 // Starts a fresh cycle right here, so it captures its own
                 // style. The armed path doesn't need to: `onActivate()`
                 // routes through `beginScanning()`, which captures.
-                activeUnlockStyle = GlanceSettings.shared.unlockAnimationStyle
+                activeUnlockStyle = GlanceSettings.shared.effectiveUnlockAnimationStyle
                 content = .scan(.idle)
                 phase = .scanning
                 updateInteractivity()

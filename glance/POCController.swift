@@ -23,16 +23,19 @@ final class POCController {
     /// Bound to the setup SecureField. Cleared immediately after a successful save.
     var passwordInput: String = ""
 
-    /// Persisted via GlanceSettings — previously reset to `false` on every launch.
-    var autoInjectOnLock: Bool {
-        didSet { GlanceSettings.shared.unlockOnWake = autoInjectOnLock }
-    }
+    /// Injects the stored password on wake with **no face check at all** —
+    /// a POC path, not a shipping feature. Deliberately no longer persisted
+    /// and always starts off: it used to be surfaced as General ▸ "Unlock on
+    /// wake", but that row now hosts the Face Unlock trigger picker, and
+    /// leaving a no-face auto-unlock silently enabled with no visible
+    /// control would be a way for the Mac to unlock itself unattended. Still
+    /// flippable within a session from the debug ContentView.
+    var autoInjectOnLock: Bool = false
     var statusMessage: String = "Idle"
 
     private var hasAutoInjectedForCurrentLock = false
 
     init() {
-        self.autoInjectOnLock = GlanceSettings.shared.unlockOnWake
         observeLockAndWakeEvents()
     }
 

@@ -54,6 +54,48 @@ enum UnlockAnimationStyle: String, CaseIterable, Identifiable {
         case .original: return "Original"
         }
     }
+
+    /// The styles the picker actually offers. `.none` is still a valid
+    /// *stored* value — the overlay's resolve path keys off it — but it's no
+    /// longer chosen by picking a tile; the "Show animation" toggle
+    /// (`GlanceSettings.showUnlockAnimation`) produces it instead.
+    static let selectableCases: [UnlockAnimationStyle] = [.minimal, .original]
+}
+
+/// What can prompt Face Unlock. Multi-select — any combination may be armed,
+/// and at least one is always kept selected (a Mac with none selected would
+/// never show the notch, leaving nothing to hover and no way back in).
+enum UnlockTrigger: String, CaseIterable, Identifiable {
+    /// The Mac resumed from sleep to a locked screen.
+    case onWake
+    /// The screen just became locked, no sleep involved.
+    case onLock
+    /// The user did something at an already-locked screen — dismissed the
+    /// screensaver, or woke the display without the Mac having slept.
+    ///
+    /// This stands in for the "press a key to prompt" idea, which macOS
+    /// doesn't permit: the lock screen runs under Secure Event Input, so
+    /// keyboard event taps are suppressed there no matter what permissions
+    /// the app holds.
+    case onActivity
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .onWake: return "On wake"
+        case .onLock: return "On lock"
+        case .onActivity: return "On activity"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .onWake: return "zzz"
+        case .onLock: return "lock.display"
+        case .onActivity: return "hand.tap.fill"
+        }
+    }
 }
 
 @Observable
@@ -65,10 +107,14 @@ final class GlanceSettings {
         static let isFaceUnlockEnabled = "GlanceSettings.isFaceUnlockEnabled"
         static let matchThreshold = "GlanceSettings.matchThreshold"
         static let minimumFaceWidth = "GlanceSettings.minimumFaceWidth"
-        static let unlockOnWake = "GlanceSettings.unlockOnWake"
         static let unlockAnimationStyle = "GlanceSettings.unlockAnimationStyle"
+        static let showUnlockAnimation = "GlanceSettings.showUnlockAnimation"
         /// Legacy bool key — read once during migration, then ignored.
         static let playUnlockAnimation = "GlanceSettings.playUnlockAnimation"
+        static let unlockTriggers = "GlanceSettings.unlockTriggers"
+        static let retryOnHover = "GlanceSettings.retryOnHover"
+        static let faceDetectionSeconds = "GlanceSettings.faceDetectionSeconds"
+        static let autoRetryOnce = "GlanceSettings.autoRetryOnce"
         static let autoCheckForUpdates = "GlanceSettings.autoCheckForUpdates"
         static let autoLockIntervalDays = "GlanceSettings.autoLockIntervalDays"
         static let defaultCameraID = "GlanceSettings.defaultCameraID"
@@ -94,15 +140,59 @@ final class GlanceSettings {
             FaceRecognitionPipeline.minimumProminentFaceWidth = minimumFaceWidth
         }
     }
-    var unlockOnWake: Bool {
-        didSet { defaults.set(unlockOnWake, forKey: Key.unlockOnWake) }
-    }
+    /// The *remembered* choice — only ever `.minimal` or `.original`.
+    /// Whether an animation plays at all is `showUnlockAnimation`, kept
+    /// separate so toggling off and back on restores the previous pick
+    /// instead of resetting it. Read `effectiveUnlockAnimationStyle`, not
+    /// this, to decide what to actually show.
     var unlockAnimationStyle: UnlockAnimationStyle {
         didSet { defaults.set(unlockAnimationStyle.rawValue, forKey: Key.unlockAnimationStyle) }
     }
+    var showUnlockAnimation: Bool {
+        didSet { defaults.set(showUnlockAnimation, forKey: Key.showUnlockAnimation) }
+    }
 
-    /// Convenience for call sites that only care whether any unlock animation plays.
-    var playUnlockAnimation: Bool { unlockAnimationStyle != .none }
+    /// What the overlay should actually render — the pick, or `.none` when
+    /// animations are switched off entirely.
+    var effectiveUnlockAnimationStyle: UnlockAnimationStyle {
+        showUnlockAnimation ? unlockAnimationStyle : .none
+    }
+
+    /// Which signals arm Face Unlock. Persisted as a `[String]` of raw
+    /// values — the first multi-select preference in the app, but string
+    /// arrays are natively `UserDefaults`-representable so it stays close to
+    /// the single-select `rawValue` convention used everywhere else here.
+    /// The setter refuses to store an empty set (see `UnlockTrigger`).
+    var unlockTriggers: Set<UnlockTrigger> {
+        didSet {
+            // Belt-and-braces behind the picker's own min-one rule. Assigning
+            // here doesn't re-enter `didSet`, so the persist below still runs
+            // with the corrected value.
+            if unlockTriggers.isEmpty {
+                unlockTriggers = oldValue.isEmpty ? Set(UnlockTrigger.allCases) : oldValue
+            }
+            defaults.set(unlockTriggers.map(\.rawValue), forKey: Key.unlockTriggers)
+        }
+    }
+    var retryOnHover: Bool {
+        didSet { defaults.set(retryOnHover, forKey: Key.retryOnHover) }
+    }
+    /// How long each scan cycle looks for a face before giving up. Drives
+    /// both the recognition loop's deadline and the overlay's own collapse
+    /// timer — see `FaceUnlockCoordinator.scanWindowDuration` and
+    /// `NotchOverlayController.scanTimeoutDuration`, which must stay equal.
+    var faceDetectionSeconds: Int {
+        didSet {
+            faceDetectionSeconds = min(max(faceDetectionSeconds, Self.faceDetectionRange.lowerBound),
+                                       Self.faceDetectionRange.upperBound)
+            defaults.set(faceDetectionSeconds, forKey: Key.faceDetectionSeconds)
+        }
+    }
+    var autoRetryOnce: Bool {
+        didSet { defaults.set(autoRetryOnce, forKey: Key.autoRetryOnce) }
+    }
+
+    static let faceDetectionRange = 3...10
     /// UI-only for now — no update mechanism exists yet.
     var autoCheckForUpdates: Bool {
         didSet { defaults.set(autoCheckForUpdates, forKey: Key.autoCheckForUpdates) }
@@ -128,16 +218,39 @@ final class GlanceSettings {
         isFaceUnlockEnabled = defaults.object(forKey: Key.isFaceUnlockEnabled) as? Bool ?? false
         matchThreshold = defaults.object(forKey: Key.matchThreshold) as? Float ?? 0.6
         minimumFaceWidth = defaults.object(forKey: Key.minimumFaceWidth) as? Float ?? 0.18
-        unlockOnWake = defaults.object(forKey: Key.unlockOnWake) as? Bool ?? false
+
+        // Resolve the stored style first, `.none` included, then split it
+        // into the pick + the on/off flag the UI now works in.
+        let storedStyle: UnlockAnimationStyle
         if let raw = defaults.string(forKey: Key.unlockAnimationStyle),
            let style = UnlockAnimationStyle(rawValue: raw) {
-            unlockAnimationStyle = style
+            storedStyle = style
         } else if let legacy = defaults.object(forKey: Key.playUnlockAnimation) as? Bool {
-            // Migrate the old on/off toggle: off → none, on → original.
-            unlockAnimationStyle = legacy ? .original : .none
+            // Migrate the oldest on/off toggle: off → none, on → original.
+            storedStyle = legacy ? .original : .none
         } else {
-            unlockAnimationStyle = .original
+            storedStyle = .original
         }
+        // A stored `.none` becomes "animations off, remembering .original",
+        // so switching them back on has something to restore. An explicit
+        // flag written by a newer build always wins over that inference.
+        unlockAnimationStyle = storedStyle == .none ? .original : storedStyle
+        showUnlockAnimation = defaults.object(forKey: Key.showUnlockAnimation) as? Bool
+            ?? (storedStyle != .none)
+
+        // Every trigger on by default — that's what the app did before this
+        // was configurable (it armed on any lock-related signal), so an
+        // existing install sees no behavior change.
+        let storedTriggers = (defaults.array(forKey: Key.unlockTriggers) as? [String])?
+            .compactMap(UnlockTrigger.init(rawValue:))
+        unlockTriggers = storedTriggers.map(Set.init).flatMap { $0.isEmpty ? nil : $0 }
+            ?? Set(UnlockTrigger.allCases)
+        retryOnHover = defaults.object(forKey: Key.retryOnHover) as? Bool ?? true
+        faceDetectionSeconds = (defaults.object(forKey: Key.faceDetectionSeconds) as? Int)
+            .map { min(max($0, Self.faceDetectionRange.lowerBound), Self.faceDetectionRange.upperBound) }
+            ?? 5
+        autoRetryOnce = defaults.object(forKey: Key.autoRetryOnce) as? Bool ?? false
+
         autoCheckForUpdates = defaults.object(forKey: Key.autoCheckForUpdates) as? Bool ?? true
         // Defaults to 7 days: long enough not to nag someone who uses face
         // unlock daily, short enough that an abandoned Mac doesn't keep a

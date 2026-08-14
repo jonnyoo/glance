@@ -146,7 +146,7 @@ struct SettingsWindowView: View {
         VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
             switch selection {
             case .general:
-                GeneralSettingsPage(pocController: environment.pocController, coordinator: environment.faceUnlockCoordinator)
+                GeneralSettingsPage(coordinator: environment.faceUnlockCoordinator)
             case .yourFace:
                 YourFaceSettingsPage(environment: environment)
             case .password:

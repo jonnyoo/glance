@@ -355,36 +355,62 @@ struct SettingsSectionTitle: View {
     }
 }
 
-/// Three-option unlock animation picker: preview tiles in a taller settings
-/// card, with the selected tile stroked in the accent color.
-struct UnlockAnimationPicker: View {
-    @Binding var selection: UnlockAnimationStyle
+/// A row of `SettingsOptionTile`s with no chrome of its own — the option
+/// picker's equivalent of `SettingsRowContent`. Drop this directly inside a
+/// `SettingsGroup` (after a `SettingsGroupDivider`) to connect a picker to
+/// the row that controls it into one continuous card, or wrap it in
+/// `SettingsOptionCard` below for a standalone boxed picker.
+struct SettingsOptionRow<Content: View>: View {
+    @ViewBuilder var content: () -> Content
 
     var body: some View {
         HStack(spacing: SettingsMetrics.optionItemSpacing) {
-            ForEach(UnlockAnimationStyle.allCases) { style in
-                option(style)
-            }
+            content()
         }
         .padding(.horizontal, SettingsMetrics.rowHorizontalInset)
         .padding(.vertical, SettingsMetrics.optionCardVerticalPadding)
-        .background(
-            RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius)
-                .fill(SettingsMetrics.rowColor)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius)
-                .strokeBorder(SettingsMetrics.rowBorder, lineWidth: SettingsMetrics.rowBorderWidth)
-        )
+    }
+}
+
+/// `SettingsOptionRow` with its own card chrome, for a picker that stands
+/// alone rather than connecting to a row above it.
+struct SettingsOptionCard<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        SettingsOptionRow(content: content)
+            .background(
+                RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius)
+                    .fill(SettingsMetrics.rowColor)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius)
+                    .strokeBorder(SettingsMetrics.rowBorder, lineWidth: SettingsMetrics.rowBorderWidth)
+            )
+    }
+}
+
+/// One selectable preview tile: artwork on a filled rounded rect, a label
+/// beneath, and an accent ring when selected. Selection is just a `Bool`, so
+/// this serves single-select and multi-select pickers alike.
+struct SettingsOptionTile<Preview: View>: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+    @ViewBuilder var preview: () -> Preview
+
+    /// Tint for artwork drawn as plain shapes, so tiles that don't supply
+    /// their own coloring still read as selected/unselected.
+    static func previewTint(isSelected: Bool) -> Color {
+        isSelected
+            ? SettingsMetrics.textPrimary.opacity(0.55)
+            : SettingsMetrics.textSecondary.opacity(0.7)
     }
 
-    private func option(_ style: UnlockAnimationStyle) -> some View {
-        let isSelected = selection == style
-        return Button {
-            selection = style
-        } label: {
+    var body: some View {
+        Button(action: action) {
             VStack(spacing: 8) {
-                preview(for: style, isSelected: isSelected)
+                preview()
                     .frame(maxWidth: .infinity)
                     .frame(height: SettingsMetrics.optionPreviewHeight)
                     .background {
@@ -442,7 +468,7 @@ struct UnlockAnimationPicker: View {
                         }
                     }
 
-                Text(style.title)
+                Text(title)
                     .font(SettingsMetrics.optionLabelFont)
                     .foregroundStyle(isSelected ? SettingsMetrics.textPrimary : SettingsMetrics.textSecondary)
             }
@@ -451,32 +477,93 @@ struct UnlockAnimationPicker: View {
         }
         .buttonStyle(.plain)
     }
+}
+
+/// Unlock animation picker — the option-tile row that connects, inside one
+/// `SettingsGroup`, to the "Show animation" toggle above it (see
+/// `GeneralSettingsPage`). Only the two *visible* styles are offered —
+/// `.none` is produced by that toggle instead, which is also what
+/// `isEnabled` reflects when it greys the tiles out.
+struct UnlockAnimationPicker: View {
+    @Binding var selection: UnlockAnimationStyle
+    var isEnabled: Bool = true
+
+    var body: some View {
+        SettingsOptionRow {
+            ForEach(UnlockAnimationStyle.selectableCases) { style in
+                SettingsOptionTile(
+                    title: style.title,
+                    isSelected: selection == style,
+                    action: { selection = style }
+                ) {
+                    preview(for: style, isSelected: selection == style)
+                }
+            }
+        }
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.4)
+    }
 
     /// Static silhouettes standing in for what each style actually does to
     /// the notch/pill: `.minimal` only widens it into a capsule strip,
     /// `.original` expands it into a full rounded panel.
     @ViewBuilder
     private func preview(for style: UnlockAnimationStyle, isSelected: Bool) -> some View {
+        let tint = SettingsOptionTile<EmptyView>.previewTint(isSelected: isSelected)
         switch style {
-        case .none:
-            Image(systemName: "nosign")
-                .font(.system(size: 20, weight: .regular))
-                .foregroundStyle(SettingsMetrics.textSecondary)
         case .minimal:
             Capsule(style: .continuous)
-                .fill(previewTint(isSelected))
+                .fill(tint)
                 .frame(width: 46, height: 13)
         case .original:
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(previewTint(isSelected))
+                .fill(tint)
                 .frame(width: 38, height: 30)
+        case .none:
+            // Not offered as a tile — `showUnlockAnimation` covers it.
+            EmptyView()
         }
     }
+}
 
-    private func previewTint(_ isSelected: Bool) -> Color {
-        isSelected
-            ? SettingsMetrics.textPrimary.opacity(0.55)
-            : SettingsMetrics.textSecondary.opacity(0.7)
+/// Multi-select picker for what arms Face Unlock — the option-tile row that
+/// connects, inside one `SettingsGroup`, to the "Enable Face Unlock" toggle
+/// above it (see `GeneralSettingsPage`). Unlike the animation picker, tiles
+/// toggle rather than replace — but the last remaining selection is sticky:
+/// with nothing selected the notch would never appear, leaving no way to
+/// trigger or retry an unlock. `isEnabled` greys the tiles out, same as
+/// `UnlockAnimationPicker`, when the row above is off.
+struct UnlockTriggerPicker: View {
+    @Binding var selection: Set<UnlockTrigger>
+    var isEnabled: Bool = true
+
+    var body: some View {
+        SettingsOptionRow {
+            ForEach(UnlockTrigger.allCases) { trigger in
+                let isSelected = selection.contains(trigger)
+                SettingsOptionTile(
+                    title: trigger.title,
+                    isSelected: isSelected,
+                    action: { toggle(trigger, isSelected: isSelected) }
+                ) {
+                    Image(systemName: trigger.iconName)
+                        .font(.system(size: 20, weight: .regular))
+                        .foregroundStyle(SettingsOptionTile<EmptyView>.previewTint(isSelected: isSelected))
+                }
+            }
+        }
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.4)
+    }
+
+    private func toggle(_ trigger: UnlockTrigger, isSelected: Bool) {
+        guard isSelected else {
+            selection.insert(trigger)
+            return
+        }
+        // Deselecting the last one is a no-op rather than an error state.
+        guard selection.count > 1 else { return }
+        selection.remove(trigger)
     }
 }
 

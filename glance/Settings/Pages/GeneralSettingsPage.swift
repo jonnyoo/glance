@@ -6,7 +6,6 @@
 import SwiftUI
 
 struct GeneralSettingsPage: View {
-    @Bindable var pocController: POCController
     @Bindable var coordinator: FaceUnlockCoordinator
     @Bindable private var settings = GlanceSettings.shared
 
@@ -35,17 +34,47 @@ struct GeneralSettingsPage: View {
                 GlanceToggle(isOn: $coordinator.isEnabled)
             }
             SettingsGroupDivider()
-            SettingsRowContent(title: "Unlock on wake") {
-                GlanceToggle(isOn: $pocController.autoInjectOnLock)
-            }
+            UnlockTriggerPicker(selection: $settings.unlockTriggers, isEnabled: coordinator.isEnabled)
         }
         if let launchAtLoginError {
             SettingsCaption(text: launchAtLoginError)
         }
 
         VStack(alignment: .leading, spacing: 8) {
-            SettingsSectionTitle(text: "Unlock Animation")
-            UnlockAnimationPicker(selection: $settings.unlockAnimationStyle)
+            SettingsSectionTitle(text: "Behaviour")
+            SettingsGroup {
+                SettingsRowContent(title: "Retry FaceID on Hover") {
+                    GlanceToggle(isOn: $settings.retryOnHover)
+                }
+                SettingsGroupDivider()
+                SettingsRowContent(title: "Auto retry FaceID once") {
+                    GlanceToggle(isOn: $settings.autoRetryOnce)
+                }
+                SettingsGroupDivider()
+                SettingsSteppedSliderRowContent(
+                    title: "Face detection duration",
+                    valueLabel: "\(settings.faceDetectionSeconds)s",
+                    index: Binding(
+                        get: { Double(settings.faceDetectionSeconds - GlanceSettings.faceDetectionRange.lowerBound) },
+                        set: { settings.faceDetectionSeconds = GlanceSettings.faceDetectionRange.lowerBound + Int($0.rounded()) }
+                    ),
+                    stopCount: GlanceSettings.faceDetectionRange.count
+                )
+            }
+        }
+
+        VStack(alignment: .leading, spacing: 8) {
+            SettingsSectionTitle(text: "Animation")
+            SettingsGroup {
+                SettingsRowContent(title: "Show animation") {
+                    GlanceToggle(isOn: $settings.showUnlockAnimation)
+                }
+                SettingsGroupDivider()
+                UnlockAnimationPicker(
+                    selection: $settings.unlockAnimationStyle,
+                    isEnabled: settings.showUnlockAnimation
+                )
+            }
         }
     }
 }
