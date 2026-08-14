@@ -39,6 +39,11 @@ struct MinimalUnlockView: View {
     /// Inset from the silhouette's left/right edges. The caller adds the
     /// notch's flare allowance into this where it applies.
     let edgeInset: CGFloat
+    /// The scan "breathing" pulse — applied to the video only, not the lock
+    /// icon or the panel as a whole. Both default to identity so callers
+    /// outside `.scanning` (or previews) don't need to pass anything.
+    var pulseScale: CGFloat = 1
+    var pulseOpacity: Double = 1
 
     var body: some View {
         HStack(spacing: 0) {
@@ -61,8 +66,13 @@ struct MinimalUnlockView: View {
             Spacer(minLength: 0)
 
             ScanAnimationView(media: media)
-                .padding(.vertical, NotchGeometry.minimalMediaVerticalInset)
+                .padding(.vertical, NotchGeometry.minimalMediaVerticalInset + 4)
                 .frame(width: NotchGeometry.minimalMediaWidth)
+                // Scoped to the video alone — the lock icon on the left
+                // must stay steady while this breathes.
+                .scaleEffect(pulseScale)
+                .opacity(pulseOpacity)
+                .padding(.trailing, 4)
         }
         .padding(.horizontal, edgeInset)
     }

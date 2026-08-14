@@ -58,7 +58,7 @@ struct NotchGeometry {
     /// Resting/entering pill footprint. Deliberately narrower than every
     /// expanded footprint (the smallest is scan mode's `pillOpenSize`) so
     /// the growth is visible rather than a barely-perceptible nudge.
-    static let pillClosedSize = CGSize(width: 90, height: 24)
+    static let pillClosedSize = CGSize(width: 80, height: 24)
 
     /// Scan-mode (armed lock-screen flow, Face Lab previews) footprint in
     /// pill style — the pill's equivalent of `notchOpenSize` above, sized
@@ -162,8 +162,8 @@ struct NotchGeometry {
     /// the icon and video are legible — the corner radius stays
     /// `height / 2` at both ends, so it remains a true capsule while it
     /// stretches.
-    static let minimalPillOpenWidth: CGFloat = 160
-    static let minimalPillOpenHeight: CGFloat = 34
+    static let minimalPillOpenWidth: CGFloat = 150
+    static let minimalPillOpenHeight: CGFloat = 40
 
     /// Radii for the widened notch. Default to the closed values because
     /// the height doesn't change — these exist only so the widened notch

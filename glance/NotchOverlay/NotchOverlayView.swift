@@ -275,33 +275,33 @@ struct NotchOverlayView: View {
     }
 
     /// The scan-mode content — minimal or original. The breathing pulse is
-    /// applied here, wrapping whichever one is showing, so it covers the
-    /// entire unlock content in both styles (and never onboarding). It sits
-    /// outside the padding/layout so it scales the content as one piece
-    /// about its center, rather than just the media inside its box.
+    /// applied to the video only in both styles, never to the lock icon
+    /// (minimal) or the panel as a whole — in the `.minimal` branch that
+    /// means passing it into `MinimalUnlockView` rather than wrapping this
+    /// whole `Group`.
     @ViewBuilder
     private var scanContent: some View {
-        Group {
-            if isMinimalScan {
-                MinimalUnlockView(
-                    media: controller.media,
-                    isUnlocked: isMinimalLockOpen,
-                    // The notch's flare eats `topRadius` of each edge before
-                    // any real black starts, so the inset is measured from
-                    // where the flank actually becomes visible.
-                    edgeInset: NotchGeometry.minimalContentEdgeInset
-                        + (style == .notch ? topRadius : 0)
-                )
-            } else {
-                ScanAnimationView(media: controller.media)
-                    .padding(.leading, scanContentPaddingLeading)
-                    .padding(.trailing, scanContentPaddingTrailing)
-                    .padding(.top, scanContentPaddingTop)
-                    .padding(.bottom, scanContentPaddingBottom)
-            }
+        if isMinimalScan {
+            MinimalUnlockView(
+                media: controller.media,
+                isUnlocked: isMinimalLockOpen,
+                // The notch's flare eats `topRadius` of each edge before
+                // any real black starts, so the inset is measured from
+                // where the flank actually becomes visible.
+                edgeInset: NotchGeometry.minimalContentEdgeInset
+                    + (style == .notch ? topRadius : 0),
+                pulseScale: scanPulseScale,
+                pulseOpacity: scanPulseOpacity
+            )
+        } else {
+            ScanAnimationView(media: controller.media)
+                .padding(.leading, scanContentPaddingLeading)
+                .padding(.trailing, scanContentPaddingTrailing)
+                .padding(.top, scanContentPaddingTop)
+                .padding(.bottom, scanContentPaddingBottom)
+                .scaleEffect(scanPulseScale)
+                .opacity(scanPulseOpacity)
         }
-        .scaleEffect(scanPulseScale)
-        .opacity(scanPulseOpacity)
     }
 
     var body: some View {
