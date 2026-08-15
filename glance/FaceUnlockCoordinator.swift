@@ -82,6 +82,17 @@ final class FaceUnlockCoordinator {
     /// scheduled *from inside* the scan task it follows — reusing `scanTask`
     /// would have that task cancel itself before the retry ever ran.
     private var autoRetryTask: Task<Void, Never>?
+    /// Gap between attempts when auto-retrying with no UI up — there's no
+    /// held failure frame or collapse animation to wait out headlessly, so
+    /// this just keeps the camera from restarting in a tight loop.
+    private let headlessRetryDelay: Duration = .seconds(1)
+
+    /// Whether this scan cycle should touch the notch/pill overlay at all.
+    /// When "Show animation" is off, the whole point is that nothing is
+    /// shown — not a silent version of the same UI, no notch/pill presence
+    /// whatsoever — so every overlay call in this file is conditioned on
+    /// this rather than just skipping the video.
+    private var showsUI: Bool { GlanceSettings.shared.showUnlockAnimation }
 
     init(pocController: POCController) {
         self.pocController = pocController
@@ -186,6 +197,13 @@ final class FaceUnlockCoordinator {
 
     private func arm() async {
         guard LockMonitor.isScreenActuallyLocked() else { return }
+        guard showsUI else {
+            // Headless: never touch the overlay — just start scanning.
+            // There's no hover-to-retry without anything visible to hover,
+            // so retries are driven entirely by auto-retry (if it's on).
+            startScanCycle()
+            return
+        }
         NotchOverlayController.shared.arm { [weak self] in
             self?.startScanCycle()
         }
@@ -212,25 +230,46 @@ final class FaceUnlockCoordinator {
             return
         }
 
-        NotchOverlayController.shared.beginScanning()
+        let showsUI = self.showsUI
+        if showsUI {
+            NotchOverlayController.shared.beginScanning()
+        }
         statusMessage = "Looking for your face…"
 
-        let outcome = await observeScanWindow(deadline: Date().addingTimeInterval(scanWindowDuration))
+        let outcome = await observeScanWindow(
+            deadline: Date().addingTimeInterval(scanWindowDuration),
+            requireOverlayScanning: showsUI
+        )
         camera.stop()
 
         switch outcome {
         case .matched:
-            NotchOverlayController.shared.finish(success: true)
+            // The unlock itself already happened inside observeScanWindow
+            // (injectStoredPassword) regardless of UI — this only decides
+            // whether anything is shown about it.
+            if showsUI {
+                NotchOverlayController.shared.finish(success: true)
+            }
         case .consistentlyWrongFace:
-            NotchOverlayController.shared.finish(success: false)
-            statusMessage = "Face not recognized — hover the notch to try again."
-            scheduleAutoRetryIfEnabled(after: NotchOverlayController.shared.failureHoldDuration)
+            statusMessage = "Face not recognized."
+            if showsUI {
+                NotchOverlayController.shared.finish(success: false)
+                statusMessage = "Face not recognized — hover the notch to try again."
+                scheduleAutoRetryIfEnabled(after: NotchOverlayController.shared.failureHoldDuration)
+            } else {
+                scheduleAutoRetryIfEnabled(after: headlessRetryDelay)
+            }
         case .noResolution:
-            // No explicit collapse call: NotchOverlayController's own
-            // scanning timeout (started by beginScanning() above) fires on
-            // the same mark and quietly collapses on its own.
-            statusMessage = "No face detected — hover the notch to try again."
-            scheduleAutoRetryIfEnabled(after: NotchOverlayController.shared.collapseAnimationDuration)
+            statusMessage = "No face detected."
+            if showsUI {
+                // No explicit collapse call: NotchOverlayController's own
+                // scanning timeout (started by beginScanning() above) fires
+                // on the same mark and quietly collapses on its own.
+                statusMessage = "No face detected — hover the notch to try again."
+                scheduleAutoRetryIfEnabled(after: NotchOverlayController.shared.collapseAnimationDuration)
+            } else {
+                scheduleAutoRetryIfEnabled(after: headlessRetryDelay)
+            }
         }
     }
 
@@ -249,9 +288,13 @@ final class FaceUnlockCoordinator {
             guard !Task.isCancelled, let self else { return }
             // Re-check rather than trust the delay: the user may have
             // unlocked by password, or hovered to retry manually, while this
-            // was waiting.
-            guard LockMonitor.isScreenActuallyLocked(), self.isEnabled,
-                  NotchOverlayController.shared.phase == .closed else { return }
+            // was waiting. The overlay-phase check only applies when there's
+            // an overlay to check — headlessly there's nothing to hover, so
+            // nothing else could have already restarted the scan.
+            guard LockMonitor.isScreenActuallyLocked(), self.isEnabled else { return }
+            if self.showsUI {
+                guard NotchOverlayController.shared.phase == .closed else { return }
+            }
             self.startScanCycle()
         }
     }
@@ -265,10 +308,15 @@ final class FaceUnlockCoordinator {
     /// Runs until either a live match unlocks (`.matched`), the same face
     /// reads as confidently-not-a-match for `wrongFaceStreakThreshold`
     /// consecutive frames (`.consistentlyWrongFace`), or `deadline` passes
-    /// with neither (`.noResolution`) — also bails early if the overlay's
-    /// own timeout already collapsed the UI, so this loop never keeps
-    /// running invisibly after the notch has visually closed.
-    private func observeScanWindow(deadline: Date) async -> ScanOutcome {
+    /// with neither (`.noResolution`).
+    ///
+    /// `requireOverlayScanning` also bails early if the overlay's own
+    /// timeout already collapsed the UI, so this loop never keeps running
+    /// invisibly after the notch has visually closed — but only when there
+    /// *is* an overlay: headlessly, nothing ever sets `phase` to `.scanning`
+    /// in the first place, so requiring it there would make this return
+    /// `.noResolution` before ever looking at a frame.
+    private func observeScanWindow(deadline: Date, requireOverlayScanning: Bool) async -> ScanOutcome {
         let liveness = LivenessMonitor(matchThreshold: matchThreshold)
         var consecutiveWrongFaceFrames = 0
         /// Which face (by normalized bounding box) recognition locked onto
@@ -278,7 +326,8 @@ final class FaceUnlockCoordinator {
         /// see FaceRecognitionPipeline.selectDominantFace for the full story.
         var lastFaceBoundingBox: CGRect?
 
-        while Date() < deadline, !Task.isCancelled, NotchOverlayController.shared.phase == .scanning {
+        while Date() < deadline, !Task.isCancelled,
+              !requireOverlayScanning || NotchOverlayController.shared.phase == .scanning {
             guard LockMonitor.isScreenActuallyLocked() else { return .noResolution }
 
             guard let frame = camera.currentFrame else {
