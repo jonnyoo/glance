@@ -168,9 +168,13 @@ final class GlanceSettings {
     /// The setter refuses to store an empty set (see `UnlockTrigger`).
     var unlockTriggers: Set<UnlockTrigger> {
         didSet {
-            // Belt-and-braces behind the picker's own min-one rule. Assigning
-            // here doesn't re-enter `didSet`, so the persist below still runs
-            // with the corrected value.
+            // Belt-and-braces behind the picker's own min-one rule.
+            // Assigning here *does* re-enter `didSet` (self-reassignment
+            // inside a didSet always does — see `faceDetectionSeconds` for
+            // what happens when that reentry isn't guarded), but it
+            // terminates after one extra pass: the corrected value is never
+            // itself empty, so the second call's `isEmpty` check is false
+            // and it falls straight through to `defaults.set` below.
             if unlockTriggers.isEmpty {
                 unlockTriggers = oldValue.isEmpty ? Set(UnlockTrigger.allCases) : oldValue
             }
@@ -186,8 +190,19 @@ final class GlanceSettings {
     /// `NotchOverlayController.scanTimeoutDuration`, which must stay equal.
     var faceDetectionSeconds: Int {
         didSet {
-            faceDetectionSeconds = min(max(faceDetectionSeconds, Self.faceDetectionRange.lowerBound),
-                                       Self.faceDetectionRange.upperBound)
+            // Reassigning unconditionally here would retrigger `didSet` on
+            // every single set — including already-in-range ones, which is
+            // all the slider ever produces — for infinite recursion that
+            // hangs the (MainActor-isolated) app the instant the slider
+            // moves. Only reassign when clamping actually changes the
+            // value, so the recursive call it causes is guaranteed to see
+            // `clamped == faceDetectionSeconds` and stop there.
+            let clamped = min(max(faceDetectionSeconds, Self.faceDetectionRange.lowerBound),
+                               Self.faceDetectionRange.upperBound)
+            guard clamped == faceDetectionSeconds else {
+                faceDetectionSeconds = clamped
+                return
+            }
             defaults.set(faceDetectionSeconds, forKey: Key.faceDetectionSeconds)
         }
     }
