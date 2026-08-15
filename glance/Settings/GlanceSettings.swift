@@ -115,6 +115,9 @@ final class GlanceSettings {
         static let retryOnHover = "GlanceSettings.retryOnHover"
         static let faceDetectionSeconds = "GlanceSettings.faceDetectionSeconds"
         static let autoRetryOnce = "GlanceSettings.autoRetryOnce"
+        static let hapticFeedbackEnabled = "GlanceSettings.hapticFeedbackEnabled"
+        static let preferredDisplayID = "GlanceSettings.preferredDisplayID"
+        static let preferredDisplayName = "GlanceSettings.preferredDisplayName"
         static let autoCheckForUpdates = "GlanceSettings.autoCheckForUpdates"
         static let autoLockIntervalDays = "GlanceSettings.autoLockIntervalDays"
         static let defaultCameraID = "GlanceSettings.defaultCameraID"
@@ -191,8 +194,33 @@ final class GlanceSettings {
     var autoRetryOnce: Bool {
         didSet { defaults.set(autoRetryOnce, forKey: Key.autoRetryOnce) }
     }
+    /// Trackpad haptic on hovering the notch/pill, and on a successful
+    /// unlock. See `NotchOverlayView`'s hover handler and
+    /// `.onChange(of: controller.phase)` for where these actually fire.
+    var hapticFeedbackEnabled: Bool {
+        didSet { defaults.set(hapticFeedbackEnabled, forKey: Key.hapticFeedbackEnabled) }
+    }
 
     static let faceDetectionRange = 3...10
+
+    /// Which display Face Unlock is allowed to show on. `nil` means "Main
+    /// display" — `NotchGeometry.preferredScreen()`'s existing behavior
+    /// (the notched display if any is connected, else the system's primary
+    /// display), re-evaluated live. A non-nil value pins the overlay to one
+    /// specific screen, identified by `NSScreen.stableDisplayID` — and
+    /// deliberately has NO fallback: if that display isn't connected right
+    /// now, Face Unlock doesn't arm on any other display either (gated in
+    /// `FaceUnlockCoordinator.evaluateTrigger()`).
+    var preferredDisplayID: String? {
+        didSet { defaults.set(preferredDisplayID, forKey: Key.preferredDisplayID) }
+    }
+    /// The chosen display's name at the time it was picked — cosmetic only,
+    /// so the settings row can still show something recognizable
+    /// ("LG UltraFine (disconnected)") when that display isn't currently
+    /// connected, rather than falling back to a bare ID.
+    var preferredDisplayName: String? {
+        didSet { defaults.set(preferredDisplayName, forKey: Key.preferredDisplayName) }
+    }
     /// UI-only for now — no update mechanism exists yet.
     var autoCheckForUpdates: Bool {
         didSet { defaults.set(autoCheckForUpdates, forKey: Key.autoCheckForUpdates) }
@@ -250,6 +278,9 @@ final class GlanceSettings {
             .map { min(max($0, Self.faceDetectionRange.lowerBound), Self.faceDetectionRange.upperBound) }
             ?? 5
         autoRetryOnce = defaults.object(forKey: Key.autoRetryOnce) as? Bool ?? false
+        hapticFeedbackEnabled = defaults.object(forKey: Key.hapticFeedbackEnabled) as? Bool ?? true
+        preferredDisplayID = defaults.string(forKey: Key.preferredDisplayID)
+        preferredDisplayName = defaults.string(forKey: Key.preferredDisplayName)
 
         autoCheckForUpdates = defaults.object(forKey: Key.autoCheckForUpdates) as? Bool ?? true
         // Defaults to 7 days: long enough not to nag someone who uses face

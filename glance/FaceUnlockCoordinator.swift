@@ -132,6 +132,11 @@ final class FaceUnlockCoordinator {
         guard isEnabled, !hasArmedForCurrentLock else { return }
         guard let trigger = requiredTrigger(for: lockMonitor.lastEvent),
               GlanceSettings.shared.unlockTriggers.contains(trigger) else { return }
+        // A specific display was chosen and it isn't connected right now —
+        // don't run at all rather than showing up on some other screen.
+        // "Main display" (nil) always resolves to something as long as any
+        // screen is connected, so this only ever bails for a pinned choice.
+        guard NotchGeometry.preferredScreen() != nil else { return }
 
         guard SecureCredentialManager.isSessionUnlocked else {
             statusMessage = "Face unlock is on, but the session is locked — authenticate once via the Credentials tab first."

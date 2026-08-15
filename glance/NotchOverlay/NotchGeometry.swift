@@ -337,10 +337,38 @@ struct NotchGeometry {
         return NotchGeometry(closedSize: CGSize(width: width, height: height), isPhysicalNotch: true)
     }
 
-    /// Picks the best screen for the overlay: the physical notch if any
-    /// connected display has one, else the main screen (which gets the
-    /// synthetic fallback).
+    /// Picks the screen the overlay should show on.
+    ///
+    /// If the user has pinned Face Unlock to a specific display
+    /// (`GlanceSettings.preferredDisplayID`), that display is used if (and
+    /// only if) it's currently connected — no fallback, since the whole
+    /// point of choosing a specific display is that the overlay shouldn't
+    /// show anywhere else. `FaceUnlockCoordinator.evaluateTrigger()` checks
+    /// this before ever arming, so the real lock-screen flow simply doesn't
+    /// run rather than showing up on the wrong screen.
+    ///
+    /// Otherwise ("Main display"): the physical notch if any connected
+    /// display has one, else the system's primary screen — unchanged from
+    /// before the display picker existed.
+    @MainActor
     static func preferredScreen() -> NSScreen? {
-        NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main
+        if let targetID = GlanceSettings.shared.preferredDisplayID {
+            return NSScreen.screens.first { $0.stableDisplayID == targetID }
+        }
+        return NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main
+    }
+}
+
+extension NSScreen {
+    /// A per-display identifier stable enough to persist a user's display
+    /// choice across launches — the same `CGDirectDisplayID` extraction
+    /// `CameraDeviceCatalog.isUsingBuiltInDisplay()` already uses elsewhere
+    /// in the app. Not guaranteed stable across every possible hardware
+    /// change, but it's the only per-display identity AppKit exposes.
+    var stableDisplayID: String? {
+        guard let number = deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
+            return nil
+        }
+        return String(number)
     }
 }

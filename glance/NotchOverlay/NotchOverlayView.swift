@@ -43,6 +43,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct NotchOverlayView: View {
     let controller: NotchOverlayController
@@ -363,6 +364,7 @@ struct NotchOverlayView: View {
         .onHover { hovering in
             isHovering = hovering
             if hovering {
+                performHapticFeedback(.generic)
                 controller.activate()
             }
         }
@@ -380,10 +382,13 @@ struct NotchOverlayView: View {
             lockUnlockTask?.cancel()
             lockUnlockTask = nil
         }
-        .onChange(of: controller.phase) { _, _ in
+        .onChange(of: controller.phase) { _, newPhase in
             scheduleChoreography()
             updateScanPulse()
             updateMinimalLock()
+            if newPhase == .success {
+                performHapticFeedback(.levelChange)
+            }
         }
         .onChange(of: controller.isPillDocked) { _, _ in scheduleChoreography() }
         .frame(
@@ -443,6 +448,18 @@ struct NotchOverlayView: View {
                 withAnimation(animation) { self.visualIsPositioned = wantPositioned }
             }
         }
+    }
+
+    // MARK: - Haptics
+
+    /// Trackpad haptic, gated on `GlanceSettings.hapticFeedbackEnabled`.
+    /// `defaultPerformer` is the whole-app/whole-trackpad performer — it
+    /// isn't tied to this view or its window, so this is safe to call from
+    /// any main-thread context, including while this panel isn't key
+    /// (hover on the lock screen never makes it key).
+    private func performHapticFeedback(_ pattern: NSHapticFeedbackManager.FeedbackPattern) {
+        guard GlanceSettings.shared.hapticFeedbackEnabled else { return }
+        NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .default)
     }
 
     // MARK: - Scan pulse
