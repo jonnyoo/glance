@@ -12,18 +12,26 @@ import Observation
 
 /// Which signal most recently fired. `withObservationTracking`'s `onChange`
 /// doesn't say *which* tracked property changed, so observers that need to
-/// tell "the screen just locked" from "the Mac woke up" from "the user
-/// jiggled something at an already-locked screen" read this alongside the
-/// monotonic `eventCount`.
+/// tell "the screen just locked" from "the Mac woke up" read this alongside
+/// the monotonic `eventCount`.
 enum LockEventKind {
     case screenLocked
     case screenUnlocked
     case willSleep
-    /// A wake that followed an actual system sleep.
-    case systemWake
-    /// A display wake with no sleep in flight, or the screensaver stopping —
-    /// i.e. the user did something at a screen that was already locked.
-    case userActivity
+    /// The display turned back on — whether from true system sleep, from
+    /// display-only sleep, or from the screensaver stopping at an
+    /// already-locked screen.
+    ///
+    /// This used to be split into two kinds (`.systemWake`, gated on a prior
+    /// `willSleepNotification`, vs. `.userActivity` for everything else) so
+    /// "On wake" and "On activity" could be separate trigger options. In
+    /// practice that split was unreliable: `willSleepNotification` only
+    /// fires for whole-system sleep, not the far more common case of the
+    /// *display* sleeping on its own idle timer while the system stays
+    /// awake — so most real "the Mac woke up" moments were silently
+    /// misclassified as `.userActivity`, and "On wake" alone effectively
+    /// never fired. The two are merged into this one case.
+    case wake
 }
 
 @Observable
@@ -109,7 +117,7 @@ final class LockMonitor {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.record(.userActivity)
+            self?.record(.wake)
         })
 
         let workspace = NSWorkspace.shared.notificationCenter
@@ -141,15 +149,10 @@ final class LockMonitor {
         })
     }
 
-    /// Classifies a wake by whether a sleep was actually in flight. A wake
-    /// with `isSleeping` already false is a display-only wake — the Mac
-    /// never slept, the user just touched something at a locked screen —
-    /// which is a meaningfully different trigger from resuming from sleep.
     private func recordWake() {
-        let kind: LockEventKind = isSleeping ? .systemWake : .userActivity
         isSleeping = false
         wakeEventCount += 1
-        record(kind)
+        record(.wake)
     }
 
     private func record(_ kind: LockEventKind) {

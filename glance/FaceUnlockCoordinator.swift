@@ -133,16 +133,20 @@ final class FaceUnlockCoordinator {
         }
         guard !lockMonitor.isSleeping else { return }
 
-        // The user showing up at an already-locked screen is an explicit
-        // "let me back in" — clear the one-shot guard so it re-arms even if
+        // The Mac waking up — real sleep, display sleep, or the screensaver
+        // stopping, `.wake` covers all three (see `LockEventKind.wake`) — is
+        // an explicit "let me back in," so clear the one-shot guard even if
         // an earlier attempt this lock session already came and went.
-        if lockMonitor.lastEvent == .userActivity {
+        if lockMonitor.lastEvent == .wake {
             hasArmedForCurrentLock = false
         }
 
         guard isEnabled, !hasArmedForCurrentLock else { return }
-        guard let trigger = requiredTrigger(for: lockMonitor.lastEvent),
-              GlanceSettings.shared.unlockTriggers.contains(trigger) else { return }
+        // Which signal this is, independent of whether the user asked to
+        // auto-scan on it. `.screenUnlocked`/`.willSleep`/`nil` never arm
+        // anything (handled by the guards above / nil default), regardless
+        // of trigger selection.
+        guard let signal = requiredTrigger(for: lockMonitor.lastEvent) else { return }
         // A specific display was chosen and it isn't connected right now —
         // don't run at all rather than showing up on some other screen.
         // "Main display" (nil) always resolves to something as long as any
@@ -158,6 +162,21 @@ final class FaceUnlockCoordinator {
             return
         }
 
+        // Whether *this specific signal* should also kick off a scan right
+        // away, vs. just making the notch/pill available to hover. A
+        // deselected trigger no longer means "do nothing" — it means "don't
+        // auto-scan for this signal," so the user can still opt in by hand.
+        let shouldAutoScan = GlanceSettings.shared.unlockTriggers.contains(signal)
+
+        // Headless (no UI at all — see `showsUI`) has nothing to arm and no
+        // way to hover, so "armed but not auto-scanning" isn't a state that
+        // means anything there. If this signal isn't selected, there's
+        // simply nothing to do — and critically, `hasArmedForCurrentLock`
+        // must NOT be set, so a later signal that *is* selected can still
+        // fire (setting it here would permanently lock out the rest of this
+        // lock session, since nothing ever calls `arm()` to reset it).
+        guard showsUI || shouldAutoScan else { return }
+
         hasArmedForCurrentLock = true
         Task { [weak self] in
             // Was 1s — that had no measured justification (unlike the 300ms
@@ -167,7 +186,7 @@ final class FaceUnlockCoordinator {
             // notch silhouette, not the full scan UI, so it doesn't need
             // much of a buffer past the login window's own entrance.
             try? await Task.sleep(nanoseconds: 250_000_000)
-            await self?.arm()
+            await self?.arm(autoScan: shouldAutoScan)
         }
     }
 
@@ -179,9 +198,8 @@ final class FaceUnlockCoordinator {
     /// what the user selected.
     private func requiredTrigger(for event: LockEventKind?) -> UnlockTrigger? {
         switch event {
-        case .systemWake: return .onWake
+        case .wake: return .onWake
         case .screenLocked: return .onLock
-        case .userActivity: return .onActivity
         case .screenUnlocked, .willSleep, nil: return nil
         }
     }
@@ -195,19 +213,27 @@ final class FaceUnlockCoordinator {
         NotchOverlayController.shared.disarm()
     }
 
-    private func arm() async {
+    /// `autoScan` is whether the signal that led here is one the user
+    /// selected to scan on automatically. Either way the overlay still
+    /// arms (shows the closed, hover-reactive notch/pill) — a deselected
+    /// trigger only skips the *automatic* scan, so the user can always
+    /// hover in to start one by hand if they decide they want to.
+    private func arm(autoScan: Bool) async {
         guard LockMonitor.isScreenActuallyLocked() else { return }
         guard showsUI else {
-            // Headless: never touch the overlay — just start scanning.
-            // There's no hover-to-retry without anything visible to hover,
-            // so retries are driven entirely by auto-retry (if it's on).
+            // Headless has no overlay to arm and no way to hover, so
+            // "armed but waiting to be hovered" doesn't apply — by the time
+            // we get here `evaluateTrigger()` has already guaranteed
+            // `autoScan` is true, so this is just "start scanning."
             startScanCycle()
             return
         }
         NotchOverlayController.shared.arm { [weak self] in
             self?.startScanCycle()
         }
-        startScanCycle()
+        if autoScan {
+            startScanCycle()
+        }
     }
 
     /// Kicks off one scan cycle in the background. Called on arm, and again

@@ -66,18 +66,20 @@ enum UnlockAnimationStyle: String, CaseIterable, Identifiable {
 /// and at least one is always kept selected (a Mac with none selected would
 /// never show the notch, leaving nothing to hover and no way back in).
 enum UnlockTrigger: String, CaseIterable, Identifiable {
-    /// The Mac resumed from sleep to a locked screen.
+    /// The display turned back on — from real system sleep, from
+    /// display-only sleep, or from the screensaver stopping at an
+    /// already-locked screen. See `LockEventKind.wake` for why this used to
+    /// be two separate options ("On wake" / "On activity") and no longer is:
+    /// the split was unreliable and effectively made "On wake" alone never
+    /// fire in the common case.
     case onWake
-    /// The screen just became locked, no sleep involved.
+    /// The screen just became locked, no wake involved.
     case onLock
-    /// The user did something at an already-locked screen — dismissed the
-    /// screensaver, or woke the display without the Mac having slept.
-    ///
-    /// This stands in for the "press a key to prompt" idea, which macOS
-    /// doesn't permit: the lock screen runs under Secure Event Input, so
-    /// keyboard event taps are suppressed there no matter what permissions
-    /// the app holds.
-    case onActivity
+    /// Reserved for a future "press space to prompt" trigger — doesn't do
+    /// anything yet. The lock screen runs under Secure Event Input, which
+    /// suppresses keyboard event taps regardless of Accessibility trust, so
+    /// this needs a different mechanism before it can actually fire.
+    case onSpace
 
     var id: String { rawValue }
 
@@ -85,7 +87,7 @@ enum UnlockTrigger: String, CaseIterable, Identifiable {
         switch self {
         case .onWake: return "On wake"
         case .onLock: return "On lock"
-        case .onActivity: return "On activity"
+        case .onSpace: return "On space"
         }
     }
 
@@ -93,7 +95,7 @@ enum UnlockTrigger: String, CaseIterable, Identifiable {
         switch self {
         case .onWake: return "zzz"
         case .onLock: return "lock.display"
-        case .onActivity: return "hand.tap.fill"
+        case .onSpace: return "space"
         }
     }
 }
@@ -285,7 +287,14 @@ final class GlanceSettings {
         // was configurable (it armed on any lock-related signal), so an
         // existing install sees no behavior change.
         let storedTriggers = (defaults.array(forKey: Key.unlockTriggers) as? [String])?
-            .compactMap(UnlockTrigger.init(rawValue:))
+            .compactMap { raw -> UnlockTrigger? in
+                // "onActivity" was merged into "onWake" — an install that
+                // had it selected (quite possibly the *only* trigger that
+                // actually worked, given why the merge happened) should keep
+                // working the same way rather than silently losing it.
+                if raw == "onActivity" { return .onWake }
+                return UnlockTrigger(rawValue: raw)
+            }
         unlockTriggers = storedTriggers.map(Set.init).flatMap { $0.isEmpty ? nil : $0 }
             ?? Set(UnlockTrigger.allCases)
         retryOnHover = defaults.object(forKey: Key.retryOnHover) as? Bool ?? true
