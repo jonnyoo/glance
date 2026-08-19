@@ -331,7 +331,7 @@ private struct IdentityCard: View {
             .truncationMode(.tail)
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
-            .background(SettingsMetrics.buttonBackgroundColor)
+            .background(SettingsMetrics.neutralButtonFill)
             .overlay(
                 Capsule().strokeBorder(SettingsMetrics.rowBorder, lineWidth: SettingsMetrics.rowBorderWidth)
             )
@@ -397,7 +397,7 @@ private struct PillActionButton: View {
                 .foregroundStyle(SettingsMetrics.textPrimary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
-                .background(SettingsMetrics.buttonBackgroundColor)
+                .background(SettingsMetrics.neutralButtonFill)
                 .overlay(
                     Capsule().strokeBorder(SettingsMetrics.rowBorder, lineWidth: SettingsMetrics.rowBorderWidth)
                 )
