@@ -440,7 +440,9 @@ final class FaceUnlockCoordinator {
             }
             lastFaceBoundingBox = result.face.normalizedBoundingBox
 
-            let scored = pipeline.score(result.embedding, against: FaceEnrollmentStore.shared.identities)
+            // `activeIdentities`, not `identities`: someone switched off on
+            // the Your Face page stays enrolled but must not unlock the Mac.
+            let scored = pipeline.score(result.embedding, against: FaceEnrollmentStore.shared.activeIdentities)
             let matched = pipeline.bestMatch(in: scored, threshold: matchThreshold, minMargin: minMargin)
 
             if let matched {

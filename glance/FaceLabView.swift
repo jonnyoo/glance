@@ -503,7 +503,7 @@ private struct IdentityRow: View {
                     .foregroundStyle(.secondary)
 
                 if lowQualityCount > 0 {
-                    Text("\(lowQualityCount) of \(identity.samples.count) samples are low quality (below \(FaceLabController.qualityLabel(FaceLabController.lowQualityThreshold)))")
+                    Text("\(lowQualityCount) of \(identity.samples.count) samples are low quality")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -512,8 +512,7 @@ private struct IdentityRow: View {
     }
 
     private func isLow(_ sample: FaceSample) -> Bool {
-        guard let quality = sample.quality else { return false }
-        return quality < FaceLabController.lowQualityThreshold
+        sample.qualityTier == .poor
     }
 }
 

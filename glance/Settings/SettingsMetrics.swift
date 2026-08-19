@@ -202,6 +202,34 @@ enum SettingsMetrics {
     static let sectionTitleVerticalPadding: CGFloat = 8
 
     static let contentHorizontalPadding: CGFloat = 16
+
+    // MARK: - Capture-quality tick strip (Your Face)
+    //
+    // One tick per stored sample, colored by `FaceSample.QualityTier`.
+    // Fixed literals rather than `adaptiveColor`, for the same reason
+    // GlanceTheme's status dots are: red/amber/green are semantic, and read
+    // correctly against both the dark and the light content panel.
+
+    static let qualityPoorColor = Color(red: 0xFF / 255, green: 0x54 / 255, blue: 0x54 / 255)
+    static let qualityFairColor = Color(red: 0xFF / 255, green: 0xBE / 255, blue: 0x54 / 255)
+    static let qualityGoodColor = Color(red: 0x85 / 255, green: 0xFF / 255, blue: 0x77 / 255)
+    /// Samples with no recorded score — enrollments predating per-sample
+    /// quality. Deliberately neutral: unrated is not the same as poor.
+    static let qualityUnratedColor = adaptiveColor(
+        dark: NSColor(white: 1, alpha: 0.22),
+        light: NSColor(white: 0, alpha: 0.20)
+    )
+
+    static let qualityTickWidth: CGFloat = 3.5
+    static let qualityTickSpacing: CGFloat = 5.5
+    static let qualityTickHeight: CGFloat = 26
+    /// Caps the strip so an identity with an unusual number of samples (Face
+    /// Lab's manual capture button is unbounded) compresses its ticks rather
+    /// than running off the card.
+    static let qualityStripMaxWidth: CGFloat = 250
+
+    static let buttonBackgroundColor = Color(red: 0x3F / 255, green: 0x3F / 255, blue: 0x3F / 255)
+
     static let headerHeight: CGFloat = 40
 
     /// No blur or scrim sits behind the header — settled on after trying,

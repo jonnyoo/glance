@@ -33,6 +33,28 @@ struct FaceSample: Codable, Equatable {
     let quality: Float?
 }
 
+extension FaceSample {
+    /// How a stored sample's capture quality reads to the user. The bands
+    /// are the ones the Your Face design calls for — red below 40%, amber
+    /// through 50%, green above — and live here rather than in a view so
+    /// Face Lab's debug list and the settings tick strip can't drift apart.
+    enum QualityTier {
+        /// No score recorded: samples captured before quality was persisted,
+        /// or frames Vision declined to rate. Never counted as poor.
+        case unrated
+        case poor
+        case fair
+        case good
+    }
+
+    var qualityTier: QualityTier {
+        guard let quality else { return .unrated }
+        if quality < 0.4 { return .poor }
+        if quality < 0.5 { return .fair }
+        return .good
+    }
+}
+
 struct FaceIdentity: Codable, Identifiable, Equatable {
     let id: UUID
     var name: String
@@ -44,6 +66,46 @@ struct FaceIdentity: Codable, Identifiable, Equatable {
     var modelIdentifier: String
     var embeddingDimension: Int
     var createdAt: Date
+    /// Whether face unlock is allowed to match against this person. Turning
+    /// it off keeps the enrollment intact but takes them out of
+    /// `FaceEnrollmentStore.activeIdentities`, which is what the unlock path
+    /// actually scores against.
+    var isEnabled: Bool
+
+    init(
+        id: UUID,
+        name: String,
+        samples: [FaceSample],
+        modelIdentifier: String,
+        embeddingDimension: Int,
+        createdAt: Date,
+        isEnabled: Bool = true
+    ) {
+        self.id = id
+        self.name = name
+        self.samples = samples
+        self.modelIdentifier = modelIdentifier
+        self.embeddingDimension = embeddingDimension
+        self.createdAt = createdAt
+        self.isEnabled = isEnabled
+    }
+
+    /// Hand-written purely so `isEnabled` can default to `true` when it's
+    /// absent. A synthesized decoder throws on a missing key for a
+    /// non-optional property, which would make every identity enrolled
+    /// before this field existed fail to load — the whole store decodes as
+    /// one array, so a single throw loses all of them. (`encode(to:)` and
+    /// `CodingKeys` are still synthesized.)
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        samples = try container.decode([FaceSample].self, forKey: .samples)
+        modelIdentifier = try container.decode(String.self, forKey: .modelIdentifier)
+        embeddingDimension = try container.decode(Int.self, forKey: .embeddingDimension)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+    }
 
     /// The single vector actually compared against at recognition time.
     nonisolated var template: [Float]? {
@@ -73,6 +135,15 @@ final class FaceEnrollmentStore {
     /// session is expected to be unlocked (e.g. view `.onAppear`, or right
     /// after `SecureCredentialManager.unlockSession` succeeds).
     private(set) var isLocked = true
+
+    /// The identities face unlock is actually allowed to match against —
+    /// everyone the user hasn't switched off on the Your Face page. Scoring
+    /// against this rather than `identities` is what makes the per-identity
+    /// toggle mean anything; `identities` stays the full list the settings
+    /// UI renders.
+    var activeIdentities: [FaceIdentity] {
+        identities.filter(\.isEnabled)
+    }
 
     private init() {
         reloadIfUnlocked()
@@ -192,6 +263,23 @@ final class FaceEnrollmentStore {
         return identities.contains {
             $0.id != id
                 && $0.name.compare(trimmed, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }
+    }
+
+    /// Switches one identity in or out of face unlock without disturbing
+    /// its samples, so re-enabling costs nothing. Reverts the in-memory flag
+    /// if the encrypted write fails, rather than leaving the toggle showing
+    /// a state that isn't on disk.
+    func setEnabled(_ isEnabled: Bool, for identityID: UUID) throws {
+        guard let index = identities.firstIndex(where: { $0.id == identityID }) else { return }
+        let previous = identities[index].isEnabled
+        guard previous != isEnabled else { return }
+        identities[index].isEnabled = isEnabled
+        do {
+            try persist()
+        } catch {
+            identities[index].isEnabled = previous
+            throw error
         }
     }
 

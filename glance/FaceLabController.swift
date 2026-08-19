@@ -186,15 +186,14 @@ final class FaceLabController {
     // pipeline's `bestMatch` margin, and the guided flow all handle N
     // identities already — only the UI was single-identity.
 
-    /// Vision capture quality below this reads as a sample worth
-    /// re-capturing. Deliberately well above `OnboardingController`'s 0.2
+    /// Counts only the red band of `FaceSample.qualityTier`, so this debug
+    /// list and the Your Face page's tick strip always agree about what
+    /// "low" means. The bands sit well above `OnboardingController`'s 0.2
     /// accept-floor, which is a *gate* applied during capture: no guided
-    /// sample can be below it, so a 0.2 display cutoff would always report
-    /// zero. Samples with no score at all count as unrated, never as low.
-    static let lowQualityThreshold: Float = 0.4
-
+    /// sample can be below it, so a 0.2 cutoff would always report zero.
+    /// Samples with no score at all count as unrated, never as low.
     func lowQualityCount(in identity: FaceIdentity) -> Int {
-        identity.samples.filter { ($0.quality ?? 1) < Self.lowQualityThreshold }.count
+        identity.samples.filter { $0.qualityTier == .poor }.count
     }
 
     /// Face Lab and the onboarding flow each own a separate `CameraManager`
