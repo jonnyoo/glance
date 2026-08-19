@@ -290,6 +290,13 @@ final class OnboardingController {
     /// from a fast-moving frame — better to accept a mediocre sample than to
     /// stall the whole flow.
     private let qualityFloor: Float = 0.2
+    /// How long to hold off accepting captures once the camera comes up —
+    /// enough for the user to settle into frame and look at the camera
+    /// before the center pose starts counting, so the first samples aren't
+    /// taken mid-blink or mid-flinch. Detection and the ring's live
+    /// yaw/pitch readout still run during this window; only capture is held
+    /// back.
+    private let initialCaptureDelay: Duration = .seconds(1.5)
 
     // Pose-matching bands, in radians. Yaw's sign (left turn -> positive)
     // matches the mirrored front-camera preview as expected. Pitch's sign
@@ -360,6 +367,10 @@ final class OnboardingController {
     private var matchStreak = 0
     private var isProcessingFrame = false
     private var poseStartedAt: ContinuousClock.Instant = .now
+    /// Set once, in `beginEnrollment()` — not per-pose — so it only holds
+    /// back the very first pose (always `.center`) rather than pausing
+    /// again after every later pose change.
+    private var captureReadyAt: ContinuousClock.Instant = .now
 
     var currentPose: EnrollmentPose? {
         EnrollmentPose(rawValue: currentPoseIndex)
@@ -517,6 +528,7 @@ final class OnboardingController {
         cameraPreviewVisible = true
         showCheckmark = false
         poseStartedAt = .now
+        captureReadyAt = .now + initialCaptureDelay
         Task { await camera.start() }
         guideWindowController.present(for: self)
     }
@@ -612,6 +624,14 @@ final class OnboardingController {
         currentYaw = yaw
         currentPitch = pitch
         isTooFar = Float(result.face.normalizedBoundingBox.width) < FaceRecognitionPipeline.minimumProminentFaceWidth
+
+        // Let the user settle in front of the camera before the center pose
+        // starts counting — detection above still ran, so the ring's live
+        // readout isn't frozen, only capture is held back.
+        guard ContinuousClock.now >= captureReadyAt else {
+            matchStreak = 0
+            return
+        }
 
         let qualityOK = result.quality.map { $0 >= qualityFloor } ?? true
         // Only a 5-point alignment produces a reliably canonical input —
