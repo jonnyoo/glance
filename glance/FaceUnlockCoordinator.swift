@@ -94,10 +94,15 @@ final class FaceUnlockCoordinator {
     /// this rather than just skipping the video.
     private var showsUI: Bool { GlanceSettings.shared.showUnlockAnimation }
 
+    /// Reads the space key on the lock screen for the "On space" trigger.
+    /// Only ever running while locked + opted in (see `updateSpaceMonitor`).
+    private let spaceKeyMonitor = SpaceKeyMonitor()
+
     init(pocController: POCController) {
         self.pocController = pocController
         self.isEnabled = GlanceSettings.shared.isFaceUnlockEnabled
         self.matchThreshold = GlanceSettings.shared.matchThreshold
+        spaceKeyMonitor.onSpaceKeyDown = { [weak self] in self?.handleSpaceKeyPress() }
         observeLockAndWakeEvents()
     }
 
@@ -140,6 +145,12 @@ final class FaceUnlockCoordinator {
         if lockMonitor.lastEvent == .wake {
             hasArmedForCurrentLock = false
         }
+
+        // Kept current on every lock/wake event, and before the
+        // `hasArmedForCurrentLock` guard below so it isn't skipped once armed
+        // — the space monitor's lifetime is tied to "locked + opted in," not
+        // to whether an auto-scan already ran this session.
+        updateSpaceMonitor()
 
         guard isEnabled, !hasArmedForCurrentLock else { return }
         // Which signal this is, independent of whether the user asked to
@@ -211,6 +222,60 @@ final class FaceUnlockCoordinator {
         autoRetryTask = nil
         camera.stop()
         NotchOverlayController.shared.disarm()
+        // Covers the paths that don't go through `evaluateTrigger`'s locked
+        // branch — chiefly `isEnabled` being switched off, which calls this
+        // directly. `updateSpaceMonitor` would also stop it, but stopping
+        // here keeps "disarmed" and "not listening for space" in lockstep.
+        spaceKeyMonitor.stop()
+    }
+
+    /// Starts or stops the lock-screen space listener to match the current
+    /// state. Idempotent (both `start()`/`stop()` are), so it's safe to call
+    /// on every lock/wake event. Deliberately does NOT prompt for Input
+    /// Monitoring — that's the settings UI's job when the user opts in; here
+    /// a missing grant just means "don't listen."
+    private func updateSpaceMonitor() {
+        let shouldListen = isEnabled
+            && GlanceSettings.shared.unlockTriggers.contains(.onSpace)
+            && LockMonitor.isScreenActuallyLocked()
+            && SpaceKeyMonitor.hasInputMonitoringAccess()
+        if shouldListen {
+            spaceKeyMonitor.start()
+        } else {
+            spaceKeyMonitor.stop()
+        }
+    }
+
+    /// The "On space" trigger firing: the same gate chain `evaluateTrigger`
+    /// runs, then start a scan. Independent of `LockMonitor` events — a
+    /// keypress isn't a lock/wake signal — so it doesn't touch
+    /// `hasArmedForCurrentLock`/`requiredTrigger`.
+    private func handleSpaceKeyPress() {
+        guard isEnabled,
+              GlanceSettings.shared.unlockTriggers.contains(.onSpace),
+              LockMonitor.isScreenActuallyLocked(),
+              NotchGeometry.preferredScreen() != nil,
+              SecureCredentialManager.isSessionUnlocked,
+              SecureCredentialManager.hasStoredPassword()
+        else { return }
+
+        // Already looking — swallow auto-repeat and double-presses, and don't
+        // fight an auto-scan already in flight (this is what makes "On wake"/
+        // "On lock" override "On space" with no special-casing).
+        guard NotchOverlayController.shared.phase != .scanning else { return }
+
+        guard showsUI else {
+            // Headless: no overlay, just scan.
+            startScanCycle()
+            return
+        }
+        if NotchOverlayController.shared.isArmed {
+            // The closed pill/notch is already up (armed on the wake/lock
+            // event) — expand and scan, exactly like a hover retry.
+            startScanCycle()
+        } else {
+            Task { [weak self] in await self?.arm(autoScan: true) }
+        }
     }
 
     /// `autoScan` is whether the signal that led here is one the user

@@ -75,10 +75,10 @@ enum UnlockTrigger: String, CaseIterable, Identifiable {
     case onWake
     /// The screen just became locked, no wake involved.
     case onLock
-    /// Reserved for a future "press space to prompt" trigger — doesn't do
-    /// anything yet. The lock screen runs under Secure Event Input, which
-    /// suppresses keyboard event taps regardless of Accessibility trust, so
-    /// this needs a different mechanism before it can actually fire.
+    /// Pressing space on the lock screen starts a scan. The lock screen runs
+    /// under Secure Event Input, which suppresses event taps and `NSEvent`
+    /// monitors, so this is detected via IOKit HID below that boundary (see
+    /// `SpaceKeyMonitor`) — which requires the Input Monitoring permission.
     case onSpace
 
     var id: String { rawValue }

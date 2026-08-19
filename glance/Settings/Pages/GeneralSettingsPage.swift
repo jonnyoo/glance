@@ -3,6 +3,7 @@
 //  glance
 //
 
+import OSLog
 import SwiftUI
 
 struct GeneralSettingsPage: View {
@@ -16,6 +17,26 @@ struct GeneralSettingsPage: View {
     /// while Settings is open, rather than only whatever was plugged in
     /// when the page first appeared.
     @State private var screens: [NSScreen] = NSScreen.screens
+    /// Whether "On space" can actually fire — refreshed when the app
+    /// regains focus, so granting the permission in System Settings and
+    /// switching back clears the prompt below without a relaunch.
+    @State private var inputMonitoring = SpaceKeyMonitor.inputMonitoringAccess
+
+    /// True once the user has picked "On space" but glance can't read the
+    /// keyboard — the trigger is selected and persisted but can't fire yet.
+    /// Normally false, since Accessibility (which glance needs regardless)
+    /// already satisfies the check — see `SpaceKeyMonitor`'s file header.
+    private var needsInputMonitoring: Bool {
+        settings.unlockTriggers.contains(.onSpace) && inputMonitoring != .granted
+    }
+
+    /// Dev-only: under Xcode the reading above is Xcode's permission rather
+    /// than glance's, so neither the notice nor its absence means anything.
+    /// Self-gating — a normally launched build is never in this state. See
+    /// `SpaceKeyMonitor.isLaunchedByXcode`.
+    private var hasInheritedXcodePermission: Bool {
+        settings.unlockTriggers.contains(.onSpace) && SpaceKeyMonitor.isLaunchedByXcode
+    }
 
     var body: some View {
         SettingsGroup {
@@ -46,8 +67,32 @@ struct GeneralSettingsPage: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
             screens = NSScreen.screens
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            inputMonitoring = SpaceKeyMonitor.inputMonitoringAccess
+        }
+        .onChange(of: settings.unlockTriggers) { oldValue, newValue in
+            // Just switched "On space" on and can't fire yet → fire the
+            // system prompt. Only on the transition into selection, so
+            // toggling the other tiles never re-prompts.
+            SpaceKeyMonitor.log.info("unlockTriggers changed: old=\(String(describing: oldValue), privacy: .public) new=\(String(describing: newValue), privacy: .public) state=\(String(describing: inputMonitoring), privacy: .public)")
+            if newValue.contains(.onSpace), !oldValue.contains(.onSpace), inputMonitoring != .granted {
+                SpaceKeyMonitor.requestInputMonitoringAccess()
+                // Requesting writes a record (initially "off"), which flips
+                // the state from `notDetermined` to `denied` — but tccd does
+                // that just after the call returns, so re-read on the next
+                // beat rather than inline.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    inputMonitoring = SpaceKeyMonitor.inputMonitoringAccess
+                }
+            }
+        }
         if let launchAtLoginError {
             SettingsCaption(text: launchAtLoginError)
+        }
+        if hasInheritedXcodePermission {
+            SettingsCaption(text: "Running from Xcode — permission checks resolve against Xcode’s grants, not glance’s, so this reading is meaningless. Launch glance.app on its own to see the real state.")
+        } else if needsInputMonitoring {
+            inputMonitoringNotice()
         }
 
         VStack(alignment: .leading, spacing: 8) {
@@ -90,6 +135,35 @@ struct GeneralSettingsPage: View {
                 )
             }
         }
+    }
+
+    /// Shown while "On space" is selected but Input Monitoring isn't
+    /// granted. The wording splits on the actual TCC state, because the two
+    /// cases need different things from the user: `notDetermined` can still
+    /// be prompted, `denied` cannot — no API can re-prompt once a decision
+    /// is on record, so that one is a System Settings trip.
+    private func inputMonitoringNotice() -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SettingsCaption(text: "“On space” reads the keyboard directly to see the space key on the lock screen, which needs Accessibility — the same permission glance uses to type your password. Switch glance on under Privacy & Security → Accessibility, then quit and reopen glance.")
+            Button("Open Accessibility settings") {
+                // Requesting HID access first covers the rare install that has
+                // no Accessibility grant at all; where Accessibility is the
+                // real gate, the deep link is what matters.
+                SpaceKeyMonitor.requestInputMonitoringAccess()
+                openSystemSettings(pane: "Privacy_Accessibility")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    inputMonitoring = SpaceKeyMonitor.inputMonitoringAccess
+                }
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 12))
+            .foregroundStyle(GlanceTheme.accent)
+        }
+    }
+
+    private func openSystemSettings(pane: String) {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     /// Same Menu-in-a-capsule pattern as `CameraSettingsPage.cameraPicker` —
