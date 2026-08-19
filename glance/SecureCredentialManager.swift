@@ -23,6 +23,7 @@ enum SecureCredentialError: LocalizedError {
     case sessionLocked
     case encryptionFailed
     case decryptionFailed
+    case sessionKeyUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -34,6 +35,8 @@ enum SecureCredentialError: LocalizedError {
             return "Encryption failed."
         case .decryptionFailed:
             return "Decryption failed. The stored credential may be corrupted."
+        case .sessionKeyUnavailable:
+            return "The session key is missing, but encrypted data still exists that only it could read. Nothing has been deleted. Remove the stored password on the Password tab to clear both and start fresh."
         }
     }
 }
@@ -117,11 +120,10 @@ enum SecureCredentialManager {
     }
 
     /// Prompts Touch ID / device password and unwraps the session key into
-    /// memory. If no key exists yet in the Keychain (first run ever, or the
-    /// previous item became unreadable for any reason — a re-signed build
-    /// during development is the common way to hit this, but it can equally
-    /// happen on a real Mac), creates one and stores it Touch-ID-gated for
-    /// next time — but does not trust that write alone to mean "unlocked."
+    /// memory. On a genuine first run it creates the key and stores it
+    /// Touch-ID-gated for next time — but does not trust that write alone to
+    /// mean "unlocked," and will not create one when the key has gone
+    /// missing while data encrypted under it survives (see the guard below).
     ///
     /// The old version cached the key as soon as `SecItemAdd` returned,
     /// reasoning "there's nothing to authenticate against on the very first
@@ -150,20 +152,58 @@ enum SecureCredentialManager {
     nonisolated static func unlockSession(reason: String) throws {
         if cachedKey() != nil { return }
 
-        if !KeychainManager.exists(account: sessionKeyAccount) {
-            let key = SymmetricKey(size: .bits256)
-            let access = try KeychainManager.makeUserPresenceAccessControl()
-            try KeychainManager.save(
-                account: sessionKeyAccount,
-                data: key.withUnsafeBytes { Data($0) },
-                accessControl: access
-            )
+        // The existence check, not the read, is what decides whether a key
+        // gets created — and that ordering is load-bearing. Cancelling the
+        // prompt on a user-presence item does not report "cancelled": the
+        // ACL fails to authorize and Keychain Services reports
+        // `errSecItemNotFound`, indistinguishable from a key that genuinely
+        // isn't there. Deciding on the read's error would therefore mint a
+        // fresh key every time someone mis-tapped the prompt, and
+        // `KeychainManager.save` is delete-then-add, so the only key that
+        // could decrypt the stored password and every enrolled face would be
+        // destroyed. An attributes-only query needs no ACL evaluation, so it
+        // still answers honestly right after a cancel.
+        if KeychainManager.exists(account: sessionKeyAccount) {
+            let context = LAContext()
+            context.localizedReason = reason
+            let data = try KeychainManager.read(account: sessionKeyAccount, context: context)
+            setCachedKey(SymmetricKey(data: data))
+            return
         }
 
-        let context = LAContext()
-        context.localizedReason = reason
-        let data = try KeychainManager.read(account: sessionKeyAccount, context: context)
+        // No key item at all. Creating one is still destructive if something
+        // is already encrypted under a previous key — the orphaned state a
+        // re-signed development build produces. Refuse rather than mint a
+        // key that silently renders that data unreadable forever; the error
+        // names the only real way out.
+        guard !hasSessionEncryptedData else {
+            throw SecureCredentialError.sessionKeyUnavailable
+        }
+
+        let key = SymmetricKey(size: .bits256)
+        let access = try KeychainManager.makeUserPresenceAccessControl()
+        try KeychainManager.save(
+            account: sessionKeyAccount,
+            data: key.withUnsafeBytes { Data($0) },
+            accessControl: access
+        )
+
+        // Read back through the same gated path rather than trusting the
+        // write: `SecItemAdd` returns success regardless of how any auth UI
+        // macOS showed around it resolved, so only a real read proves the
+        // user actually authenticated.
+        let readBackContext = LAContext()
+        readBackContext.localizedReason = reason
+        let data = try KeychainManager.read(account: sessionKeyAccount, context: readBackContext)
         setCachedKey(SymmetricKey(data: data))
+    }
+
+    /// Whether anything on this Mac is currently encrypted under the session
+    /// key. Both stores are checked without needing the key itself — a
+    /// Keychain attribute query and a file-existence check — so this stays
+    /// answerable precisely when the key can't be read.
+    nonisolated static var hasSessionEncryptedData: Bool {
+        KeychainManager.exists(account: passwordBlobAccount) || SecureFaceStore.exists
     }
 
     /// Clears the cached session key. Next save/read requires Touch ID again.

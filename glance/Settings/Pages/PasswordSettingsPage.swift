@@ -170,7 +170,7 @@ struct PasswordSettingsPage: View {
     /// it before anyone could read it.
     private func removePassword() {
         do {
-            try? FaceEnrollmentStore.shared.deleteAll()
+            FaceEnrollmentStore.shared.deleteAll()
             try SecureCredentialManager.deletePassword()
             pocController.refreshCredentialStatus()
             statusMessage = "Password and face enrollment removed."

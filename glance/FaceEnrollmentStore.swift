@@ -120,6 +120,17 @@ struct FaceIdentity: Codable, Identifiable, Equatable {
     }
 }
 
+enum FaceEnrollmentStoreError: LocalizedError {
+    case storeUnreadable
+
+    var errorDescription: String? {
+        switch self {
+        case .storeUnreadable:
+            return "Your enrolled faces couldn't be read, so nothing was saved — writing now would overwrite them."
+        }
+    }
+}
+
 @Observable
 @MainActor
 final class FaceEnrollmentStore {
@@ -135,6 +146,19 @@ final class FaceEnrollmentStore {
     /// session is expected to be unlocked (e.g. view `.onAppear`, or right
     /// after `SecureCredentialManager.unlockSession` succeeds).
     private(set) var isLocked = true
+
+    /// Non-nil when the session is unlocked but the encrypted store still
+    /// couldn't be read — a decrypt or decode failure rather than a missing
+    /// key. Distinct from `isLocked` because the remedy is different:
+    /// unlocking again won't help, and the UI must not offer to enroll over
+    /// data it can't see.
+    private(set) var loadFailure: String?
+
+    /// False until a load actually succeeds. Guards `persist()` so an
+    /// unreadable store can never be overwritten by the empty in-memory
+    /// array — the backstop that keeps a one-off failed unlock from
+    /// destroying every enrolled face.
+    private var hasLoadedSuccessfully = false
 
     /// The identities face unlock is actually allowed to match against —
     /// everyone the user hasn't switched off on the Your Face page. Scoring
@@ -156,7 +180,20 @@ final class FaceEnrollmentStore {
             isLocked = true
             return
         }
-        identities = (try? SecureFaceStore.load()) ?? []
+        do {
+            identities = try SecureFaceStore.load()
+            hasLoadedSuccessfully = true
+            loadFailure = nil
+        } catch {
+            // Deliberately NOT `(try? load()) ?? []`. A store we couldn't
+            // read is not an empty store, and pretending otherwise is how a
+            // transient failure became permanent: the UI showed "nothing
+            // enrolled", and the next write persisted that empty array over
+            // a file that still held every sample. `hasLoadedSuccessfully`
+            // stays false so `persist()` refuses to do exactly that.
+            identities = []
+            loadFailure = error.localizedDescription
+        }
         isLocked = false
     }
 
@@ -288,12 +325,27 @@ final class FaceEnrollmentStore {
         try persist()
     }
 
-    func deleteAll() throws {
+    /// Removes the file outright rather than writing an empty array. This is
+    /// the teardown path when the password — and with it the session key —
+    /// is being removed, where there may be no key left to encrypt with, and
+    /// where leaving an orphaned file behind would make the *next* setup
+    /// look like it still had data encrypted under a key nobody has
+    /// (see `SecureCredentialManager.hasSessionEncryptedData`).
+    func deleteAll() {
         identities.removeAll()
-        try persist()
+        SecureFaceStore.deleteAll()
+        loadFailure = nil
+        hasLoadedSuccessfully = true
     }
 
     private func persist() throws {
+        // Refuses to write when the last load failed. Without this, an
+        // unreadable store plus any single write — a toggle, a delete, a new
+        // enrollment — silently replaces the real file with whatever the
+        // empty in-memory array happens to hold.
+        guard hasLoadedSuccessfully else {
+            throw FaceEnrollmentStoreError.storeUnreadable
+        }
         try SecureFaceStore.save(identities)
     }
 }

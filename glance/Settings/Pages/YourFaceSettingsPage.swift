@@ -37,12 +37,17 @@ struct YourFaceSettingsPage: View {
     /// There is no way to show "not enrolled" before that.
     private enum PageStateKind: Equatable {
         case locked
+        case unreadable
         case notEnrolled
         case enrolled
     }
 
     private var stateKind: PageStateKind {
         if store.isLocked { return .locked }
+        // Ahead of `.notEnrolled`: a store that failed to decrypt looks
+        // identical to an empty one from here, and offering "Set up FaceID"
+        // over data we simply couldn't read is how it would get destroyed.
+        if store.loadFailure != nil { return .unreadable }
         return store.identities.isEmpty ? .notEnrolled : .enrolled
     }
 
@@ -58,6 +63,11 @@ struct YourFaceSettingsPage: View {
                 .opacity(stateKind == .locked ? 1 : 0)
                 .allowsHitTesting(stateKind == .locked)
                 .accessibilityHidden(stateKind != .locked)
+
+            unreadableState
+                .opacity(stateKind == .unreadable ? 1 : 0)
+                .allowsHitTesting(stateKind == .unreadable)
+                .accessibilityHidden(stateKind != .unreadable)
 
             notEnrolledState
                 .opacity(stateKind == .notEnrolled ? 1 : 0)
@@ -108,6 +118,31 @@ struct YourFaceSettingsPage: View {
             caption: sessionError,
             action: unlock
         )
+    }
+
+    // MARK: - Unreadable
+
+    /// The session is open but the encrypted store didn't decrypt — almost
+    /// always a session key that no longer matches the data. Deliberately
+    /// offers no enroll or delete action: every write from here would
+    /// replace faces that are still on disk.
+    private var unreadableState: some View {
+        VStack(spacing: SettingsMetrics.emptyStateSpacing) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: SettingsMetrics.emptyStateIconSize, weight: .regular))
+                .foregroundStyle(SettingsMetrics.qualityFairColor)
+
+            Text("Enrolled faces couldn't be read")
+                .font(SettingsMetrics.rowFont)
+                .foregroundStyle(SettingsMetrics.textSecondary)
+
+            SettingsCaption(text: store.loadFailure ?? "The stored data couldn't be decrypted with this session key.")
+                .multilineTextAlignment(.center)
+
+            SettingsCaption(text: "Nothing has been deleted, and Glance will not overwrite it — enrolling is blocked until this resolves. Quit and reopen Glance to retry. If it keeps failing, the session key no longer matches this data: remove the stored password on the Password tab to clear both, then set up again.")
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, minHeight: SettingsMetrics.emptyStateMinHeight)
     }
 
     // MARK: - Not enrolled
