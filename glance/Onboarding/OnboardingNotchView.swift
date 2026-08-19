@@ -28,6 +28,8 @@ struct OnboardingNotchView: View {
                 PreSetupStepView(controller: controller)
             case .enroll:
                 EnrollStepView(controller: controller)
+            case .name:
+                NameStepView(controller: controller)
             case .password:
                 PasswordStepView(controller: controller)
             case .complete:

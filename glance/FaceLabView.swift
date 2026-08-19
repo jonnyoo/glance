@@ -44,8 +44,9 @@ struct FaceLabView: View {
                         }
                     }
                     Button("Start Onboarding") {
-                        OnboardingController.startFlow()
+                        controller.startFullOnboarding()
                     }
+                    .disabled(enrollmentFlowIsRunning)
                 }
 
                 modelStatusSection
@@ -53,6 +54,7 @@ struct FaceLabView: View {
                 previewSection
                 detectionSection
                 enrollSection
+                identitiesSection
                 recognizeSection
                 calibrationSection
                 logSection
@@ -66,6 +68,22 @@ struct FaceLabView: View {
         .onDisappear {
             controller.stop()
         }
+        // Guided enrollment runs in the notch, entirely outside this
+        // window's view hierarchy, so nothing else would prompt a re-read
+        // once it closes — and its Touch ID prompt is often what unlocks
+        // the session in the first place. Same trick YourFaceSettingsPage
+        // uses for exactly this reason.
+        .onChange(of: NotchOverlayController.shared.phase) { _, newPhase in
+            guard newPhase == .closed else { return }
+            controller.store.reloadIfUnlocked()
+        }
+    }
+
+    /// True while the notch is already hosting an onboarding flow. It's a
+    /// single shared panel, so starting a second one would swap the content
+    /// out from under the first mid-capture.
+    private var enrollmentFlowIsRunning: Bool {
+        NotchOverlayController.shared.phase == .onboarding
     }
 
     // MARK: - Which embedder is active
@@ -239,6 +257,50 @@ struct FaceLabView: View {
         }
     }
 
+    // MARK: - Multi-identity enrollment
+    //
+    // A prototype of what the "Your Face" settings tab will show once it
+    // stops reading `identities.first`. Everything below the UI already
+    // supported several people: the store keeps an array, and
+    // `bestMatch`'s minMargin gate only engages past one identity.
+
+    private var identitiesSection: some View {
+        GroupBox("Identities") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("\(controller.store.identities.count) enrolled")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Add Identity") {
+                        controller.startAddIdentity()
+                    }
+                    .disabled(controller.store.isLocked || enrollmentFlowIsRunning)
+                }
+
+                if controller.store.identities.isEmpty {
+                    Text(controller.store.isLocked
+                         ? "Unlock the session to view enrolled identities."
+                         : "No identities enrolled yet — run the guided nine-pose capture with Add Identity.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(controller.store.identities) { identity in
+                        IdentityRow(
+                            identity: identity,
+                            isStale: identity.isStale(comparedTo: controller.pipeline.embedder),
+                            lowQualityCount: controller.lowQualityCount(in: identity),
+                            canStartFlow: !enrollmentFlowIsRunning,
+                            recapture: { controller.startRecapture(of: identity) },
+                            delete: { controller.deleteIdentity(identity) }
+                        )
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
     // MARK: - Milestone F: recognition
 
     private var recognizeSection: some View {
@@ -380,6 +442,78 @@ struct FaceLabView: View {
     private func yawPitchString(_ value: Float?) -> String {
         guard let value else { return "—" }
         return String(format: "%+.2f", value)
+    }
+}
+
+/// One enrolled person: a summary line, the actions that apply to them, and
+/// a disclosure listing every stored sample with the capture quality that
+/// used to be shown live and then thrown away.
+private struct IdentityRow: View {
+    let identity: FaceIdentity
+    let isStale: Bool
+    let lowQualityCount: Int
+    let canStartFlow: Bool
+    let recapture: () -> Void
+    let delete: () -> Void
+
+    private var posesCaptured: Int {
+        Set(identity.samples.compactMap(\.pose)).count
+    }
+
+    var body: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(identity.samples.enumerated()), id: \.offset) { index, sample in
+                    HStack(spacing: 8) {
+                        Text(String(format: "%2d", index + 1))
+                            .foregroundStyle(.tertiary)
+                        Text(sample.pose ?? "untagged")
+                            .frame(width: 90, alignment: .leading)
+                        Text(FaceLabController.qualityLabel(sample.quality))
+                            .frame(width: 44, alignment: .trailing)
+                            .foregroundStyle(isLow(sample) ? .orange : .primary)
+                        Text(sample.capturedAt.formatted(date: .omitted, time: .standard))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .font(.caption.monospaced())
+                }
+            }
+            .padding(.top, 4)
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(identity.name).bold()
+                    if isStale {
+                        Text("stale")
+                            .font(.caption2.bold())
+                            .foregroundStyle(.orange)
+                    }
+                    Spacer()
+                    Button("Recapture", action: recapture)
+                        .disabled(!canStartFlow)
+                    Button(role: .destructive, action: delete) {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Text("\(posesCaptured)/9 poses · \(identity.samples.count) samples · enrolled \(identity.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if lowQualityCount > 0 {
+                    Text("\(lowQualityCount) of \(identity.samples.count) samples are low quality (below \(FaceLabController.qualityLabel(FaceLabController.lowQualityThreshold)))")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+    }
+
+    private func isLow(_ sample: FaceSample) -> Bool {
+        guard let quality = sample.quality else { return false }
+        return quality < FaceLabController.lowQualityThreshold
     }
 }
 

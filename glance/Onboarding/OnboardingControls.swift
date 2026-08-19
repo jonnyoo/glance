@@ -105,3 +105,24 @@ struct PillSecureField: View {
             .clipShape(Capsule())
     }
 }
+
+/// The plain-text twin of `PillSecureField`, used by the naming step. Same
+/// capsule so the two read as one control family — only the echo differs.
+struct PillTextField: View {
+    let placeholder: String
+    @Binding var text: String
+    var onSubmit: () -> Void = {}
+
+    var body: some View {
+        TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(GlanceTheme.placeholder))
+            .textFieldStyle(.plain)
+            .font(GlanceTheme.Font.passwordPlaceholder)
+            .foregroundStyle(GlanceTheme.textPrimary)
+            .onSubmit(onSubmit)
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity)
+            .frame(height: 40)
+            .background(GlanceTheme.surface)
+            .clipShape(Capsule())
+    }
+}

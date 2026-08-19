@@ -25,6 +25,12 @@ struct FaceSample: Codable, Equatable {
     /// "Capture Sample" button).
     let pose: String?
     let capturedAt: Date
+    /// Vision's capture-quality score (0...1) for the frame this embedding
+    /// came from — the same number Face Lab shows live as "Capture
+    /// quality" — or nil when Vision produced none, and on samples saved
+    /// before this field existed. Optional so the synthesized decoder uses
+    /// `decodeIfPresent` and already-encrypted stores still load.
+    let quality: Float?
 }
 
 struct FaceIdentity: Codable, Identifiable, Equatable {
@@ -90,11 +96,11 @@ final class FaceEnrollmentStore {
     /// unlocked session; throws `SecureFaceStoreError.sessionLocked`
     /// otherwise rather than silently dropping the sample.
     @discardableResult
-    func addSample(name: String, embedding: [Float], embedder: FaceEmbedder, pose: String? = nil) throws -> Bool {
+    func addSample(name: String, embedding: [Float], embedder: FaceEmbedder, pose: String? = nil, quality: Float? = nil) throws -> Bool {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
 
-        let sample = FaceSample(embedding: embedding, pose: pose, capturedAt: Date())
+        let sample = FaceSample(embedding: embedding, pose: pose, capturedAt: Date(), quality: quality)
 
         if let index = identities.firstIndex(where: { $0.name == trimmed }) {
             if identities[index].modelIdentifier != embedder.modelIdentifier {
@@ -116,6 +122,77 @@ final class FaceEnrollmentStore {
         }
         try persist()
         return true
+    }
+
+    /// Commits a whole guided enrollment in a single write, rather than the
+    /// 18 encrypt-and-write round-trips an `addSample` loop would do.
+    ///
+    /// When `existingID` names a known identity, its `id` and `createdAt`
+    /// are preserved and its samples are replaced *wholesale* — a recapture
+    /// is a redo, not an append, and blending a person's old and new samples
+    /// into one template is exactly what the old delete-then-re-add dance in
+    /// `OnboardingController` existed to avoid. Because the match is by id
+    /// rather than by name, a recapture can also rename the identity.
+    /// Otherwise a brand-new identity is appended.
+    ///
+    /// Returns nil (writing nothing) for an empty name or no samples.
+    @discardableResult
+    func commitEnrollment(
+        replacing existingID: UUID?,
+        name: String,
+        samples: [FaceSample],
+        embedder: FaceEmbedder
+    ) throws -> FaceIdentity? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !samples.isEmpty else { return nil }
+
+        // Built against a local copy and only assigned once the encrypted
+        // write actually succeeds — otherwise a locked session would leave
+        // the observable array showing a save that never reached disk.
+        var updated = identities
+        let committed: FaceIdentity
+        if let existingID, let index = updated.firstIndex(where: { $0.id == existingID }) {
+            updated[index].name = trimmed
+            updated[index].samples = samples
+            updated[index].modelIdentifier = embedder.modelIdentifier
+            updated[index].embeddingDimension = embedder.embeddingDimension
+            committed = updated[index]
+        } else {
+            // Also the fallback when `existingID` no longer resolves — the
+            // identity was deleted while the notch flow was running. Saving
+            // the capture as a new identity beats discarding it.
+            committed = FaceIdentity(
+                id: UUID(),
+                name: trimmed,
+                samples: samples,
+                modelIdentifier: embedder.modelIdentifier,
+                embeddingDimension: embedder.embeddingDimension,
+                createdAt: Date()
+            )
+            updated.append(committed)
+        }
+        try SecureFaceStore.save(updated)
+        identities = updated
+        return committed
+    }
+
+    /// Whether `name` already belongs to an enrolled identity. Deliberately
+    /// case- and diacritic-insensitive, unlike `addSample`'s exact match:
+    /// "alex", "Alex" and "Álex" would be separate identities in storage but
+    /// one person to the user, so the naming step refuses the collision
+    /// instead. `addSample` keeps its exact match — it's the debug-only
+    /// manual path, where creating a near-duplicate is a legitimate thing to
+    /// want to do.
+    ///
+    /// `excluding` is the identity currently being recaptured, which is of
+    /// course allowed to keep its own name.
+    func nameIsTaken(_ name: String, excluding id: UUID? = nil) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        return identities.contains {
+            $0.id != id
+                && $0.name.compare(trimmed, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }
     }
 
     func delete(_ identity: FaceIdentity) throws {

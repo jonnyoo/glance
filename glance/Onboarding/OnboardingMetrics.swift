@@ -44,6 +44,8 @@ enum OnboardingMetrics {
     static let pillPreSetupHeight: CGFloat = 220
     static let notchEnrollHeight: CGFloat = 310
     static let pillEnrollHeight: CGFloat = 310
+    static let notchNameHeight: CGFloat = 230
+    static let pillNameHeight: CGFloat = 230
     static let notchPasswordHeight: CGFloat = 260
     static let pillPasswordHeight: CGFloat = 260
     static let notchCompleteHeight: CGFloat = 95
@@ -59,6 +61,8 @@ enum OnboardingMetrics {
         case (.preSetup, .pill): return pillPreSetupHeight
         case (.enroll, .notch): return notchEnrollHeight
         case (.enroll, .pill): return pillEnrollHeight
+        case (.name, .notch): return notchNameHeight
+        case (.name, .pill): return pillNameHeight
         case (.password, .notch): return notchPasswordHeight
         case (.password, .pill): return pillPasswordHeight
         case (.complete, .notch): return notchCompleteHeight
@@ -89,12 +93,12 @@ enum OnboardingMetrics {
         case .notch:
             return [
                 notchIntroHeight, notchPermissionsHeight, notchPreSetupHeight,
-                notchEnrollHeight, notchPasswordHeight, notchCompleteHeight,
+                notchEnrollHeight, notchNameHeight, notchPasswordHeight, notchCompleteHeight,
             ].max() ?? notchEnrollHeight
         case .pill:
             return [
                 pillIntroHeight, pillPermissionsHeight, pillPreSetupHeight,
-                pillEnrollHeight, pillPasswordHeight, pillCompleteHeight,
+                pillEnrollHeight, pillNameHeight, pillPasswordHeight, pillCompleteHeight,
             ].max() ?? pillEnrollHeight
         }
     }
@@ -175,7 +179,9 @@ enum OnboardingMetrics {
     static let previewFadeOut: Double = 0.4
     static let checkmarkDelay: Double = 0.2
     static let checkmarkDrawDuration: Double = 0.5
-    static let cameraCompleteToPasswordDelay: Double = 3.0
+    /// How long the checkmark holds after the nine poses before the panel
+    /// moves on to the naming step.
+    static let cameraCompleteToNameDelay: Double = 3.0
     static let completeScreenDismissDelay: Double = 3.0
 
     // MARK: - Full-screen guide overlay

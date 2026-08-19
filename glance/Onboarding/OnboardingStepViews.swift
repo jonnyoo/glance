@@ -2,8 +2,9 @@
 //  OnboardingStepViews.swift
 //  glance
 //
-//  The six screens of the notch-hosted onboarding flow (Figma frames 1, 2,
-//  3, 4-6 combined, 7, 8). Each fills whatever panel size
+//  The screens of the notch-hosted onboarding flow (Figma frames 1, 2,
+//  3, 4-6 combined, 7, 8, plus the naming step added for multi-identity
+//  enrollment, which has no Figma frame). Each fills whatever panel size
 //  OnboardingController reports for its step — sizing itself is the notch
 //  window's job (see NotchOverlayView), not these views'.
 //
@@ -172,7 +173,60 @@ struct EnrollStepView: View {
     }
 }
 
-// MARK: - 7. Password
+// MARK: - 7. Name
+
+/// Asks who was just captured. Reached from every flow that captures poses
+/// — first-run setup, "add another face", and a recapture (where the field
+/// arrives pre-filled with the existing name, so this doubles as rename).
+struct NameStepView: View {
+    @Bindable var controller: OnboardingController
+
+    private var trimmedName: String {
+        controller.pendingName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Name this face")
+                .font(GlanceTheme.Font.title)
+                .foregroundStyle(GlanceTheme.textPrimary)
+                .padding(.leading, 4)
+
+            Text("Used to tell enrolled faces apart when more than one person is set up on this Mac.")
+                .font(GlanceTheme.Font.passwordCaption)
+                .foregroundStyle(GlanceTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 4)
+
+            Spacer(minLength: 2)
+
+            PillTextField(placeholder: "Enter a name...", text: $controller.pendingName) {
+                controller.confirmName()
+            }
+
+            if let error = controller.nameError {
+                Text(error)
+                    .font(GlanceTheme.Font.rowDetail)
+                    .foregroundStyle(GlanceTheme.statusDenied)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 10) {
+                PillButton(title: "Back", style: .secondary) {
+                    controller.back()
+                }
+                PillButton(title: controller.nameStepPrimaryTitle, isEnabled: !trimmedName.isEmpty) {
+                    controller.confirmName()
+                }
+            }
+        }
+        .onboardingContentPadding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(GlanceTheme.panel)
+    }
+}
+
+// MARK: - 8. Password
 
 struct PasswordStepView: View {
     let controller: OnboardingController
@@ -222,7 +276,7 @@ struct PasswordStepView: View {
     }
 }
 
-// MARK: - 8. Complete
+// MARK: - 9. Complete
 
 struct CompleteStepView: View {
     var body: some View {

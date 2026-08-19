@@ -24,6 +24,7 @@ enum OnboardingStep: CaseIterable {
     case permissions
     case preSetup
     case enroll
+    case name
     case password
     case complete
 
@@ -37,7 +38,7 @@ enum OnboardingStep: CaseIterable {
     /// is fully guided (no buttons); complete and intro have only one side.
     var showsBackButton: Bool {
         switch self {
-        case .permissions, .preSetup, .password: return true
+        case .permissions, .preSetup, .name, .password: return true
         case .intro, .enroll, .complete: return false
         }
     }
@@ -142,6 +143,22 @@ final class OnboardingController {
     /// "cancel" rather than stepping into a setup flow that isn't running.
     private let isPasswordOnly: Bool
 
+    /// Who this run is enrolling. Recapture is keyed by `id` rather than by
+    /// name so the naming step can rename an identity in the same pass —
+    /// matching by name would either lose the rename or orphan the old
+    /// identity under its old name.
+    enum EnrollmentTarget: Equatable {
+        case newIdentity
+        case replacing(UUID)
+
+        var identityID: UUID? {
+            if case .replacing(let id) = self { return id }
+            return nil
+        }
+    }
+
+    private let enrollmentTarget: EnrollmentTarget
+
     enum NavDirection { case forward, backward }
     /// Which way the step just changed — read by OnboardingNotchView to
     /// pick the scroll direction for the blur transition.
@@ -151,28 +168,74 @@ final class OnboardingController {
     /// has no window of its own — it's presented entirely inside the notch.
     static func startFlow() {
         let controller = OnboardingController()
+        controller.pendingName = defaultName
         NotchOverlayController.shared.presentOnboarding(controller)
     }
 
-    /// Entry point used by Settings' "Redo Face Enrollment" — presents only
-    /// the guided pose-capture step (no intro/permissions/password) and
-    /// saves samples directly once done. Requires an unlocked session;
-    /// prompts Touch ID first if it isn't already, before the notch ever
-    /// appears, since there's no password step here to unlock it later.
+    /// Entry point used by Settings' "Set up FaceID" / "Redo Face
+    /// Enrollment" — presents the guided pose-capture step plus the naming
+    /// step (no intro/permissions/password) and saves directly once done.
+    ///
+    /// The Your Face page is still single-identity (it reads
+    /// `identities.first`), so this keeps targeting that first identity:
+    /// "redo" replaces it in place, and with nothing enrolled it enrolls
+    /// someone new.
     static func startEnrollmentOnly() {
         Task { @MainActor in
-            if !SecureCredentialManager.isSessionUnlocked {
-                do {
-                    try await Task.detached(priority: .userInitiated) {
-                        try SecureCredentialManager.unlockSession(reason: "Authenticate to re-enroll your face")
-                    }.value
-                } catch {
-                    return
-                }
-            }
-            let controller = OnboardingController(isEnrollmentOnly: true)
-            NotchOverlayController.shared.presentOnboarding(controller)
+            guard await unlockForEnrollment(reason: "Authenticate to re-enroll your face") else { return }
+            let store = FaceEnrollmentStore.shared
+            store.reloadIfUnlocked()
+            let existing = store.identities.first
+            present(
+                target: existing.map { .replacing($0.id) } ?? .newIdentity,
+                prefillName: existing?.name ?? defaultName
+            )
         }
+    }
+
+    /// Entry point used by Face Lab's "Add Identity" — the same guided
+    /// capture, but always enrolling a *new* person alongside whoever is
+    /// already enrolled. The name starts empty rather than at `defaultName`:
+    /// this is explicitly somebody else.
+    static func startAddIdentity() {
+        Task { @MainActor in
+            guard await unlockForEnrollment(reason: "Authenticate to enroll another face") else { return }
+            FaceEnrollmentStore.shared.reloadIfUnlocked()
+            present(target: .newIdentity, prefillName: "")
+        }
+    }
+
+    /// Entry point used by Face Lab's per-identity "Recapture" — replaces
+    /// that identity's samples wholesale, keeping its id and enrollment
+    /// date, with its current name pre-filled and editable.
+    static func startRecapture(of identity: FaceIdentity) {
+        Task { @MainActor in
+            guard await unlockForEnrollment(reason: "Authenticate to re-enroll this face") else { return }
+            FaceEnrollmentStore.shared.reloadIfUnlocked()
+            present(target: .replacing(identity.id), prefillName: identity.name)
+        }
+    }
+
+    /// Enrollment-only flows persist as soon as the naming step is
+    /// confirmed, so unlike the full setup flow there's no later password
+    /// step to unlock the session — Touch ID has to happen up front, before
+    /// the notch ever appears.
+    private static func unlockForEnrollment(reason: String) async -> Bool {
+        guard !SecureCredentialManager.isSessionUnlocked else { return true }
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                try SecureCredentialManager.unlockSession(reason: reason)
+            }.value
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private static func present(target: EnrollmentTarget, prefillName: String) {
+        let controller = OnboardingController(isEnrollmentOnly: true, enrollmentTarget: target)
+        controller.pendingName = prefillName
+        NotchOverlayController.shared.presentOnboarding(controller)
     }
 
     /// Entry point used by Settings' "Change password" — presents only the
@@ -275,11 +338,23 @@ final class OnboardingController {
     private struct CollectedSample {
         let embedding: [Float]
         let pose: EnrollmentPose
+        /// Carried through from `FaceRecognitionResult.quality` so an
+        /// enrolled identity can report how good its samples actually were,
+        /// instead of the score being read once for the accept-floor gate
+        /// and then discarded.
+        let quality: Float?
+        /// Stamped when the frame was captured, not when it was saved.
+        /// These sit in memory across the naming (and, on first run, the
+        /// password) step, so a save-time stamp would date every sample of
+        /// a first-run enrollment to minutes after the capture actually
+        /// happened.
+        let capturedAt: Date
     }
-    /// Held in memory (not persisted) until the password step succeeds —
-    /// saving requires an unlocked session (see SecureFaceStore), and
-    /// nothing unlocks the session until `finish(password:)` calls
-    /// `SecureCredentialManager.unlockSession`, which happens after
+    /// Held in memory (not persisted) until the identity has a name: the
+    /// naming step commits directly in the add/recapture flows, while in
+    /// first-run setup saving additionally requires an unlocked session (see
+    /// SecureFaceStore), and nothing unlocks it until `finish(password:)`
+    /// calls `SecureCredentialManager.unlockSession` — which happens after
     /// enrollment in this flow's step order.
     private var collectedSamples: [CollectedSample] = []
     private var matchStreak = 0
@@ -308,14 +383,32 @@ final class OnboardingController {
         return min(done / total, 1.0)
     }
 
+    // MARK: - Naming
+
+    /// The name being given to this enrollment — bound directly by
+    /// `NameStepView`, and pre-filled by whichever entry point started the
+    /// flow (the full-name default for first-run, the existing name for a
+    /// recapture, empty when adding somebody new).
+    var pendingName: String = ""
+    private(set) var nameError: String?
+
+    /// Naming is the last input in an add/recapture flow, but only the
+    /// halfway point of first-run setup, where the password still follows.
+    var nameStepPrimaryTitle: String { isEnrollmentOnly ? "Save" : "Continue" }
+
     // MARK: - Password
 
     private(set) var passwordError: String?
     private(set) var isSavingPassword = false
 
-    init(isEnrollmentOnly: Bool = false, isPasswordOnly: Bool = false) {
+    init(
+        isEnrollmentOnly: Bool = false,
+        isPasswordOnly: Bool = false,
+        enrollmentTarget: EnrollmentTarget = .newIdentity
+    ) {
         self.isEnrollmentOnly = isEnrollmentOnly
         self.isPasswordOnly = isPasswordOnly
+        self.enrollmentTarget = enrollmentTarget
         observeFrames()
         if isEnrollmentOnly {
             step = .enroll
@@ -341,6 +434,7 @@ final class OnboardingController {
             case .permissions: step = .preSetup
             case .preSetup: step = .enroll
             case .enroll: break // advances automatically on completion
+            case .name: break // handled by confirmName()
             case .password: break // handled by finish(password:)
             case .complete: break
             }
@@ -360,35 +454,53 @@ final class OnboardingController {
     }
 
     /// Steps backward. `.enroll` is fully guided (no Back button reaches
-    /// it), so backing out of `.password` skips over it straight to
-    /// `.preSetup` — enrollment can't be resumed halfway, so this also
-    /// resets all collected progress; the user re-does the guided capture
-    /// on their way forward again.
+    /// it), so the steps on either side of it handle their own retreat.
     func back() {
         navDirection = .backward
         // In the password-only flow there is no earlier step to return to —
-        // stepping back to `.preSetup` (the normal behaviour below) would
-        // drop the user into a face-enrollment flow they never started.
-        // Back is a plain cancel here.
+        // stepping back into the enrollment flow (the normal behaviour
+        // below) would drop the user into a setup they never started. Back
+        // is a plain cancel here.
         if isPasswordOnly {
             teardown()
             NotchOverlayController.shared.dismissOnboarding()
             return
         }
-        if step == .password {
+        switch step {
+        case .password:
+            // Back to naming, deliberately *without* resetting: the
+            // collected samples and the typed name both survive the trip,
+            // so a user who wants to fix a typo doesn't re-do nine poses.
+            nameError = nil
+            withAnimation(OnboardingMetrics.stepAnimation) { step = .name }
+        case .name where isEnrollmentOnly:
+            // Nothing precedes naming in the add/recapture flows, and
+            // unsaved samples are worthless — Back is a cancel, mirroring
+            // the password-only flow. Any identity being recaptured is left
+            // completely untouched, since nothing is written until the name
+            // is confirmed.
+            teardown()
+            NotchOverlayController.shared.dismissOnboarding()
+        case .name:
+            // Full setup: `.enroll` can't be resumed halfway, so backing
+            // past it discards the capture and returns to pre-setup.
             resetEnrollmentState()
             withAnimation(OnboardingMetrics.stepAnimation) { step = .preSetup }
-            return
-        }
-        guard let previous = step.previous else { return }
-        withAnimation(OnboardingMetrics.stepAnimation) { step = previous }
-        if step == .permissions {
-            startPermissionsPolling()
+        default:
+            guard let previous = step.previous else { return }
+            withAnimation(OnboardingMetrics.stepAnimation) { step = previous }
+            if step == .permissions {
+                startPermissionsPolling()
+            }
         }
     }
 
+    /// Note `pendingName` deliberately survives: backing out of `.password`
+    /// means re-doing the nine poses, and making the user retype a name they
+    /// already chose on the way through would be gratuitous.
     private func resetEnrollmentState() {
         collectedSamples = []
+        nameError = nil
         currentPoseIndex = 0
         capturedForCurrentPose = 0
         capturedPoses = []
@@ -517,7 +629,12 @@ final class OnboardingController {
         guard matchStreak >= requiredMatchStreak else { return }
         matchStreak = 0
 
-        collectedSamples.append(CollectedSample(embedding: result.embedding, pose: pose))
+        collectedSamples.append(CollectedSample(
+            embedding: result.embedding,
+            pose: pose,
+            quality: result.quality,
+            capturedAt: Date()
+        ))
         capturedForCurrentPose += 1
 
         if capturedForCurrentPose >= samplesPerPose {
@@ -564,9 +681,10 @@ final class OnboardingController {
 
     /// Runs the camera-complete sequence: guide overlay fades, camera
     /// preview fades, the checkmark draws on, then auto-advances to the
-    /// password step. Samples stay in memory here — persisting requires an
-    /// unlocked session, which doesn't exist until `finish(password:)`
-    /// calls `SecureCredentialManager.unlockSession` below.
+    /// naming step. Samples stay in memory here — every flow now names the
+    /// identity before anything is written, and in the full setup flow
+    /// persisting additionally requires the unlocked session that only
+    /// `finish(password:)` produces.
     private func finishEnrollment() async {
         enrollmentComplete = true
 
@@ -581,46 +699,81 @@ final class OnboardingController {
         showCheckmark = true
 
         let elapsed = OnboardingMetrics.guideOverlayFadeOut + OnboardingMetrics.previewFadeOut + OnboardingMetrics.checkmarkDelay
-        let remaining = max(OnboardingMetrics.cameraCompleteToPasswordDelay - elapsed, 0)
+        let remaining = max(OnboardingMetrics.cameraCompleteToNameDelay - elapsed, 0)
         try? await Task.sleep(for: .seconds(remaining))
 
         camera.stop()
 
-        if isEnrollmentOnly {
-            await saveEnrollmentOnlySamplesAndFinish()
-        } else {
-            navDirection = .forward
-            withAnimation(OnboardingMetrics.stepAnimation) { step = .password }
-        }
+        navDirection = .forward
+        withAnimation(OnboardingMetrics.stepAnimation) { step = .name }
     }
 
-    /// Enrollment-only path used by both Settings' "Set up FaceID" (no prior
-    /// enrollment) and "Redo Face Enrollment" (replacing one). Replaces any
-    /// existing identity under the same name rather than appending to it —
-    /// `addSample` otherwise appends, and old + new samples from a "redo"
-    /// shouldn't be blended together. No password step: the caller
-    /// (`startEnrollmentOnly`) already guaranteed an unlocked session before
-    /// this flow ever started.
-    ///
-    /// Ends on the same `.complete` ("You're all set") screen as the full
-    /// setup flow, via the same `scheduleCompletionDismiss` delay, rather
-    /// than dismissing the instant samples are saved — that used to happen
-    /// with zero confirmation that anything succeeded.
-    private func saveEnrollmentOnlySamplesAndFinish() async {
-        store.reloadIfUnlocked()
-        if let existing = store.identities.first(where: { $0.name == Self.ownerName }) {
-            try? store.delete(existing)
+    // MARK: - Naming
+
+    /// Confirms the naming step. In an enrollment-only flow the session is
+    /// already unlocked (the entry points guarantee it), so this is also the
+    /// commit point and the flow ends here. In the full setup flow nothing
+    /// can be written yet — see `finish(password:)`.
+    func confirmName() {
+        let trimmed = pendingName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            nameError = "Enter a name."
+            return
         }
-        let embedder = pipeline.embedder
-        for sample in collectedSamples {
-            _ = try? store.addSample(name: Self.ownerName, embedding: sample.embedding, embedder: embedder, pose: sample.pose.name)
+        // Skipped silently in the full setup flow, where the store is still
+        // locked and `identities` is empty because it's *unreadable*, not
+        // because nothing is enrolled. `finish(password:)` re-checks once
+        // the session opens.
+        guard !store.nameIsTaken(trimmed, excluding: enrollmentTarget.identityID) else {
+            nameError = "A face named \"\(trimmed)\" is already enrolled."
+            return
+        }
+        nameError = nil
+
+        guard isEnrollmentOnly else {
+            navDirection = .forward
+            withAnimation(OnboardingMetrics.stepAnimation) { step = .password }
+            return
+        }
+
+        store.reloadIfUnlocked()
+        do {
+            try commitEnrollment(name: trimmed)
+        } catch {
+            // Realistically a session that lapsed between the entry point's
+            // Touch ID prompt and now. Stay on this step with the samples
+            // still in memory rather than showing "You're all set" over a
+            // save that didn't happen.
+            nameError = error.localizedDescription
+            return
         }
         navDirection = .forward
+        // Ends on the same `.complete` ("You're all set") screen as the full
+        // setup flow, via the same `scheduleCompletionDismiss` delay, rather
+        // than dismissing the instant samples are saved — that used to
+        // happen with zero confirmation that anything succeeded.
         withAnimation(OnboardingMetrics.stepAnimation) { step = .complete }
         scheduleCompletionDismiss()
     }
 
-    private static let ownerName: String = {
+    /// The single place guided-enrollment samples are persisted. Requires an
+    /// unlocked session; in the full setup flow that only exists once
+    /// `finish(password:)` has called `SecureCredentialManager.unlockSession`.
+    private func commitEnrollment(name: String) throws {
+        let samples = collectedSamples.map {
+            FaceSample(embedding: $0.embedding, pose: $0.pose.name, capturedAt: $0.capturedAt, quality: $0.quality)
+        }
+        try store.commitEnrollment(
+            replacing: enrollmentTarget.identityID,
+            name: name,
+            samples: samples,
+            embedder: pipeline.embedder
+        )
+    }
+
+    /// Only a pre-fill for the first-run flow's naming step — never the
+    /// stored name, which the user now always chooses themselves.
+    static let defaultName: String = {
         let name = NSFullUserName()
         return name.isEmpty ? "Owner" : name
     }()
@@ -643,10 +796,21 @@ final class OnboardingController {
 
             // Only now that the session key exists can the face samples
             // collected during enrollment actually be encrypted and saved.
+            // (`collectedSamples` is empty in the password-only flow, which
+            // shares this method and must not try to write an identity.)
             store.reloadIfUnlocked()
-            let embedder = pipeline.embedder
-            for sample in collectedSamples {
-                _ = try? store.addSample(name: Self.ownerName, embedding: sample.embedding, embedder: embedder, pose: sample.pose.name)
+            if !collectedSamples.isEmpty {
+                let name = pendingName.trimmingCharacters(in: .whitespacesAndNewlines)
+                // The naming step couldn't run this check — the store was
+                // still locked and therefore unreadable. Bounce back rather
+                // than saving over, or silently merging into, someone else.
+                guard !store.nameIsTaken(name, excluding: enrollmentTarget.identityID) else {
+                    nameError = "A face named \"\(name)\" is already enrolled."
+                    navDirection = .backward
+                    withAnimation(OnboardingMetrics.stepAnimation) { step = .name }
+                    return false
+                }
+                try commitEnrollment(name: name)
             }
 
             try await Task.detached(priority: .userInitiated) {

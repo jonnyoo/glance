@@ -159,8 +159,13 @@ final class FaceLabController {
             return
         }
         do {
-            try store.addSample(name: trimmedName, embedding: result.embedding, embedder: pipeline.embedder)
-            log("Captured sample for \"\(trimmedName)\" (\(result.embedding.count)-dim, \(result.alignmentTier.rawValue)).")
+            try store.addSample(
+                name: trimmedName,
+                embedding: result.embedding,
+                embedder: pipeline.embedder,
+                quality: result.quality
+            )
+            log("Captured sample for \"\(trimmedName)\" (\(result.embedding.count)-dim, \(result.alignmentTier.rawValue), quality \(Self.qualityLabel(result.quality))).")
         } catch {
             log("Couldn't save sample: \(error.localizedDescription)")
         }
@@ -173,6 +178,49 @@ final class FaceLabController {
         } catch {
             log("Couldn't delete: \(error.localizedDescription)")
         }
+    }
+
+    // MARK: - Multi-identity enrollment
+    //
+    // Prototyped here ahead of the Your Face settings tab: the store, the
+    // pipeline's `bestMatch` margin, and the guided flow all handle N
+    // identities already — only the UI was single-identity.
+
+    /// Vision capture quality below this reads as a sample worth
+    /// re-capturing. Deliberately well above `OnboardingController`'s 0.2
+    /// accept-floor, which is a *gate* applied during capture: no guided
+    /// sample can be below it, so a 0.2 display cutoff would always report
+    /// zero. Samples with no score at all count as unrated, never as low.
+    static let lowQualityThreshold: Float = 0.4
+
+    func lowQualityCount(in identity: FaceIdentity) -> Int {
+        identity.samples.filter { ($0.quality ?? 1) < Self.lowQualityThreshold }.count
+    }
+
+    /// Face Lab and the onboarding flow each own a separate `CameraManager`
+    /// pointed at the same physical device — stopping ours first avoids
+    /// handing it to two live sessions with different configurations.
+    func startFullOnboarding() {
+        camera.stop()
+        log("Starting the full onboarding flow.")
+        OnboardingController.startFlow()
+    }
+
+    func startAddIdentity() {
+        camera.stop()
+        log("Starting guided enrollment for a new identity.")
+        OnboardingController.startAddIdentity()
+    }
+
+    func startRecapture(of identity: FaceIdentity) {
+        camera.stop()
+        log("Starting guided re-capture of \"\(identity.name)\".")
+        OnboardingController.startRecapture(of: identity)
+    }
+
+    static func qualityLabel(_ quality: Float?) -> String {
+        guard let quality else { return "—" }
+        return String(format: "%.0f%%", quality * 100)
     }
 
     // MARK: - Milestone F: recognition
