@@ -7,7 +7,7 @@
 //  Unlock) — kept only for ongoing testing, per Jonathan.
 //
 
-import Foundation
+import SwiftUI
 
 enum SettingsSection: String, CaseIterable, Hashable {
     case authentication = "Authentication"
@@ -53,6 +53,45 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
         case .debugCredentials: return "lock.shield"
         case .debugFaceLab: return "flask"
         case .debugFaceUnlock: return "faceid"
+        }
+    }
+
+    /// Top-to-bottom gradient stops for this tab's icon badge
+    /// (`SettingsTabIconBadge`, drawn behind the glyph in both the sidebar
+    /// row and the page header) — the small colored squircle System
+    /// Settings gives each category, several of which (General's gear,
+    /// among others) are themselves a subtle vertical gradient rather than
+    /// a flat fill.
+    ///
+    /// Two colors, read top-first: `SettingsTabIconBadge` always renders a
+    /// `LinearGradient(colors:, startPoint: .top, endPoint: .bottom)`, so a
+    /// flat tile (most tabs, for now) is just the same color listed twice —
+    /// there's no separate "flat" case to keep in sync.
+    ///
+    /// To give a tab its own gradient later — e.g. one picked in Figma —
+    /// change just its line below. Figma's own "Copy as CSS" on a gradient
+    /// fill hands you a `linear-gradient(...)` string with each stop's hex
+    /// already in order; for a straight-down (180deg) gradient that order
+    /// matches this array directly (top stop first). If a gradient has more
+    /// than two stops, or stops that aren't evenly spaced, swap this
+    /// property's return type for `[Gradient.Stop]` and pass
+    /// `Gradient(stops:)` into `SettingsTabIconBadge` instead — see its doc
+    /// comment.
+    var badgeGradientColors: [Color] {
+        switch self {
+        case .general:
+            return [
+                Color(red: 0x9C / 255, green: 0x9C / 255, blue: 0xA1 / 255), // top: light grey
+                Color(red: 0x6E / 255, green: 0x6E / 255, blue: 0x73 / 255), // bottom: grey
+            ]
+        case .yourFace: return [GlanceTheme.accent, GlanceTheme.accent]
+        case .password: return [GlanceTheme.accent, GlanceTheme.accent]
+        case .camera: return [GlanceTheme.accent, GlanceTheme.accent]
+        case .recognition: return [GlanceTheme.accent, GlanceTheme.accent]
+        case .about: return [GlanceTheme.accent, GlanceTheme.accent]
+        case .debugCredentials: return [GlanceTheme.accent, GlanceTheme.accent]
+        case .debugFaceLab: return [GlanceTheme.accent, GlanceTheme.accent]
+        case .debugFaceUnlock: return [GlanceTheme.accent, GlanceTheme.accent]
         }
     }
 

@@ -22,6 +22,16 @@ enum GlanceTheme {
     static let statusGranted = Color(red: 0x30 / 255, green: 0xD1 / 255, blue: 0x58 / 255)
     static let statusDenied = Color(red: 0xFF / 255, green: 0x45 / 255, blue: 0x3A / 255)
 
+    //Badge colors
+    static let badgeGeneral = Color(red: 0x34 / 255, green: 0x99 / 255, blue: 0xFF / 255)
+    static let badgeYourFace = Color(red: 0x34 / 255, green: 0x99 / 255, blue: 0xFF / 255)
+    static let badgePassword = Color(red: 0x34 / 255, green: 0x99 / 255, blue: 0xFF / 255)
+    static let badgeCamera = Color(red: 0x34 / 255, green: 0x99 / 255, blue: 0xFF / 255)
+    static let badgeRecognition = Color(red: 0x34 / 255, green: 0x99 / 255, blue: 0xFF / 255)
+    static let badgeAbout = Color(red: 0x34 / 255, green: 0x99 / 255, blue: 0xFF / 255)
+    static let badgeDebugCredentials = Color(red: 0x34 / 255, green: 0x99 / 255, blue: 0xFF / 255)
+    static let badgeDebugFaceLab = Color(red: 0x34 / 255, green: 0x99 / 255, blue: 0xFF / 255)
+
     enum Font {
         /// Scaled up from a literal Figma-frame halving so content reads
         /// clearly at the wider `OnboardingMetrics.panelWidth`.

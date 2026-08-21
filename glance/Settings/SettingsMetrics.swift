@@ -100,11 +100,11 @@ enum SettingsMetrics {
         light: NSColor(white: 1, alpha: 0.4)
     )
 
-    static let sidebarItemHeight: CGFloat = 32
+    static let sidebarItemHeight: CGFloat = 36
     static let sidebarSectionSpacing: CGFloat = 8
-    static let sidebarItemFont = Font.system(size: 14, weight: .regular)
-    static let sectionHeaderFont = Font.system(size: 14, weight: .medium)
-    static let contentTitleFont = Font.system(size: 16, weight: .medium)
+    static let sidebarItemFont = Font.system(size: 13, weight: .regular)
+    static let sectionHeaderFont = Font.system(size: 13, weight: .medium)
+    static let contentTitleFont = Font.system(size: 15, weight: .medium)
 
     /// Dark-mode values are unchanged, hand-measured-from-Figma literals.
     /// Light-mode values aren't a separate guess: they're the exact resolved
@@ -192,7 +192,7 @@ enum SettingsMetrics {
     /// Dark-mode-only ring drawn just outside the rowBorder stroke.
     /// Clear in light mode so the overlay can stay unconditional.
     static let optionPreviewOuterStroke = adaptiveColor(
-        dark: NSColor(white: 0.1, alpha: 0.6),
+        dark: NSColor(white: 0.1, alpha: 0.35),
         light: NSColor(white: 0, alpha: 0)
     )
     static let optionPreviewOuterStrokeWidth: CGFloat = 1
@@ -202,6 +202,23 @@ enum SettingsMetrics {
     static let sectionTitleVerticalPadding: CGFloat = 8
 
     static let contentHorizontalPadding: CGFloat = 16
+
+    // MARK: - Tab icon badges
+    //
+    // The small colored squircle behind each tab's glyph — sidebar row and
+    // page header both use the same shape, sized differently for their
+    // context. Corner radius is kept proportional to size (~28%, matching
+    // macOS's own rounded-square icon tiles) rather than a flat literal, so
+    // the two sizes read as the same shape rather than two different ones.
+
+    static let sidebarIconBadgeSize: CGFloat = 23
+    static let sidebarIconBadgeCornerRadius: CGFloat = 7.5
+    static let sidebarIconBadgeGlyphSize: CGFloat = 13.5
+
+    static let headerIconBadgeSize: CGFloat = 23
+    static let headerIconBadgeCornerRadius: CGFloat = 7.5
+    static let headerIconBadgeGlyphSize: CGFloat = 13.5
+
 
     // MARK: - Capture-quality tick strip (Your Face)
     //

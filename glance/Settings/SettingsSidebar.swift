@@ -62,10 +62,13 @@ struct SettingsSidebar: View {
             selection = tab
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: tab.icon)
-                    .font(.system(size: 11))
-                    .foregroundStyle(SettingsMetrics.textPrimary)
-                    .frame(width: 16)
+                SettingsTabIconBadge(
+                    systemImage: tab.icon,
+                    gradientColors: tab.badgeGradientColors,
+                    size: SettingsMetrics.sidebarIconBadgeSize,
+                    cornerRadius: SettingsMetrics.sidebarIconBadgeCornerRadius,
+                    iconSize: SettingsMetrics.sidebarIconBadgeGlyphSize
+                )
                 Text(tab.title)
                     .font(SettingsMetrics.sidebarItemFont)
                     .foregroundStyle(SettingsMetrics.textPrimary)

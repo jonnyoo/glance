@@ -128,9 +128,13 @@ struct SettingsWindowView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: selection.icon)
-                .font(.system(size: 13))
-                .foregroundStyle(SettingsMetrics.textPrimary)
+            SettingsTabIconBadge(
+                systemImage: selection.icon,
+                gradientColors: selection.badgeGradientColors,
+                size: SettingsMetrics.headerIconBadgeSize,
+                cornerRadius: SettingsMetrics.headerIconBadgeCornerRadius,
+                iconSize: SettingsMetrics.headerIconBadgeGlyphSize
+            )
             Text(selection.title)
                 .font(SettingsMetrics.contentTitleFont)
                 .foregroundStyle(SettingsMetrics.textPrimary)

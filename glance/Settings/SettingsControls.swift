@@ -14,6 +14,64 @@ import AppKit
 import CoreImage
 
 
+/// The colored rounded-squircle tile behind a tab's glyph — the same
+/// per-category icon treatment macOS System Settings uses (Wi-Fi blue,
+/// Battery green, and so on). Used at two sizes from two call sites —
+/// `SettingsSidebar`'s row and `SettingsWindowView`'s page header — which is
+/// why size/cornerRadius/iconSize are explicit parameters rather than a
+/// single hardcoded shape.
+///
+/// Every tab renders as a flat accent fill today (see
+/// `SettingsTab.badgeGradientColors`); this view only draws whatever
+/// gradient it's given — that's the one property to touch to give a tab
+/// its own two-tone look.
+struct SettingsTabIconBadge: View {
+    let systemImage: String
+    /// Read top-to-bottom — `[topColor, bottomColor]`. A flat tile is just
+    /// the same color listed twice; there's no separate flat-fill path to
+    /// keep in sync with the gradient one. For a gradient with uneven stop
+    /// spacing (more than two colors, or stops not evenly split), add a
+    /// `stops: [Gradient.Stop]?` parameter here defaulting to `nil` and, in
+    /// `body`, prefer `LinearGradient(gradient: Gradient(stops:), ...)` over
+    /// `LinearGradient(colors:, ...)` when it's supplied.
+    let gradientColors: [Color]
+    let size: CGFloat
+    let cornerRadius: CGFloat
+    let iconSize: CGFloat
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(LinearGradient(colors: gradientColors, startPoint: .top, endPoint: .bottom))
+            .frame(width: size, height: size)
+            .overlay(
+                Image(systemName: systemImage)
+                    .font(.system(size: iconSize, weight: .medium))
+                    .foregroundStyle(.white)
+            )
+            // Same two-ring treatment as `SettingsOptionTile`'s preview
+            // tiles: a light-grey hairline on the badge's own edge, plus a
+            // second, dark-mode-only black ring just outside it. Reuses
+            // those exact tokens rather than new ones so every colored tile
+            // in Settings — option previews and tab badges alike — reads as
+            // the same kind of object.
+            .overlay(
+                RoundedRectangle(
+                    cornerRadius: cornerRadius + SettingsMetrics.optionPreviewOuterStrokeWidth,
+                    style: .continuous
+                )
+                .strokeBorder(
+                    SettingsMetrics.optionPreviewOuterStroke,
+                    lineWidth: SettingsMetrics.optionPreviewOuterStrokeWidth
+                )
+                .padding(-SettingsMetrics.optionPreviewOuterStrokeWidth)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(SettingsMetrics.rowBorder, lineWidth: SettingsMetrics.optionPreviewBorderWidth)
+            )
+    }
+}
+
 /// One settings row: label (+ optional subtitle) on the leading edge,
 /// arbitrary trailing control. Matches the pill-shaped rows in the Figma
 /// design (430x50, radius 17, translucent fill + hairline border).
