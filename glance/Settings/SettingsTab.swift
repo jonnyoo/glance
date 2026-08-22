@@ -42,17 +42,21 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    var icon: String {
+    /// `.yourFace` uses a custom mark (`Assets.xcassets/YourFaceIcon`) —
+    /// SF Symbols has no equivalent of it. Every other tab is a built-in
+    /// symbol; see `SettingsTabIcon` for how `SettingsTabIconBadge` renders
+    /// either kind identically otherwise.
+    var icon: SettingsTabIcon {
         switch self {
-        case .general: return "gearshape"
-        case .yourFace: return "faceid"
-        case .password: return "key.fill"
-        case .camera: return "camera.fill"
-        case .recognition: return "wand.and.stars"
-        case .about: return "info.circle"
-        case .debugCredentials: return "lock.shield"
-        case .debugFaceLab: return "flask"
-        case .debugFaceUnlock: return "faceid"
+        case .general: return .system("gearshape.fill")
+        case .yourFace: return .asset("YourFaceIcon")
+        case .password: return .system("lock.fill")
+        case .camera: return .system("video.fill")
+        case .recognition: return .system("sparkle")
+        case .about: return .system("info.circle.fill")
+        case .debugCredentials: return .system("lock.shield")
+        case .debugFaceLab: return .system("flask")
+        case .debugFaceUnlock: return .system("faceid")
         }
     }
 
@@ -79,19 +83,15 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
     /// comment.
     var badgeGradientColors: [Color] {
         switch self {
-        case .general:
-            return [
-                Color(red: 0x9C / 255, green: 0x9C / 255, blue: 0xA1 / 255), // top: light grey
-                Color(red: 0x6E / 255, green: 0x6E / 255, blue: 0x73 / 255), // bottom: grey
-            ]
-        case .yourFace: return [GlanceTheme.accent, GlanceTheme.accent]
-        case .password: return [GlanceTheme.accent, GlanceTheme.accent]
-        case .camera: return [GlanceTheme.accent, GlanceTheme.accent]
-        case .recognition: return [GlanceTheme.accent, GlanceTheme.accent]
-        case .about: return [GlanceTheme.accent, GlanceTheme.accent]
-        case .debugCredentials: return [GlanceTheme.accent, GlanceTheme.accent]
-        case .debugFaceLab: return [GlanceTheme.accent, GlanceTheme.accent]
-        case .debugFaceUnlock: return [GlanceTheme.accent, GlanceTheme.accent]
+        case .general: return GlanceTheme.badgeGeneral
+        case .yourFace: return GlanceTheme.badgeYourFace
+        case .password: return GlanceTheme.badgePassword
+        case .camera: return GlanceTheme.badgeCamera
+        case .recognition: return GlanceTheme.badgeRecognition
+        case .about: return GlanceTheme.badgeGeneral
+        case .debugCredentials: return GlanceTheme.badgeGeneral
+        case .debugFaceLab: return GlanceTheme.badgeGeneral
+        case .debugFaceUnlock: return GlanceTheme.badgeGeneral
         }
     }
 

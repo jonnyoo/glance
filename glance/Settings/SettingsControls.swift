@@ -14,6 +14,15 @@ import AppKit
 import CoreImage
 
 
+/// What a tab's icon actually is — a built-in SF Symbol, or a template
+/// image from the asset catalog for marks SF Symbols has no equivalent for
+/// (e.g. "Your Face"'s custom glyph, `Assets.xcassets/YourFaceIcon`). Lets
+/// `SettingsTabIconBadge` render either without the call site caring which.
+enum SettingsTabIcon {
+    case system(String)
+    case asset(String)
+}
+
 /// The colored rounded-squircle tile behind a tab's glyph — the same
 /// per-category icon treatment macOS System Settings uses (Wi-Fi blue,
 /// Battery green, and so on). Used at two sizes from two call sites —
@@ -26,7 +35,7 @@ import CoreImage
 /// gradient it's given — that's the one property to touch to give a tab
 /// its own two-tone look.
 struct SettingsTabIconBadge: View {
-    let systemImage: String
+    let icon: SettingsTabIcon
     /// Read top-to-bottom — `[topColor, bottomColor]`. A flat tile is just
     /// the same color listed twice; there's no separate flat-fill path to
     /// keep in sync with the gradient one. For a gradient with uneven stop
@@ -43,11 +52,7 @@ struct SettingsTabIconBadge: View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(LinearGradient(colors: gradientColors, startPoint: .top, endPoint: .bottom))
             .frame(width: size, height: size)
-            .overlay(
-                Image(systemName: systemImage)
-                    .font(.system(size: iconSize, weight: .medium))
-                    .foregroundStyle(.white)
-            )
+            .overlay(glyph)
             // Same two-ring treatment as `SettingsOptionTile`'s preview
             // tiles: a light-grey hairline on the badge's own edge, plus a
             // second, dark-mode-only black ring just outside it. Reuses
@@ -69,6 +74,28 @@ struct SettingsTabIconBadge: View {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(SettingsMetrics.rowBorder, lineWidth: SettingsMetrics.optionPreviewBorderWidth)
             )
+    }
+
+    @ViewBuilder
+    private var glyph: some View {
+        switch icon {
+        case .system(let name):
+            Image(systemName: name)
+                .font(.system(size: iconSize, weight: .medium))
+                .foregroundStyle(.white)
+        case .asset(let name):
+            // The asset catalog entry (Assets.xcassets/<name>.imageset) is
+            // marked `template-rendering-intent: template`, so AppKit fills
+            // it from `.foregroundStyle` using the source art's alpha as a
+            // mask — the SVG's own stroke color plays no part in what's
+            // drawn here.
+            Image(name)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .foregroundStyle(.white)
+                .frame(width: iconSize, height: iconSize)
+        }
     }
 }
 

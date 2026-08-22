@@ -63,7 +63,7 @@ struct SettingsSidebar: View {
         } label: {
             HStack(spacing: 8) {
                 SettingsTabIconBadge(
-                    systemImage: tab.icon,
+                    icon: tab.icon,
                     gradientColors: tab.badgeGradientColors,
                     size: SettingsMetrics.sidebarIconBadgeSize,
                     cornerRadius: SettingsMetrics.sidebarIconBadgeCornerRadius,

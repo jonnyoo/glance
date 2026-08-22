@@ -212,11 +212,11 @@ enum SettingsMetrics {
     // the two sizes read as the same shape rather than two different ones.
 
     static let sidebarIconBadgeSize: CGFloat = 23
-    static let sidebarIconBadgeCornerRadius: CGFloat = 7.5
+    static let sidebarIconBadgeCornerRadius: CGFloat = 7
     static let sidebarIconBadgeGlyphSize: CGFloat = 13.5
 
     static let headerIconBadgeSize: CGFloat = 23
-    static let headerIconBadgeCornerRadius: CGFloat = 7.5
+    static let headerIconBadgeCornerRadius: CGFloat = 7
     static let headerIconBadgeGlyphSize: CGFloat = 13.5
 
 

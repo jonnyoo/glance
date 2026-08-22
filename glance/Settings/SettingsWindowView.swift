@@ -129,7 +129,7 @@ struct SettingsWindowView: View {
     private var header: some View {
         HStack(spacing: 8) {
             SettingsTabIconBadge(
-                systemImage: selection.icon,
+                icon: selection.icon,
                 gradientColors: selection.badgeGradientColors,
                 size: SettingsMetrics.headerIconBadgeSize,
                 cornerRadius: SettingsMetrics.headerIconBadgeCornerRadius,

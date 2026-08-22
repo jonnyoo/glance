@@ -23,14 +23,16 @@ enum GlanceTheme {
     static let statusDenied = Color(red: 0xFF / 255, green: 0x45 / 255, blue: 0x3A / 255)
 
     //Badge colors
-    static let badgeGeneral = Color(red: 0x34 / 255, green: 0x99 / 255, blue: 0xFF / 255)
-    static let badgeYourFace = Color(red: 0x34 / 255, green: 0x99 / 255, blue: 0xFF / 255)
-    static let badgePassword = Color(red: 0x34 / 255, green: 0x99 / 255, blue: 0xFF / 255)
-    static let badgeCamera = Color(red: 0x34 / 255, green: 0x99 / 255, blue: 0xFF / 255)
-    static let badgeRecognition = Color(red: 0x34 / 255, green: 0x99 / 255, blue: 0xFF / 255)
-    static let badgeAbout = Color(red: 0x34 / 255, green: 0x99 / 255, blue: 0xFF / 255)
-    static let badgeDebugCredentials = Color(red: 0x34 / 255, green: 0x99 / 255, blue: 0xFF / 255)
-    static let badgeDebugFaceLab = Color(red: 0x34 / 255, green: 0x99 / 255, blue: 0xFF / 255)
+    static let badgeGeneral = [Color(red: 0x9C / 255, green: 0x9C / 255, blue: 0xA1 / 255), // top: light grey
+                                Color(red: 0x6E / 255, green: 0x6E / 255, blue: 0x73 / 255)] // bottom: grey
+    static let badgeYourFace = [Color(red: 0x71 / 255, green: 0xD0 / 255, blue: 0xFF / 255), // top: light blue
+                                Color(red: 0x25 / 255, green: 0x72 / 255, blue: 0xD0 / 255)]// bottom: blue
+    static let badgePassword = [ Color(red: 0x40 / 255, green: 0x4C / 255, blue: 0x52 / 255), // top: dark grey
+                                Color(red: 0x12 / 255, green: 0x19 / 255, blue: 0x20 / 255)] // bottom: grey
+    static let badgeCamera = [ Color(red: 0x60 / 255, green: 0xE8 / 255, blue: 0x8B / 255), // top: light green
+                                Color(red: 0x15 / 255, green: 0xAB / 255, blue: 0x71 / 255)] // bottom: green
+    static let badgeRecognition = [Color(red: 0x83 / 255, green: 0x74 / 255, blue: 0xE6 / 255), // top: light purple
+                                    Color(red: 0x55 / 255, green: 0x3F / 255, blue: 0xB5 / 255)] // bottom: purple
 
     enum Font {
         /// Scaled up from a literal Figma-frame halving so content reads
