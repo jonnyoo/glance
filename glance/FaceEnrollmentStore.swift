@@ -171,6 +171,24 @@ final class FaceEnrollmentStore {
 
     private init() {
         reloadIfUnlocked()
+        // The authoritative sync point: reload whenever the session key
+        // itself changes, regardless of which call site changed it. Without
+        // this, every place that unlocks or locks the session had to
+        // remember to call `reloadIfUnlocked()` itself — and the sidebar's
+        // session indicator didn't, so unlocking from there left this store
+        // showing stale (pre-unlock) data, including to `FaceUnlockCoordinator`,
+        // until some other page's `.onAppear` happened to catch it up. A
+        // future unlock/lock path anywhere in the app gets this for free
+        // instead of needing to remember it too.
+        NotificationCenter.default.addObserver(
+            forName: .secureCredentialSessionDidChange,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.reloadIfUnlocked()
+            }
+        }
     }
 
     /// Re-attempts loading from encrypted storage. A no-op (leaves

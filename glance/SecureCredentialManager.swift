@@ -41,6 +41,21 @@ enum SecureCredentialError: LocalizedError {
     }
 }
 
+extension Notification.Name {
+    /// Fires whenever the cached session key actually changes — unlocked,
+    /// locked, or wiped by `deletePassword()`. Anything encrypted under that
+    /// key (today: `FaceEnrollmentStore`) observes this instead of being
+    /// told to reload by whichever call site happened to trigger the
+    /// change. That's the fix for a real bug: unlocking via the sidebar's
+    /// session indicator forgot to reload the face store, so face unlock
+    /// silently kept using stale (empty, pre-unlock) data until some other
+    /// page's own `.onAppear` happened to refresh it. A notification from
+    /// the single place the key actually changes can't be forgotten the
+    /// same way a per-caller reload call can — every future unlock/lock
+    /// path, wherever it lives, gets this for free.
+    static let secureCredentialSessionDidChange = Notification.Name("SecureCredentialManager.sessionDidChange")
+}
+
 enum SecureCredentialManager {
     nonisolated private static let sessionKeyAccount = "sessionKey"
     nonisolated private static let passwordBlobAccount = "encryptedPassword"
@@ -75,9 +90,20 @@ enum SecureCredentialManager {
 
     nonisolated private static func setCachedKey(_ key: SymmetricKey?) {
         sessionLock.lock()
+        let changed = (key != nil) != (_cachedKey != nil)
         _cachedKey = key
         _lastActivityAt = key == nil ? nil : Date()
         sessionLock.unlock()
+        // Posted after releasing the lock — observers may call straight
+        // back into `isSessionUnlocked` (which re-acquires it), and this
+        // can run on a background thread (`unlockSession` is documented as
+        // blocking, called from `Task.detached`), so a self-deadlock is a
+        // real risk otherwise, not a theoretical one. Guarded on an actual
+        // locked/unlocked transition so a redundant call (none of today's
+        // call sites make one, but nothing enforces that) can't fire a
+        // spurious reload storm.
+        guard changed else { return }
+        NotificationCenter.default.post(name: .secureCredentialSessionDidChange, object: nil)
     }
 
     /// Resets the idle countdown. Called on each successful use of the
