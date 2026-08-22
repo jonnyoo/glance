@@ -17,11 +17,17 @@ struct AboutSettingsPage: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
-            Image(nsImage: NSApp.applicationIconImage ?? NSImage())
+        VStack(spacing: 2) {
+            // Plain imageset (Assets.xcassets/appicon), not an app-icon
+            // catalog entry — those live in a restricted namespace
+            // `Image(_:)` can't resolve, which is what made the previous
+            // two approaches here (Image("GlanceIcon"), then
+            // NSApp.applicationIconImage) both show a blank placeholder.
+            Image("appicon")
                 .resizable()
-                .frame(width: 96, height: 96)
-                .padding(.top, 12)
+                .frame(width: 80, height: 80)
+                .padding(.top, 16)
+                .padding(.bottom, 8)
 
             Text("Glance")
                 .font(.system(size: 22, weight: .semibold))
@@ -34,25 +40,29 @@ struct AboutSettingsPage: View {
         .frame(maxWidth: .infinity)
         .padding(.bottom, 16)
 
-        SettingsActionRow(
-            title: "Check for Updates",
-            subtitle: "Not available yet — coming soon",
-            buttonTitle: "Check Now",
-            isEnabled: false
-        ) {}
+        SettingsGroup {
+            SettingsActionRowContent(
+                title: "Check for Updates",
+                buttonTitle: "Check",
+                isEnabled: false
+            ) {}
 
-        SettingsRow(title: "Automatically check for updates") {
-            GlanceToggle(isOn: $settings.autoCheckForUpdates)
-        }
+            SettingsGroupDivider()
 
-        SettingsActionRow(
-            title: "Send Feedback",
-            subtitle: "Report a bug or share an idea",
-            buttonTitle: "Send Feedback"
-        ) {
-            // TODO: point this at the real feedback destination once one exists.
-            if let url = URL(string: "https://glance.app/feedback") {
-                NSWorkspace.shared.open(url)
+            SettingsRowContent(title: "Automatically check for updates") {
+                GlanceToggle(isOn: $settings.autoCheckForUpdates)
+            }
+
+            SettingsGroupDivider()
+
+            SettingsActionRowContent(
+                title: "Send Feedback",
+                buttonTitle: "Send"
+            ) {
+                // TODO: point this at the real feedback destination once one exists.
+                if let url = URL(string: "https://glance.app/feedback") {
+                    NSWorkspace.shared.open(url)
+                }
             }
         }
     }

@@ -249,19 +249,52 @@ struct SettingsActionRow: View {
 
     var body: some View {
         SettingsRow(title: title, subtitle: subtitle) {
-            Button(action: action) {
-                Text(buttonTitle)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
-                    .background(isDestructive ? Color.red.opacity(0.85) : GlanceTheme.accent)
-                    .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .disabled(!isEnabled)
-            .opacity(isEnabled ? 1 : 0.4)
+            SettingsActionButton(title: buttonTitle, isDestructive: isDestructive, isEnabled: isEnabled, action: action)
         }
+    }
+}
+
+/// The un-chromed twin of `SettingsActionRow` — same title/subtitle/button
+/// layout, no card background or border of its own — for dropping directly
+/// inside a `SettingsGroup` alongside other rows, the same relationship
+/// `SettingsRowContent` has to `SettingsRow`.
+struct SettingsActionRowContent: View {
+    let title: String
+    var subtitle: String? = nil
+    let buttonTitle: String
+    var isDestructive: Bool = false
+    var isEnabled: Bool = true
+    let action: () -> Void
+
+    var body: some View {
+        SettingsRowContent(title: title, subtitle: subtitle) {
+            SettingsActionButton(title: buttonTitle, isDestructive: isDestructive, isEnabled: isEnabled, action: action)
+        }
+    }
+}
+
+/// The accent pill button both action-row flavors above render — factored
+/// out so the two stay pixel-identical rather than two copies of the same
+/// styling drifting apart.
+private struct SettingsActionButton: View {
+    let title: String
+    var isDestructive: Bool = false
+    var isEnabled: Bool = true
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(isDestructive ? Color.red.opacity(0.85) : GlanceTheme.accent)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.4)
     }
 }
 
