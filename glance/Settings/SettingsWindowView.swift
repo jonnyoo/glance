@@ -160,7 +160,6 @@ struct SettingsWindowView: View {
             case .recognition:
                 RecognitionSettingsPage(
                     coordinator: environment.faceUnlockCoordinator,
-                    faceLabController: environment.faceLabController,
                     pocController: environment.pocController
                 )
             case .about:

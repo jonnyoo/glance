@@ -3,7 +3,7 @@
 //  glance
 //
 //  Gated behind the same Touch-ID session as Password/Your Face: match
-//  threshold and minimum-face-size are recognition-tuning knobs, and
+//  confidence and detection distance are recognition-tuning knobs, and
 //  changing them while locked would be adjusting how face unlock behaves
 //  without having proven you're allowed to touch it at all.
 //
@@ -12,7 +12,6 @@ import SwiftUI
 
 struct RecognitionSettingsPage: View {
     @Bindable var coordinator: FaceUnlockCoordinator
-    let faceLabController: FaceLabController
     @Bindable var pocController: POCController
     @Bindable private var settings = GlanceSettings.shared
 
@@ -64,31 +63,52 @@ struct RecognitionSettingsPage: View {
     // MARK: - Unlocked
 
     private var unlockedState: some View {
-        VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
-            SettingsSlider(
-                title: "Match threshold",
-                subtitle: "How similar a live face must be to your enrolled face to count as a match. Lower is more lenient, higher is stricter.",
-                value: $coordinator.matchThreshold,
-                range: -1...1
+        SettingsGroup {
+            SettingsSteppedSliderRowContent(
+                title: "Match confidence",
+                valueLabel: matchConfidenceLevel.title,
+                index: matchConfidenceIndex,
+                stopCount: MatchConfidenceLevel.allCases.count
             )
 
-            if let suggested = faceLabController.suggestedThreshold {
-                SettingsActionRow(
-                    title: "Face Lab suggests \(String(format: "%.2f", suggested))",
-                    subtitle: "Based on calibration samples recorded in the Face Lab debug tab this session.",
-                    buttonTitle: "Use This Value"
-                ) {
-                    coordinator.matchThreshold = suggested
-                }
-            }
+            SettingsGroupDivider()
 
-            SettingsSlider(
-                title: "Minimum face size",
-                subtitle: "How large a face must appear in frame to be considered. Lower values also recognize faces farther from the camera, but make it easier for someone in the background to be picked up by mistake.",
-                value: $settings.minimumFaceWidth,
-                range: 0.05...0.6
+            SettingsSteppedSliderRowContent(
+                title: "Detection distance",
+                valueLabel: detectionDistanceLevel.title,
+                index: detectionDistanceIndex,
+                stopCount: DetectionDistanceLevel.allCases.count
             )
         }
+    }
+
+    // MARK: - Match confidence
+
+    /// Nearest of the three snap points to whatever's actually stored —
+    /// covers a threshold saved before this redesign (the old slider was
+    /// continuous across -1...1), which won't land exactly on 0.66/0.70/0.74.
+    private var matchConfidenceLevel: MatchConfidenceLevel {
+        .nearest(to: coordinator.matchThreshold)
+    }
+
+    private var matchConfidenceIndex: Binding<Double> {
+        Binding(
+            get: { matchConfidenceLevel.sliderIndex },
+            set: { coordinator.matchThreshold = MatchConfidenceLevel.from(sliderIndex: $0).threshold }
+        )
+    }
+
+    // MARK: - Detection distance
+
+    private var detectionDistanceLevel: DetectionDistanceLevel {
+        .nearest(to: settings.minimumFaceWidth)
+    }
+
+    private var detectionDistanceIndex: Binding<Double> {
+        Binding(
+            get: { detectionDistanceLevel.sliderIndex },
+            set: { settings.minimumFaceWidth = DetectionDistanceLevel.from(sliderIndex: $0).minimumFaceWidth }
+        )
     }
 
     // MARK: - Actions
@@ -101,5 +121,77 @@ struct RecognitionSettingsPage: View {
             sessionError = pocController.sessionError
             isUnlocking = false
         }
+    }
+}
+
+/// The three selectable points on the "Match confidence" slider — named
+/// rather than exposing the raw cosine-similarity threshold directly, since
+/// a number in -1...1 means nothing to someone tuning how strict face
+/// unlock should be.
+private enum MatchConfidenceLevel: Int, CaseIterable {
+    case lessStrict, standard, moreStrict
+
+    var title: String {
+        switch self {
+        case .lessStrict: return "Less strict"
+        case .standard: return "Default"
+        case .moreStrict: return "More strict"
+        }
+    }
+
+    var threshold: Float {
+        switch self {
+        case .lessStrict: return 0.66
+        case .standard: return 0.70
+        case .moreStrict: return 0.74
+        }
+    }
+
+    /// Position in `allCases` — same role as `AutoLockInterval.sliderIndex`.
+    var sliderIndex: Double {
+        Double(Self.allCases.firstIndex(of: self) ?? 0)
+    }
+
+    static func from(sliderIndex: Double) -> Self {
+        let clamped = Int(sliderIndex.rounded())
+        return allCases.indices.contains(clamped) ? allCases[clamped] : .standard
+    }
+
+    static func nearest(to threshold: Float) -> Self {
+        allCases.min { abs($0.threshold - threshold) < abs($1.threshold - threshold) } ?? .standard
+    }
+}
+
+/// The three selectable points on the "Detection distance" slider.
+private enum DetectionDistanceLevel: Int, CaseIterable {
+    case close, standard, far
+
+    var title: String {
+        switch self {
+        case .close: return "Close"
+        case .standard: return "Default"
+        case .far: return "Far"
+        }
+    }
+
+    var minimumFaceWidth: Float {
+        switch self {
+        case .close: return 0.25
+        case .standard: return 0.21
+        case .far: return 0.17
+        }
+    }
+
+    var sliderIndex: Double {
+        Double(Self.allCases.firstIndex(of: self) ?? 0)
+    }
+
+    static func from(sliderIndex: Double) -> Self {
+        let clamped = Int(sliderIndex.rounded())
+        return allCases.indices.contains(clamped) ? allCases[clamped] : .standard
+    }
+
+    static func nearest(to width: Float) -> Self {
+        allCases.min { abs($0.minimumFaceWidth - width) < abs($1.minimumFaceWidth - width) } ?? .standard
     }
 }
