@@ -2,15 +2,83 @@
 //  CameraSettingsPage.swift
 //  glance
 //
+//  Gated behind the same Touch-ID session as Password/Your Face/Recognition
+//  — same reasoning as Recognition: picking which camera face unlock uses
+//  is part of that same trust boundary. The live preview additionally stops
+//  itself whenever the page isn't unlocked, not just when it isn't visible
+//  — a running camera feed sitting behind a "Session locked" prompt would
+//  defeat the point of the lock.
+//
 
 import SwiftUI
 
 struct CameraSettingsPage: View {
+    @Bindable var pocController: POCController
     @State private var devices: [CameraDevice] = CameraDeviceCatalog.availableDevices()
     @Bindable private var settings = GlanceSettings.shared
     @State private var previewCamera = CameraManager()
 
+    @State private var isUnlocking = false
+    @State private var sessionError: String?
+
+    private var isSessionUnlocked: Bool { pocController.isSessionUnlocked }
+
     var body: some View {
+        ZStack(alignment: .top) {
+            lockedState
+                .opacity(isSessionUnlocked ? 0 : 1)
+                .allowsHitTesting(!isSessionUnlocked)
+                .accessibilityHidden(isSessionUnlocked)
+
+            unlockedState
+                .opacity(isSessionUnlocked ? 1 : 0)
+                .allowsHitTesting(isSessionUnlocked)
+                .accessibilityHidden(!isSessionUnlocked)
+        }
+        .animation(SettingsMetrics.stateTransitionAnimation, value: isSessionUnlocked)
+        .onAppear {
+            pocController.refreshCredentialStatus()
+            // Covers landing on this page already unlocked — `onChange`
+            // below only fires on a *transition*, so it wouldn't otherwise
+            // start the preview for a session that was open before this
+            // view ever appeared.
+            if isSessionUnlocked {
+                Task { await previewCamera.start() }
+            }
+        }
+        .onChange(of: isSessionUnlocked) { _, unlocked in
+            if unlocked {
+                Task { await previewCamera.start() }
+            } else {
+                previewCamera.stop()
+            }
+        }
+        .onDisappear { previewCamera.stop() }
+        // Password/name/enrollment flows run in the notch, entirely
+        // outside this window — this page never disappears while one is
+        // open, so nothing else would prompt a re-check once it closes.
+        .onChange(of: NotchOverlayController.shared.phase) { _, newPhase in
+            guard newPhase == .closed else { return }
+            pocController.refreshCredentialStatus()
+        }
+    }
+
+    // MARK: - Locked
+
+    private var lockedState: some View {
+        SettingsEmptyStateView(
+            icon: "lock.fill",
+            message: "Session locked",
+            buttonTitle: isUnlocking ? "Authenticating…" : "Unlock session",
+            isButtonEnabled: !isUnlocking,
+            caption: sessionError,
+            action: unlock
+        )
+    }
+
+    // MARK: - Unlocked
+
+    private var unlockedState: some View {
         VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
             SettingsGroup {
                 cameraPicker(title: "Default", selection: $settings.defaultCameraID)
@@ -45,8 +113,6 @@ struct CameraSettingsPage: View {
                 SettingsCaption(text: error)
             }
         }
-        .onAppear { Task { await previewCamera.start() } }
-        .onDisappear { previewCamera.stop() }
         .onChange(of: settings.defaultCameraID) { restartPreview() }
         .onChange(of: settings.builtInDisplayCameraID) { restartPreview() }
         .onChange(of: settings.externalDisplayCameraID) { restartPreview() }
@@ -108,5 +174,17 @@ struct CameraSettingsPage: View {
             return "System default"
         }
         return device.name
+    }
+
+    // MARK: - Actions
+
+    private func unlock() {
+        isUnlocking = true
+        sessionError = nil
+        Task {
+            await pocController.unlockSession()
+            sessionError = pocController.sessionError
+            isUnlocking = false
+        }
     }
 }

@@ -156,9 +156,13 @@ struct SettingsWindowView: View {
             case .password:
                 PasswordSettingsPage(pocController: environment.pocController)
             case .camera:
-                CameraSettingsPage()
+                CameraSettingsPage(pocController: environment.pocController)
             case .recognition:
-                RecognitionSettingsPage(coordinator: environment.faceUnlockCoordinator, faceLabController: environment.faceLabController)
+                RecognitionSettingsPage(
+                    coordinator: environment.faceUnlockCoordinator,
+                    faceLabController: environment.faceLabController,
+                    pocController: environment.pocController
+                )
             case .about:
                 AboutSettingsPage()
             case .debugCredentials:
