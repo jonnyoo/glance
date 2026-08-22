@@ -11,6 +11,9 @@ import SwiftUI
 
 struct SettingsSidebar: View {
     @Binding var selection: SettingsTab
+    @Bindable var pocController: POCController
+
+    @State private var isUnlocking = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -30,11 +33,90 @@ struct SettingsSidebar: View {
                     sectionGroup(section)
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.leading, SettingsMetrics.sidebarContentLeadingInset)
+            .padding(.trailing, SettingsMetrics.sidebarContentTrailingInset)
 
             Spacer(minLength: 0)
+
+            sessionLockIndicator
+                .padding(.leading, SettingsMetrics.sidebarContentLeadingInset)
+                .padding(.trailing, SettingsMetrics.sidebarContentTrailingInset)
+                .padding(.bottom, 12)
         }
         .frame(width: SettingsMetrics.sidebarWidth)
+        .onAppear { pocController.refreshCredentialStatus() }
+        // Some unlock paths (Face Lab's debug "Unlock" button, the
+        // onboarding flows) call SecureCredentialManager directly rather
+        // than through this pocController, so this doesn't just update
+        // reactively on its own the way a page reading the same
+        // @Observable instance would. Same refresh every gated page already
+        // does after the notch closes, so this box stays correct regardless
+        // of which page happens to be selected when that happens.
+        .onChange(of: NotchOverlayController.shared.phase) { _, newPhase in
+            guard newPhase == .closed else { return }
+            pocController.refreshCredentialStatus()
+        }
+    }
+
+    /// Docked to the sidebar's bottom edge, outside the scrolling tab list —
+    /// always visible regardless of selection. Doubles as the session's
+    /// on/off switch: unlocks while locked, locks while unlocked.
+    private var sessionLockIndicator: some View {
+        Button(action: toggleSession) {
+            HStack(spacing: 8) {
+                Image(systemName: pocController.isSessionUnlocked ? "lock.open.fill" : "lock.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(SettingsMetrics.textPrimary)
+                    .frame(width: 16)
+                    // Apple's own textbook case for `.replace` — a padlock
+                    // shackle popping open — so this animates the icon
+                    // itself rather than a plain crossfade wherever the
+                    // system supports it; SwiftUI falls back to a crossfade
+                    // on its own if it can't.
+                    .contentTransition(.symbolEffect(.replace))
+                    // .padding(.leading, 3)
+
+                Text(sessionLockLabel)
+                    .font(SettingsMetrics.sidebarItemFont)
+                    .foregroundStyle(SettingsMetrics.textPrimary)
+                    .contentTransition(.opacity)
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal,12)
+            .frame(maxWidth: .infinity, minHeight: SettingsMetrics.sidebarItemHeight, alignment: .leading)
+            .background(SettingsMetrics.rowColor)
+            .overlay(
+                RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius)
+                    .strokeBorder(SettingsMetrics.rowBorder, lineWidth: SettingsMetrics.rowBorderWidth)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius))
+            .contentShape(RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius))
+        }
+        .buttonStyle(.plain)
+        // Only disabled mid-authentication — a tap then would either double
+        // up the Touch ID prompt or race the lock it hasn't resolved yet.
+        // Otherwise always tappable in both directions.
+        .disabled(isUnlocking)
+        .animation(SettingsMetrics.stateTransitionAnimation, value: pocController.isSessionUnlocked)
+        .animation(SettingsMetrics.stateTransitionAnimation, value: isUnlocking)
+    }
+
+    private var sessionLockLabel: String {
+        if pocController.isSessionUnlocked { return "Session unlocked" }
+        return isUnlocking ? "Authenticating…" : "Session locked"
+    }
+
+    private func toggleSession() {
+        if pocController.isSessionUnlocked {
+            pocController.lockSession()
+            return
+        }
+        isUnlocking = true
+        Task {
+            await pocController.unlockSession()
+            isUnlocking = false
+        }
     }
 
     @ViewBuilder

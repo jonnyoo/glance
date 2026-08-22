@@ -10,9 +10,37 @@
 
 import SwiftUI
 
+/// A closure `onPreferenceChange` can actually consume — that API requires
+/// `Value: Equatable`, which a bare closure can never be. Equality is by
+/// identity (a fresh `id` per instance) rather than by comparing the
+/// closures themselves, so this is deliberately never equal to a previous
+/// instance: `onPreferenceChange` firing on every render of the publishing
+/// page is negligible for a settings header, and correctness (never
+/// missing a real change) matters more here than dodging a few redundant
+/// reassignments.
+struct HeaderAction: Equatable {
+    private let id = UUID()
+    let perform: () -> Void
+
+    static func == (lhs: HeaderAction, rhs: HeaderAction) -> Bool { lhs.id == rhs.id }
+}
+
+/// Lets one page (today, only Camera's "Refresh camera list") publish a
+/// trailing action into the shared page header, without the header itself
+/// needing to know that page's state. Only the currently-selected page is
+/// ever in the view tree, so switching away automatically resolves this
+/// back to `defaultValue` — no manual reset needed.
+struct HeaderTrailingActionKey: PreferenceKey {
+    static var defaultValue: HeaderAction? { nil }
+    static func reduce(value: inout HeaderAction?, nextValue: () -> HeaderAction?) {
+        value = nextValue() ?? value
+    }
+}
+
 struct SettingsWindowView: View {
     let environment: AppEnvironment
     @State private var selection: SettingsTab = .general
+    @State private var headerTrailingAction: HeaderAction?
 
     var body: some View {
         ZStack {
@@ -20,7 +48,7 @@ struct SettingsWindowView: View {
             SettingsMetrics.sidebarBackgroundColor
 
             HStack(spacing: 0) {
-                SettingsSidebar(selection: $selection)
+                SettingsSidebar(selection: $selection, pocController: environment.pocController)
 
                 ZStack {
                     // Opaque underlay casts the panel drop shadow. Shadow on
@@ -124,6 +152,7 @@ struct SettingsWindowView: View {
             header
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onPreferenceChange(HeaderTrailingActionKey.self) { headerTrailingAction = $0 }
     }
 
     private var header: some View {
@@ -139,6 +168,18 @@ struct SettingsWindowView: View {
                 .font(SettingsMetrics.contentTitleFont)
                 .foregroundStyle(SettingsMetrics.textPrimary)
             Spacer()
+
+            if let headerTrailingAction {
+                Button(action: headerTrailingAction.perform) {
+                    Image(systemName: "arrow.trianglehead.clockwise.rotate.90")
+                        .font(.system(size: 13))
+                        .foregroundStyle(SettingsMetrics.textPrimary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Refresh camera list")
+            }
         }
         .padding(.horizontal, SettingsMetrics.contentHorizontalPadding + 4)
         .padding(.top, 10)

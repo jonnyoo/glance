@@ -102,6 +102,12 @@ enum SettingsMetrics {
 
     static let sidebarItemHeight: CGFloat = 36
     static let sidebarSectionSpacing: CGFloat = 8
+    /// Deliberately asymmetric: the tab highlight pill and the session-lock
+    /// box both read as having more breathing room on their right edge than
+    /// their left at equal insets, so the right side is pulled in to
+    /// visually balance against the left, which stays put.
+    static let sidebarContentLeadingInset: CGFloat = 12
+    static let sidebarContentTrailingInset: CGFloat = 2
     static let sidebarItemFont = Font.system(size: 13, weight: .regular)
     static let sectionHeaderFont = Font.system(size: 13, weight: .medium)
     static let contentTitleFont = Font.system(size: 15, weight: .medium)
