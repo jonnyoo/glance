@@ -191,7 +191,7 @@ enum SettingsMetrics {
     /// Blue selection ring sits this far outside the preview tile's edge.
     static let optionSelectionOutset: CGFloat = 2.5
     static let optionSelectionStrokeWidth: CGFloat = 3.5
-    static let optionItemSpacing: CGFloat = 10
+    static let optionItemSpacing: CGFloat = 15
     /// Zero-offset soft edge so the preview tiles lift evenly on all sides.
     static let optionPreviewShadowColor = Color.black.opacity(0.15)
     static let optionPreviewShadowRadius: CGFloat = 4
