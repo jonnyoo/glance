@@ -78,6 +78,18 @@ final class FaceUnlockCoordinator {
     /// whole time the Mac sits locked.
     private var hasAutoRetriedForCurrentLock = false
     private var scanTask: Task<Void, Never>?
+    /// Bumped by every `startScanCycle()`. A cycle checks this after each
+    /// suspension point and bails the moment it's been superseded — see
+    /// `runScanCycle(generation:)` for why cancellation alone isn't enough.
+    private var scanGeneration = 0
+    /// When the last scan cycle was armed, used to collapse a single wake
+    /// into a single arm — see the `.wake` branch of `evaluateTrigger`.
+    private var lastArmedAt: ContinuousClock.Instant?
+    /// One lid-open emits several wake signals within a few hundred ms of
+    /// each other (`LockMonitor` records `.wake` for `screensDidWake`,
+    /// `didWake`, *and* `screensaver.didstop`). Anything arriving inside
+    /// this window is treated as the same wake rather than a new one.
+    private let rearmDebounce: Duration = .seconds(2)
     /// The pending auto-retry, held separately from `scanTask` because it's
     /// scheduled *from inside* the scan task it follows — reusing `scanTask`
     /// would have that task cancel itself before the retry ever ran.
@@ -142,7 +154,13 @@ final class FaceUnlockCoordinator {
         // stopping, `.wake` covers all three (see `LockEventKind.wake`) — is
         // an explicit "let me back in," so clear the one-shot guard even if
         // an earlier attempt this lock session already came and went.
-        if lockMonitor.lastEvent == .wake {
+        //
+        // `isWithinRecentArmBurst` is what keeps *one* lid-open from doing
+        // that two or three times: those three signals all fire for a single
+        // wake, a few hundred ms apart, and clearing the guard for each of
+        // them armed and started a fresh scan cycle every time — cycles that
+        // then fought each other over the one shared camera session.
+        if lockMonitor.lastEvent == .wake, !isWithinRecentArmBurst {
             hasArmedForCurrentLock = false
         }
 
@@ -189,6 +207,7 @@ final class FaceUnlockCoordinator {
         guard showsUI || shouldAutoScan else { return }
 
         hasArmedForCurrentLock = true
+        lastArmedAt = .now
         Task { [weak self] in
             // Was 1s — that had no measured justification (unlike the 300ms
             // wake-settle delay above, which is backed by pmset/os_log
@@ -199,6 +218,13 @@ final class FaceUnlockCoordinator {
             try? await Task.sleep(nanoseconds: 250_000_000)
             await self?.arm(autoScan: shouldAutoScan)
         }
+    }
+
+    /// Whether the last arm was recent enough that a wake signal arriving
+    /// now is almost certainly part of the same burst, not a new wake.
+    private var isWithinRecentArmBurst: Bool {
+        guard let lastArmedAt else { return false }
+        return ContinuousClock.now - lastArmedAt < rearmDebounce
     }
 
     /// Which user-facing trigger a given signal corresponds to, or nil for
@@ -218,6 +244,12 @@ final class FaceUnlockCoordinator {
     private func disarmOverlay() {
         scanTask?.cancel()
         scanTask = nil
+        // Same reason `startScanCycle` bumps it: a cycle suspended at
+        // `await camera.start()` will still resume after this runs, and
+        // would otherwise sail past its generation check and call
+        // `beginScanning()` — re-showing the scan overlay moments after it
+        // was torn down. Bumping here makes any in-flight cycle inert.
+        scanGeneration &+= 1
         autoRetryTask?.cancel()
         autoRetryTask = nil
         camera.stop()
@@ -306,15 +338,37 @@ final class FaceUnlockCoordinator {
     /// retrying after a held failure frame).
     private func startScanCycle() {
         scanTask?.cancel()
+        scanGeneration &+= 1
+        let generation = scanGeneration
         scanTask = Task { [weak self] in
-            await self?.runScanCycle()
+            await self?.runScanCycle(generation: generation)
         }
     }
 
-    private func runScanCycle() async {
+    /// `generation` is what makes overlapping cycles safe. Cancelling
+    /// `scanTask` is not enough on its own: `Task.cancel()` is cooperative,
+    /// so a superseded cycle still resumes from whatever it was awaiting and
+    /// runs to the end of this function — and every side effect down there
+    /// (`camera.stop()`, `beginScanning()`, the auto-retry one-shot) is
+    /// global, so it lands on the *newer* cycle instead of on itself.
+    ///
+    /// That was a real bug, not a theoretical one. `camera.stop()` is the
+    /// worst of them: `CameraManager` owns a single shared
+    /// `AVCaptureSession` with no reference counting, and both start and
+    /// stop are queued onto one serial `sessionQueue`. A superseded cycle's
+    /// `stop()` therefore sits in that queue *behind* the newer cycle's
+    /// `startRunning()`, and `startRunning()` blocks for the camera's
+    /// hardware warm-up (a couple of seconds from cold, e.g. straight out
+    /// of sleep). The result: the camera visibly switches on, then dies
+    /// seconds later, while the surviving cycle keeps polling a session
+    /// that is no longer running and finds no frames — so the scan
+    /// animation plays out its full duration and nothing ever unlocks.
+    private func runScanCycle(generation: Int) async {
         guard LockMonitor.isScreenActuallyLocked() else { return }
 
         await camera.start()
+        guard generation == scanGeneration else { return }
+
         if let error = camera.errorMessage {
             statusMessage = error
             camera.stop()
@@ -331,6 +385,11 @@ final class FaceUnlockCoordinator {
             deadline: Date().addingTimeInterval(scanWindowDuration),
             requireOverlayScanning: showsUI
         )
+
+        // A newer cycle now owns the camera and the overlay — leave both
+        // alone, and leave the auto-retry one-shot unspent for it too.
+        guard generation == scanGeneration else { return }
+
         camera.stop()
 
         switch outcome {
