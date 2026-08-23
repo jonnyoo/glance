@@ -53,6 +53,7 @@ struct FaceLabView: View {
                 sessionLockSection
                 previewSection
                 detectionSection
+                livenessSection
                 enrollSection
                 identitiesSection
                 recognizeSection
@@ -209,6 +210,132 @@ struct FaceLabView: View {
                 }
             }
             .padding(.vertical, 4)
+        }
+    }
+
+    // MARK: - Liveness
+
+    private var livenessSection: some View {
+        GroupBox("Liveness") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    Circle()
+                        .fill(controller.isLiveAccordingToLocalThreshold ? .green : .red)
+                        .frame(width: 10, height: 10)
+                    Text("Overall: \(String(format: "%.0f%%", controller.currentLiveness.overallScore * 100))")
+                        .font(.system(.body, design: .monospaced))
+                    Spacer()
+                    Text("Threshold: \(String(format: "%.2f", controller.livenessThreshold))")
+                        .font(.caption)
+                    Slider(value: $controller.livenessThreshold, in: 0...1)
+                        .frame(width: 140)
+                }
+
+                if case .notLive(let reason) = controller.currentLiveness.verdict {
+                    Text(reason)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                } else if controller.currentLiveness.verdict == .insufficientData {
+                    Text("Building window… (\(controller.currentLiveness.frameCount) frames)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider()
+
+                // Every sub-signal, so a failure is diagnosable at a
+                // glance instead of just "liveness failed" — exactly what
+                // the old single-number yaw-stddev test couldn't offer.
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(LivenessSignal.allCases, id: \.self) { signal in
+                        if let result = controller.currentLiveness.signalScores[signal] {
+                            livenessSignalRow(signal, result)
+                        }
+                    }
+                }
+
+                Divider()
+
+                Text("Tag the current window, then check the chart below to pick a threshold — same workflow as Threshold Calibration.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack {
+                    Button("Mark Live (this is me)") {
+                        controller.recordLivenessCalibrationSample(isLive: true)
+                    }
+                    Button("Mark Spoof (photo/screen)") {
+                        controller.recordLivenessCalibrationSample(isLive: false)
+                    }
+                    Spacer()
+                    Button("Clear", role: .destructive) {
+                        controller.clearLivenessCalibrationSamples()
+                    }
+                    .disabled(controller.livenessCalibrationSamples.isEmpty)
+                }
+                .disabled(controller.currentLiveness.frameCount == 0 && controller.livenessCalibrationSamples.isEmpty)
+
+                if !controller.livenessCalibrationSamples.isEmpty {
+                    Chart {
+                        ForEach(controller.livenessCalibrationSamples) { sample in
+                            PointMark(
+                                x: .value("Score", sample.overallScore),
+                                y: .value("Type", sample.isLive ? "Live" : "Spoof")
+                            )
+                            .foregroundStyle(sample.isLive ? Color.green : Color.red)
+                        }
+                        RuleMark(x: .value("Threshold", controller.livenessThreshold))
+                            .foregroundStyle(.blue)
+                            .lineStyle(StrokeStyle(lineWidth: 2, dash: [4, 4]))
+                    }
+                    .chartXScale(domain: 0...1)
+                    .frame(height: 100)
+
+                    if let suggested = controller.suggestedLivenessThreshold {
+                        HStack {
+                            Text("Suggested threshold: \(String(format: "%.3f", suggested))")
+                                .font(.caption)
+                            Button("Use it") {
+                                controller.livenessThreshold = Double(suggested)
+                            }
+                            if controller.livenessDistributionsOverlap {
+                                Text("Distributions overlap — no single cutoff perfectly separates these samples yet.")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                    } else {
+                        Text("Record at least one live and one spoof sample to get a suggestion.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
+    private func livenessSignalRow(_ signal: LivenessSignal, _ result: LivenessSignalScore) -> some View {
+        HStack(spacing: 8) {
+            Text(signal.title)
+                .font(.caption)
+                .frame(width: 110, alignment: .leading)
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2).fill(Color.gray.opacity(0.15))
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(result.confidence > 0 ? Color.accentColor : Color.gray.opacity(0.3))
+                        .frame(width: geometry.size.width * CGFloat(result.score))
+                }
+            }
+            .frame(height: 8)
+            Text(result.confidence > 0 ? String(format: "%.0f%%", result.score * 100) : "—")
+                .font(.caption.monospacedDigit())
+                .frame(width: 36, alignment: .trailing)
+            Text(String(format: "conf %.0f%%", result.confidence * 100))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .frame(width: 60, alignment: .trailing)
         }
     }
 

@@ -34,6 +34,12 @@ struct DetectedFace {
     /// Facial landmarks (eyes, nose, mouth, etc.), when available. Feeds
     /// `FaceAligner` for canonical 112x112 alignment ahead of ArcFace.
     nonisolated let landmarks: VNFaceLandmarks2D?
+    /// The source frame's pixel dimensions — `landmarks.pointsInImage(_:)`
+    /// needs this to convert normalized landmark points into the same
+    /// pixel space as `boundingBox`. Derivable from `boundingBox.width /
+    /// normalizedBoundingBox.width`, but storing it directly means every
+    /// caller doesn't need to know that.
+    let imageSize: CGSize
 }
 
 /// Pure, synchronous, CPU-bound work — `nonisolated` so it can run on a
@@ -76,7 +82,8 @@ nonisolated enum FaceDetector {
                 yaw: observation.yaw?.floatValue,
                 roll: observation.roll?.floatValue,
                 pitch: observation.pitch?.floatValue,
-                landmarks: landmarkResults.indices.contains(index) ? landmarkResults[index].landmarks : nil
+                landmarks: landmarkResults.indices.contains(index) ? landmarkResults[index].landmarks : nil,
+                imageSize: imageSize
             )
         }
     }

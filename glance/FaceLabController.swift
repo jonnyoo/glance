@@ -34,6 +34,16 @@ struct CalibrationSample: Identifiable {
     let isGenuine: Bool
 }
 
+/// One manually-tagged liveness score — "this overall score came from a
+/// live face" or "from a spoof attempt (photo/screen)." Same role as
+/// `CalibrationSample` above, for `LivenessAnalyzer`'s threshold instead of
+/// the match threshold.
+struct LivenessCalibrationSample: Identifiable {
+    let id = UUID()
+    let overallScore: Float
+    let isLive: Bool
+}
+
 @Observable
 @MainActor
 final class FaceLabController {
@@ -43,6 +53,26 @@ final class FaceLabController {
 
     private(set) var detectedFaces: [DetectedFace] = []
     private(set) var currentResult: FaceRecognitionResult?
+
+    /// Fed every frame a face is detected, live — same as
+    /// `FaceUnlockCoordinator`'s scan loop, so this is exactly what the
+    /// real unlock path would see, not a separately-tuned debug copy.
+    /// Constructed with a placeholder internal threshold: Face Lab never
+    /// reads `.verdict` off this directly (see `isLive` below), so what
+    /// this analyzer instance itself considers "live" is irrelevant — only
+    /// `overallScore` and the per-signal breakdown matter here.
+    private let livenessAnalyzer = LivenessAnalyzer(threshold: 0.5)
+    private(set) var currentLiveness = LivenessBreakdown.empty
+    /// Local, debug-only cutoff for the live readout's pass/fail line and
+    /// the calibration chart's threshold marker — deliberately independent
+    /// of `GlanceSettings.livenessThreshold` (the real enforced gate, set
+    /// from the Recognition page), same reasoning as `threshold` below for
+    /// match confidence: tuning this here must never silently change what
+    /// actually unlocks the Mac.
+    var livenessThreshold: Double = 0.5
+    var isLiveAccordingToLocalThreshold: Bool {
+        currentLiveness.overallScore >= Float(livenessThreshold)
+    }
 
     var enrollName: String = ""
     /// Raw cosine similarity cutoff (-1...1), the value ArcFace thresholds
@@ -87,6 +117,8 @@ final class FaceLabController {
         camera.stop()
         detectedFaces = []
         currentResult = nil
+        livenessAnalyzer.reset()
+        currentLiveness = .empty
         log("Camera stopped.")
     }
 
@@ -131,11 +163,13 @@ final class FaceLabController {
 
         let pipeline = self.pipeline
         do {
-            let result = try await Task.detached(priority: .userInitiated) {
-                try pipeline.recognize(in: frame)
+            let (result, livenessFrame) = try await Task.detached(priority: .userInitiated) {
+                let result = try pipeline.recognize(in: frame)
+                return (result, LivenessFeatureExtractor.extract(from: result))
             }.value
             detectedFaces = [result.face]
             currentResult = result
+            currentLiveness = livenessAnalyzer.observe(livenessFrame)
         } catch FaceRecognitionPipelineError.noFaceDetected {
             detectedFaces = []
             currentResult = nil
@@ -305,6 +339,41 @@ final class FaceLabController {
         let impostor = calibrationSamples.filter { !$0.isGenuine }.map(\.centroidSimilarity)
         guard let minGenuine = genuine.min(), let maxImpostor = impostor.max() else { return false }
         return maxImpostor >= minGenuine
+    }
+
+    // MARK: - Liveness calibration
+
+    /// Same idea as `calibrationSamples` above, for `LivenessAnalyzer`'s
+    /// threshold: record what the analyzer's overall score actually was
+    /// while you deliberately held up a live face vs. a spoof attempt, then
+    /// look at where the two distributions land relative to each other.
+    private(set) var livenessCalibrationSamples: [LivenessCalibrationSample] = []
+
+    func recordLivenessCalibrationSample(isLive: Bool) {
+        guard currentLiveness.frameCount > 0 else {
+            log("Nothing to record — no liveness window yet.")
+            return
+        }
+        livenessCalibrationSamples.append(LivenessCalibrationSample(overallScore: currentLiveness.overallScore, isLive: isLive))
+        log("Liveness calibration: recorded \(isLive ? "live" : "spoof") sample at \(String(format: "%.3f", currentLiveness.overallScore)).")
+    }
+
+    func clearLivenessCalibrationSamples() {
+        livenessCalibrationSamples.removeAll()
+    }
+
+    var suggestedLivenessThreshold: Float? {
+        let live = livenessCalibrationSamples.filter(\.isLive).map(\.overallScore)
+        let spoof = livenessCalibrationSamples.filter { !$0.isLive }.map(\.overallScore)
+        guard let minLive = live.min(), let maxSpoof = spoof.max() else { return nil }
+        return (minLive + maxSpoof) / 2
+    }
+
+    var livenessDistributionsOverlap: Bool {
+        let live = livenessCalibrationSamples.filter(\.isLive).map(\.overallScore)
+        let spoof = livenessCalibrationSamples.filter { !$0.isLive }.map(\.overallScore)
+        guard let minLive = live.min(), let maxSpoof = spoof.max() else { return false }
+        return maxSpoof >= minLive
     }
 
     private func log(_ message: String) {

@@ -108,6 +108,7 @@ final class GlanceSettings {
     private enum Key {
         static let isFaceUnlockEnabled = "GlanceSettings.isFaceUnlockEnabled"
         static let matchThreshold = "GlanceSettings.matchThreshold"
+        static let livenessThreshold = "GlanceSettings.livenessThreshold"
         static let minimumFaceWidth = "GlanceSettings.minimumFaceWidth"
         static let unlockAnimationStyle = "GlanceSettings.unlockAnimationStyle"
         static let showUnlockAnimation = "GlanceSettings.showUnlockAnimation"
@@ -134,6 +135,13 @@ final class GlanceSettings {
     }
     var matchThreshold: Float {
         didSet { defaults.set(matchThreshold, forKey: Key.matchThreshold) }
+    }
+    /// Read directly from `FaceUnlockCoordinator`'s scan loop, which runs on
+    /// the main actor — unlike `minimumFaceWidth` below, this needs no
+    /// `nonisolated(unsafe)` mirror, since nothing reads it from a
+    /// background task.
+    var livenessThreshold: Float {
+        didSet { defaults.set(livenessThreshold, forKey: Key.livenessThreshold) }
     }
     /// Mirrored into `FaceRecognitionPipeline.minimumProminentFaceWidth`
     /// (a `nonisolated(unsafe) static var`) on every change, since that
@@ -262,6 +270,10 @@ final class GlanceSettings {
     private init() {
         isFaceUnlockEnabled = defaults.object(forKey: Key.isFaceUnlockEnabled) as? Bool ?? false
         matchThreshold = defaults.object(forKey: Key.matchThreshold) as? Float ?? 0.6
+        // Matches `LivenessStrictnessLevel.balanced` in RecognitionSettingsPage —
+        // a starting point pending empirical calibration against real
+        // spoof/live samples in Face Lab, same as matchThreshold's history.
+        livenessThreshold = defaults.object(forKey: Key.livenessThreshold) as? Float ?? 0.5
         minimumFaceWidth = defaults.object(forKey: Key.minimumFaceWidth) as? Float ?? 0.18
 
         // Resolve the stored style first, `.none` included, then split it

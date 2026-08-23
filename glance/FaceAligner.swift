@@ -70,36 +70,15 @@ nonisolated enum FaceAligner {
     }
 
     // MARK: - Landmark extraction
-
-    /// Vision's `pointsInImage(imageSize:)` returns pixel-scale points in
-    /// Vision's native bottom-left-origin, y-up convention (confirmed via
-    /// the newer origin-aware `pointsInImageCoordinates(_:origin:)` API,
-    /// whose default is `.lowerLeft`). Flipped here to top-left/y-down to
-    /// match `DetectedFace.boundingBox` and `referencePoints` above.
-    private static func imagePoints(of region: VNFaceLandmarkRegion2D, imageSize: CGSize) -> [CGPoint] {
-        region.pointsInImage(imageSize: imageSize).map { CGPoint(x: $0.x, y: imageSize.height - $0.y) }
-    }
-
-    private static func centroid(of region: VNFaceLandmarkRegion2D, imageSize: CGSize) -> CGPoint? {
-        let points = imagePoints(of: region, imageSize: imageSize)
-        guard !points.isEmpty else { return nil }
-        let sum = points.reduce(CGPoint.zero) { CGPoint(x: $0.x + $1.x, y: $0.y + $1.y) }
-        return CGPoint(x: sum.x / CGFloat(points.count), y: sum.y / CGFloat(points.count))
-    }
-
-    /// Prefers the pupil landmark (a precise point) over the eye outline's
-    /// centroid (an approximation from eyelid boundary points) when Vision
-    /// provides one.
-    private static func eyeCenter(pupil: VNFaceLandmarkRegion2D?, eye: VNFaceLandmarkRegion2D?, imageSize: CGSize) -> CGPoint? {
-        if let pupil, let center = centroid(of: pupil, imageSize: imageSize) { return center }
-        if let eye { return centroid(of: eye, imageSize: imageSize) }
-        return nil
-    }
+    //
+    // The point/centroid/eye-center/transform math this needs lives in
+    // `LandmarkGeometry` — shared with the liveness analyzer, which does
+    // the same cross-frame Procrustes fit for a different purpose.
 
     private static func fivePoints(from landmarks: VNFaceLandmarks2D, imageSize: CGSize) -> [CGPoint]? {
-        guard let eyeA = eyeCenter(pupil: landmarks.leftPupil, eye: landmarks.leftEye, imageSize: imageSize),
-              let eyeB = eyeCenter(pupil: landmarks.rightPupil, eye: landmarks.rightEye, imageSize: imageSize),
-              let nose = landmarks.nose, let noseCenter = centroid(of: nose, imageSize: imageSize),
+        guard let eyeA = LandmarkGeometry.eyeCenter(pupil: landmarks.leftPupil, eye: landmarks.leftEye, imageSize: imageSize),
+              let eyeB = LandmarkGeometry.eyeCenter(pupil: landmarks.rightPupil, eye: landmarks.rightEye, imageSize: imageSize),
+              let nose = landmarks.nose, let noseCenter = LandmarkGeometry.centroid(of: nose, imageSize: imageSize),
               let outerLips = landmarks.outerLips else { return nil }
 
         // The reference template orders points on-screen-left-to-right, but
@@ -110,7 +89,7 @@ nonisolated enum FaceAligner {
         let imageLeftEye = eyeA.x <= eyeB.x ? eyeA : eyeB
         let imageRightEye = eyeA.x <= eyeB.x ? eyeB : eyeA
 
-        let lipPoints = imagePoints(of: outerLips, imageSize: imageSize)
+        let lipPoints = LandmarkGeometry.imagePoints(of: outerLips, imageSize: imageSize)
         guard let imageLeftMouth = lipPoints.min(by: { $0.x < $1.x }),
               let imageRightMouth = lipPoints.max(by: { $0.x < $1.x }) else { return nil }
 
@@ -118,54 +97,12 @@ nonisolated enum FaceAligner {
     }
 
     private static func twoPoints(from landmarks: VNFaceLandmarks2D, imageSize: CGSize) -> [CGPoint]? {
-        guard let eyeA = eyeCenter(pupil: landmarks.leftPupil, eye: landmarks.leftEye, imageSize: imageSize),
-              let eyeB = eyeCenter(pupil: landmarks.rightPupil, eye: landmarks.rightEye, imageSize: imageSize) else { return nil }
+        guard let eyeA = LandmarkGeometry.eyeCenter(pupil: landmarks.leftPupil, eye: landmarks.leftEye, imageSize: imageSize),
+              let eyeB = LandmarkGeometry.eyeCenter(pupil: landmarks.rightPupil, eye: landmarks.rightEye, imageSize: imageSize) else { return nil }
         return eyeA.x <= eyeB.x ? [eyeA, eyeB] : [eyeB, eyeA]
     }
 
-    // MARK: - Similarity transform + warp
-
-    /// Closed-form least-squares similarity transform (rotation + uniform
-    /// scale + translation) mapping `sourcePoints` onto `destinationPoints`,
-    /// via the standard 2D Procrustes solution using complex-number
-    /// arithmetic: treating each mean-centered point as p = x + iy, the
-    /// optimal complex scalar z = scale * e^(i*theta) is
-    ///     z = (sum of qk * conj(pk)) / (sum of |pk|^2)
-    /// with translation recovered from the centroids afterward. No SVD
-    /// needed for the 2D case.
-    private static func solveSimilarityTransform(from sourcePoints: [CGPoint], to destinationPoints: [CGPoint]) -> CGAffineTransform? {
-        guard sourcePoints.count == destinationPoints.count, sourcePoints.count >= 2 else { return nil }
-
-        let n = CGFloat(sourcePoints.count)
-        let srcSum = sourcePoints.reduce(CGPoint.zero) { CGPoint(x: $0.x + $1.x, y: $0.y + $1.y) }
-        let srcMean = CGPoint(x: srcSum.x / n, y: srcSum.y / n)
-        let dstSum = destinationPoints.reduce(CGPoint.zero) { CGPoint(x: $0.x + $1.x, y: $0.y + $1.y) }
-        let dstMean = CGPoint(x: dstSum.x / n, y: dstSum.y / n)
-
-        var numeratorReal: CGFloat = 0
-        var numeratorImag: CGFloat = 0
-        var denominator: CGFloat = 0
-        for i in 0..<sourcePoints.count {
-            let p = CGPoint(x: sourcePoints[i].x - srcMean.x, y: sourcePoints[i].y - srcMean.y)
-            let q = CGPoint(x: destinationPoints[i].x - dstMean.x, y: destinationPoints[i].y - dstMean.y)
-            // q * conj(p) = (qx + i*qy)(px - i*py) = (qx*px + qy*py) + i(qy*px - qx*py)
-            numeratorReal += q.x * p.x + q.y * p.y
-            numeratorImag += q.y * p.x - q.x * p.y
-            denominator += p.x * p.x + p.y * p.y
-        }
-        guard denominator > 0 else { return nil }
-
-        // scale*cos(theta), scale*sin(theta)
-        let sc = numeratorReal / denominator
-        let ss = numeratorImag / denominator
-
-        // dst = R * scale * (src - srcMean) + dstMean, expanded into
-        // CGAffineTransform's convention: x' = a*x + c*y + tx, y' = b*x + d*y + ty
-        let a = sc, b = ss, c = -ss, d = sc
-        let tx = dstMean.x - (a * srcMean.x + c * srcMean.y)
-        let ty = dstMean.y - (b * srcMean.x + d * srcMean.y)
-        return CGAffineTransform(a: a, b: b, c: c, d: d, tx: tx, ty: ty)
-    }
+    // MARK: - Warp
 
     /// Renders `image` through the similarity transform solved above into a
     /// fresh 112x112 canvas. Both point sets are given (and the transform is
@@ -179,7 +116,7 @@ nonisolated enum FaceAligner {
         let sourceFlipped = sourcePoints.map { CGPoint(x: $0.x, y: imageHeight - $0.y) }
         let destinationFlipped = destinationPoints.map { CGPoint(x: $0.x, y: CGFloat(outputSize) - $0.y) }
 
-        guard let transform = solveSimilarityTransform(from: sourceFlipped, to: destinationFlipped) else { return nil }
+        guard let transform = LandmarkGeometry.solveSimilarityTransform(from: sourceFlipped, to: destinationFlipped) else { return nil }
 
         let colorSpace = image.colorSpace ?? CGColorSpaceCreateDeviceRGB()
         guard let context = CGContext(

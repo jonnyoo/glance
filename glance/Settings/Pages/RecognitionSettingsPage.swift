@@ -79,6 +79,15 @@ struct RecognitionSettingsPage: View {
                 index: detectionDistanceIndex,
                 stopCount: DetectionDistanceLevel.allCases.count
             )
+
+            SettingsGroupDivider()
+
+            SettingsSteppedSliderRowContent(
+                title: "Liveness strictness",
+                valueLabel: livenessStrictnessLevel.title,
+                index: livenessStrictnessIndex,
+                stopCount: LivenessStrictnessLevel.allCases.count
+            )
         }
     }
 
@@ -108,6 +117,19 @@ struct RecognitionSettingsPage: View {
         Binding(
             get: { detectionDistanceLevel.sliderIndex },
             set: { settings.minimumFaceWidth = DetectionDistanceLevel.from(sliderIndex: $0).minimumFaceWidth }
+        )
+    }
+
+    // MARK: - Liveness strictness
+
+    private var livenessStrictnessLevel: LivenessStrictnessLevel {
+        .nearest(to: settings.livenessThreshold)
+    }
+
+    private var livenessStrictnessIndex: Binding<Double> {
+        Binding(
+            get: { livenessStrictnessLevel.sliderIndex },
+            set: { settings.livenessThreshold = LivenessStrictnessLevel.from(sliderIndex: $0).threshold }
         )
     }
 
@@ -193,5 +215,45 @@ private enum DetectionDistanceLevel: Int, CaseIterable {
 
     static func nearest(to width: Float) -> Self {
         allCases.min { abs($0.minimumFaceWidth - width) < abs($1.minimumFaceWidth - width) } ?? .standard
+    }
+}
+
+/// The three selectable points on the "Liveness strictness" slider — how
+/// hard `LivenessAnalyzer` (glance/Liveness/) makes it to pass the
+/// non-rigid-motion check that stands between a live face and a static
+/// photo. Higher rejects more spoofs but raises the false-reject rate for
+/// a legitimate user sitting very still or in poor light; there's no
+/// single right answer, hence tunable rather than fixed. Starting points
+/// pending empirical calibration in Face Lab, same as `MatchConfidenceLevel`.
+private enum LivenessStrictnessLevel: Int, CaseIterable {
+    case convenience, balanced, security
+
+    var title: String {
+        switch self {
+        case .convenience: return "Convenience"
+        case .balanced: return "Balanced"
+        case .security: return "Security"
+        }
+    }
+
+    var threshold: Float {
+        switch self {
+        case .convenience: return 0.35
+        case .balanced: return 0.50
+        case .security: return 0.65
+        }
+    }
+
+    var sliderIndex: Double {
+        Double(Self.allCases.firstIndex(of: self) ?? 0)
+    }
+
+    static func from(sliderIndex: Double) -> Self {
+        let clamped = Int(sliderIndex.rounded())
+        return allCases.indices.contains(clamped) ? allCases[clamped] : .balanced
+    }
+
+    static func nearest(to threshold: Float) -> Self {
+        allCases.min { abs($0.threshold - threshold) < abs($1.threshold - threshold) } ?? .balanced
     }
 }

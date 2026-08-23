@@ -21,12 +21,19 @@
 //  actively scanning — until the screen unlocks or the feature is disabled.
 //
 //  Known limitation, surfaced in the UI, not just here: a MacBook webcam has
-//  no depth sensor. `LivenessMonitor` defeats a static printed photo but not
-//  a video replay — weaker than iPhone Face ID. A successful spoof here
-//  types the real macOS password.
+//  no depth sensor. `LivenessAnalyzer` (see glance/Liveness/) defeats a
+//  static printed photo and, with reasonable confidence, a hand-held photo
+//  on a phone screen — its signals are all built around detecting
+//  non-rigid motion a flat presentation cannot produce. It does NOT defeat
+//  a *video* replayed on a phone: a real video contains genuine non-rigid
+//  facial motion, so nothing here distinguishes it from a live face. That
+//  gap needs a dedicated presentation-attack-detection model, not more
+//  geometry — weaker than iPhone Face ID in that one respect. A successful
+//  spoof here types the real macOS password.
 //
 
 import Foundation
+import CoreGraphics
 import Observation
 
 @Observable
@@ -68,6 +75,17 @@ final class FaceUnlockCoordinator {
     /// failure animation — a single bad-angle frame from the right person
     /// shouldn't trigger it, so this requires it to persist.
     private let wrongFaceStreakThreshold = 6
+    /// A face that matches the enrolled identity but keeps failing the
+    /// liveness check for this many *consecutive* matched frames aborts the
+    /// scan visibly instead of silently retrying for the rest of the scan
+    /// window. This closes the hole the old `LivenessMonitor` left open: a
+    /// `.notLive` verdict never aborted anything, so a static photo got
+    /// effectively unlimited attempts within one scan window — any single
+    /// lucky window passed was enough to unlock. Set higher than
+    /// `wrongFaceStreakThreshold` since liveness is a probabilistic signal,
+    /// not a hard similarity cutoff — a bit more patience avoids failing a
+    /// genuine user on a couple of noisy frames.
+    private let spoofFrameStreakThreshold = 10
 
     private(set) var statusMessage = "Idle"
     private(set) var lastOutcome: String?
@@ -409,6 +427,15 @@ final class FaceUnlockCoordinator {
             } else {
                 scheduleAutoRetryIfEnabled(after: headlessRetryDelay)
             }
+        case .spoofSuspected:
+            statusMessage = "Couldn't confirm a live face."
+            if showsUI {
+                NotchOverlayController.shared.finish(success: false)
+                statusMessage = "Couldn't confirm a live face — hover the notch to try again."
+                scheduleAutoRetryIfEnabled(after: NotchOverlayController.shared.failureHoldDuration)
+            } else {
+                scheduleAutoRetryIfEnabled(after: headlessRetryDelay)
+            }
         case .noResolution:
             statusMessage = "No face detected."
             if showsUI {
@@ -452,13 +479,20 @@ final class FaceUnlockCoordinator {
     private enum ScanOutcome {
         case matched
         case consistentlyWrongFace
+        /// The enrolled identity matched, but the liveness analyzer kept
+        /// reading it as not-live for `spoofFrameStreakThreshold`
+        /// consecutive matched frames — resolves through the same visible
+        /// failure path as `.consistentlyWrongFace`.
+        case spoofSuspected
         case noResolution
     }
 
     /// Runs until either a live match unlocks (`.matched`), the same face
     /// reads as confidently-not-a-match for `wrongFaceStreakThreshold`
-    /// consecutive frames (`.consistentlyWrongFace`), or `deadline` passes
-    /// with neither (`.noResolution`).
+    /// consecutive frames (`.consistentlyWrongFace`), a matched face keeps
+    /// failing liveness for `spoofFrameStreakThreshold` consecutive frames
+    /// (`.spoofSuspected`), or `deadline` passes with none of the above
+    /// (`.noResolution`).
     ///
     /// `requireOverlayScanning` also bails early if the overlay's own
     /// timeout already collapsed the UI, so this loop never keeps running
@@ -467,37 +501,64 @@ final class FaceUnlockCoordinator {
     /// in the first place, so requiring it there would make this return
     /// `.noResolution` before ever looking at a frame.
     private func observeScanWindow(deadline: Date, requireOverlayScanning: Bool) async -> ScanOutcome {
-        let liveness = LivenessMonitor(matchThreshold: matchThreshold)
+        let liveness = LivenessAnalyzer(threshold: GlanceSettings.shared.livenessThreshold)
         var consecutiveWrongFaceFrames = 0
+        var spoofFrameStreak = 0
         /// Which face (by normalized bounding box) recognition locked onto
         /// last frame — passed back in so `selectDominantFace` stays on the
         /// same person across frames instead of re-picking independently
         /// every frame. This is the fix for two-people-in-frame flip-flop:
         /// see FaceRecognitionPipeline.selectDominantFace for the full story.
         var lastFaceBoundingBox: CGRect?
+        /// Reference identity (not equality) of the last frame actually fed
+        /// through `recognize()`. `CameraManager` publishes a genuinely new
+        /// `CGImage` per captured sample buffer, so this is a cheap, exact
+        /// way to tell "the camera hasn't produced a new frame since we
+        /// last looked" from "there's a fresh one to process" — without it,
+        /// a poll finding the same frame twice would feed the liveness
+        /// window a spurious zero-motion sample, corrupting the very signal
+        /// this exists to measure.
+        var lastProcessedFrame: CGImage?
 
         while Date() < deadline, !Task.isCancelled,
               !requireOverlayScanning || NotchOverlayController.shared.phase == .scanning {
             guard LockMonitor.isScreenActuallyLocked() else { return .noResolution }
 
-            guard let frame = camera.currentFrame else {
-                try? await Task.sleep(nanoseconds: 150_000_000)
+            guard let frame = camera.currentFrame, frame !== lastProcessedFrame else {
+                // 20ms rather than the old 150ms: dense enough to keep the
+                // liveness window's ~1s sample count high (the whole point
+                // of raising the frame rate — see LivenessAnalyzer), short
+                // enough to notice a fresh camera frame (~33ms native
+                // cadence) with little added latency. The identity check
+                // above still guards against reprocessing the same frame
+                // twice if this fires faster than a new one arrives.
+                try? await Task.sleep(nanoseconds: 20_000_000)
                 continue
             }
+            lastProcessedFrame = frame
 
             let pipeline = self.pipeline
             let previousBoundingBox = lastFaceBoundingBox
-            let result = try? await Task.detached(priority: .userInitiated) {
-                try pipeline.recognize(in: frame, preferNear: previousBoundingBox)
+            let outcome = await Task.detached(priority: .userInitiated) { () -> (FaceRecognitionResult, LivenessFrame)? in
+                guard let result = try? pipeline.recognize(in: frame, preferNear: previousBoundingBox) else { return nil }
+                return (result, LivenessFeatureExtractor.extract(from: result))
             }.value
 
-            guard let result else {
+            guard let (result, livenessFrame) = outcome else {
                 consecutiveWrongFaceFrames = 0
+                spoofFrameStreak = 0
                 lastFaceBoundingBox = nil
-                try? await Task.sleep(nanoseconds: 150_000_000)
+                try? await Task.sleep(nanoseconds: 20_000_000)
                 continue
             }
             lastFaceBoundingBox = result.face.normalizedBoundingBox
+
+            // Fed regardless of whether this frame matches anyone — unlike
+            // the old LivenessMonitor (only ever observed inside `if let
+            // matched`), liveness is now judged independently of match
+            // confidence, so a brief dip in similarity mid-scan (occlusion,
+            // odd lighting) doesn't leave gaps in its window.
+            let breakdown = liveness.observe(livenessFrame)
 
             // `activeIdentities`, not `identities`: someone switched off on
             // the Your Face page stays enrolled but must not unlock the Mac.
@@ -506,14 +567,19 @@ final class FaceUnlockCoordinator {
 
             if let matched {
                 consecutiveWrongFaceFrames = 0
-                switch liveness.observe(yaw: result.face.yaw, matchSimilarity: matched.centroidSimilarity) {
+                switch breakdown.verdict {
                 case .live:
+                    spoofFrameStreak = 0
                     statusMessage = "Recognized — unlocking…"
-                    lastOutcome = "Matched \(matched.identity.name) at \(String(format: "%.3f", matched.centroidSimilarity)), live."
+                    lastOutcome = "Matched \(matched.identity.name) at \(String(format: "%.3f", matched.centroidSimilarity)), live (\(Int(breakdown.overallScore * 100))%)."
                     await pocController.injectStoredPassword(requireAuthoritativeLock: true)
                     return .matched
                 case .notLive(let reason):
                     lastOutcome = reason
+                    spoofFrameStreak += 1
+                    if spoofFrameStreak >= spoofFrameStreakThreshold {
+                        return .spoofSuspected
+                    }
                 case .insufficientData:
                     break
                 }
@@ -523,13 +589,14 @@ final class FaceUnlockCoordinator {
                 // face" once this recurs across several consecutive frames,
                 // so a single bad-angle read doesn't falsely show the
                 // failure animation for the right person.
+                spoofFrameStreak = 0
                 consecutiveWrongFaceFrames += 1
                 if consecutiveWrongFaceFrames >= wrongFaceStreakThreshold {
                     return .consistentlyWrongFace
                 }
             }
 
-            try? await Task.sleep(nanoseconds: 150_000_000)
+            try? await Task.sleep(nanoseconds: 20_000_000)
         }
         return .noResolution
     }
