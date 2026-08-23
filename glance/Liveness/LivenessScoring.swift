@@ -51,6 +51,14 @@ struct LivenessFrame {
     let normalizedFaceWidth: CGFloat
     let leftEyeAspectRatio: CGFloat?
     let rightEyeAspectRatio: CGFloat?
+    /// Vertical inner-lip extent in a face-aligned frame, in units of
+    /// interocular distance. Grows when the mouth opens, shrinks when it
+    /// closes — independent of the head translating or rolling. See
+    /// `LandmarkGeometry.mouthExpressionMetrics`.
+    let mouthOpeningRatio: CGFloat?
+    /// Horizontal outer-lip extent in the same face-aligned frame. Grows
+    /// when the mouth widens (a smile), shrinks when it relaxes.
+    let mouthWidthRatio: CGFloat?
     /// `(noseCentroid.x - eyeMidpoint.x) / interocularDistance` — tracks
     /// `tan(yaw)` on a real 3D face (the nose sits off the eye plane) and
     /// stays constant on any flat presentation, however it's rotated. See
@@ -62,6 +70,11 @@ struct LivenessFrame {
     /// fallback. Degraded landmarks are exactly when residual noise spikes,
     /// so signals confidence-weight down on frames where this is false.
     let hasReliableLandmarks: Bool
+    /// Fraction of this frame's face bounding box covered by a detected
+    /// device-shaped rectangle — see `DeviceBezelDetector`. `nil` when
+    /// detection wasn't run (or found nothing); real evidence only when
+    /// non-nil and large.
+    let deviceOverlapFraction: CGFloat?
 }
 
 struct LivenessSignalScore {
@@ -80,9 +93,11 @@ enum LivenessSignal: String, CaseIterable {
     case residualCoherence
     case poseDepthConsistency
     case blinkDynamics
+    case mouthDynamics
     case scaleDynamics
     case temporalNaturalness
     case staticGuard
+    case deviceBezel
 
     var title: String {
         switch self {
@@ -90,25 +105,43 @@ enum LivenessSignal: String, CaseIterable {
         case .residualCoherence: return "Motion structure"
         case .poseDepthConsistency: return "Depth/pose"
         case .blinkDynamics: return "Blink"
+        case .mouthDynamics: return "Mouth"
         case .scaleDynamics: return "Scale change"
         case .temporalNaturalness: return "Motion smoothness"
         case .staticGuard: return "Static guard"
+        case .deviceBezel: return "Device detected"
         }
     }
 
-    /// Relative vote weight in the combined score. `staticGuard` isn't
-    /// weighted in with the others at all — it's a hard veto, checked
-    /// first in `LivenessAnalyzer.evaluate()` — its weight here is purely
-    /// for the debug UI's bar chart.
+    /// Relative vote weight in the combined score. `staticGuard` and
+    /// `deviceBezel` aren't weighted in with the others at all — both are
+    /// hard vetoes, checked first in `LivenessAnalyzer.evaluate()` — their
+    /// weight here is purely for the debug UI's bar chart.
+    ///
+    /// `nonRigidResidual`/`residualCoherence` were originally weighted
+    /// much higher (3.0/1.5, `nonRigidResidual` alone worth more than
+    /// everything else combined) on the theory that residual-after-
+    /// rigid-fit was the strongest available signal. Real-device testing
+    /// showed otherwise: both saturated near 100% for *every* real photo
+    /// tested (on a stand, hand-held, tilted) at scores statistically
+    /// indistinguishable from a live face — real Vision landmark noise is
+    /// spatially correlated and the anchor-only fit has genuine
+    /// extrapolation error against the farther-away flexible regions,
+    /// neither of which the synthetic self-test's independent-per-point
+    /// Gaussian noise model captured. Demoted here until they can be
+    /// recalibrated against real residual numbers (Face Lab now exposes
+    /// these live) rather than synthetic ones.
     nonisolated var weight: Float {
         switch self {
-        case .nonRigidResidual: return 3.0
-        case .residualCoherence: return 1.5
+        case .nonRigidResidual: return 1.0
+        case .residualCoherence: return 0.5
         case .poseDepthConsistency: return 1.0
         case .blinkDynamics: return 1.0
+        case .mouthDynamics: return 1.0
         case .scaleDynamics: return 0.5
         case .temporalNaturalness: return 1.0
         case .staticGuard: return 0
+        case .deviceBezel: return 0
         }
     }
 }
@@ -189,12 +222,35 @@ nonisolated enum LivenessScoring {
             maxDisplacement = max(maxDisplacement, displacement / interocular)
         }
         guard sawAnyPair else { return .noEvidence }
-        // Below ~0.15% of interocular distance is well under anything a
-        // live face produces even holding still (breathing, pulse,
-        // involuntary micro-tremor) — real landmark noise floor sits well
-        // above this on a live face, and right at it on a truly static image.
-        let floor: CGFloat = 0.0015
-        return LivenessSignalScore(score: maxDisplacement > floor ? 1 : 0, confidence: 1)
+        // A continuous ramp, not a hard 0/1 cutoff — real-device testing
+        // showed a rigidly-mounted phone still clears a naive tiny floor
+        // (0.0015, tuned against clean synthetic noise) outright, because
+        // real Vision landmark jitter — sensor noise, auto-exposure
+        // micro-adjustment, detector quantization — sits well above that
+        // even for a genuinely motionless object. `floor`/`ceiling` are
+        // first-pass, real-camera-informed estimates, not final: watch
+        // this score directly in Face Lab against a phone actually held on
+        // a stand and adjust both to match what's really observed.
+        let floor: CGFloat = 0.006
+        let ceiling: CGFloat = 0.016
+        let score = Float(clamp((maxDisplacement - floor) / (ceiling - floor), 0, 1))
+        return LivenessSignalScore(score: score, confidence: 1)
+    }
+
+    // MARK: - Device bezel (hard veto)
+
+    /// Persistent evidence, across the window, that the face is displayed
+    /// on a rectangular device rather than being a real head — see
+    /// `DeviceBezelDetector`. Requiring persistence (not just one frame)
+    /// guards against a one-off false positive from an unrelated
+    /// background rectangle; only ever returns confident evidence *against*
+    /// liveness, never for it — see the type's own doc comment.
+    static func deviceBezel(_ window: [LivenessFrame]) -> LivenessSignalScore {
+        guard !window.isEmpty else { return .noEvidence }
+        let detectedCount = window.filter { ($0.deviceOverlapFraction ?? 0) > 0.55 }.count
+        let detectionFraction = Float(detectedCount) / Float(window.count)
+        guard detectionFraction > 0.35 else { return .noEvidence }
+        return LivenessSignalScore(score: 0, confidence: 1)
     }
 
     // MARK: - S1: non-rigid residual (primary)
@@ -355,10 +411,24 @@ nonisolated enum LivenessScoring {
     // MARK: - S4: blink dynamics (supporting evidence only)
 
     /// Looks for a dip-and-recovery in eye-aspect-ratio — a blink. Never
-    /// mandatory: humans blink every 2-10 seconds, so a ~1s window
-    /// frequently contains none at all, which is `.noEvidence`, not a
-    /// penalty. Only ever contributes *positively* — a blink is strong
-    /// evidence of life, but its absence in one short window proves nothing.
+    /// mandatory: humans blink every 2-10 seconds — less often still while
+    /// deliberately staring at a camera to unlock, a well-documented
+    /// task-focus effect — so a ~1s window frequently contains none at
+    /// all, which is `.noEvidence`, not a penalty. Only ever contributes
+    /// *positively* — a blink is strong evidence of life, but its absence
+    /// in one short window proves nothing.
+    ///
+    /// Thresholds loosened from the original 0.5/0.6: real-device testing
+    /// found this essentially never firing even when the user
+    /// deliberately blinked, which points at Vision's general-purpose
+    /// landmark model not fully collapsing the eyelid contour during a
+    /// real blink (it isn't a specialized blink detector) — a partial dip
+    /// is apparently the realistic signal, not the deep, clean dip the
+    /// original thresholds assumed. The recovery check now looks within a
+    /// small radius rather than requiring the immediate neighbor frame,
+    /// since a ~100-150ms blink can span several frames at ~20fps and the
+    /// exact minimum-EAR frame may not itself have a fully-open neighbor
+    /// on both sides.
     static func blinkDynamics(_ window: [LivenessFrame]) -> LivenessSignalScore {
         let ears = window.compactMap { frame -> CGFloat? in
             guard let l = frame.leftEyeAspectRatio, let r = frame.rightEyeAspectRatio else { return nil }
@@ -370,16 +440,73 @@ nonisolated enum LivenessScoring {
         guard baseline > 0 else { return .noEvidence }
         guard let minEAR = ears.min(), let minIndex = ears.firstIndex(of: minEAR) else { return .noEvidence }
 
-        // A blink: EAR drops to well under half its open-eye baseline, with
-        // frames on both sides reading closer to open — i.e. an actual dip,
-        // not just "eyes happened to look narrow the whole time."
         let dipRatio = minEAR / baseline
-        let hasNeighborRecovery = minIndex > 0 && minIndex < ears.count - 1
-            && ears[max(0, minIndex - 1)] / baseline > 0.6
-            && ears[min(ears.count - 1, minIndex + 1)] / baseline > 0.6
+        let recoveryRadius = 3
+        let openBefore = ears[..<minIndex].suffix(recoveryRadius).contains { $0 / baseline > 0.7 }
+        let openAfter = ears[(minIndex + 1)...].prefix(recoveryRadius).contains { $0 / baseline > 0.7 }
+        let hasNeighborRecovery = minIndex > 0 && minIndex < ears.count - 1 && openBefore && openAfter
 
-        guard dipRatio < 0.5, hasNeighborRecovery else { return .noEvidence }
+        guard dipRatio < 0.65, hasNeighborRecovery else { return .noEvidence }
         return LivenessSignalScore(score: 1.0, confidence: 1.0)
+    }
+
+    // MARK: - Mouth dynamics (supporting evidence only)
+
+    /// Looks for a *decent expression change*: the mouth opening or
+    /// closing, or the lips widening/narrowing as in a smile. Same role
+    /// as `blinkDynamics` — never mandatory, only ever positive, and a
+    /// firing event latches overall liveness at 100% (see
+    /// `LivenessAnalyzer`'s live-proof hold).
+    ///
+    /// Deliberately NOT "did the mouth region move." Whole-head motion
+    /// and Vision jitter move those points constantly; the previous MAR
+    /// range check treated that as a smile and pegged this signal at
+    /// 100%. Opening and width are measured in a face-aligned frame
+    /// (eye-line x-axis, units of interocular distance), so translating,
+    /// rolling, or leaning in does not count. A real "ah" or smile
+    /// changes these by a tenth of IOD or more; a still face turning
+    /// slightly does not.
+    static func mouthDynamics(_ window: [LivenessFrame]) -> LivenessSignalScore {
+        let openings = window.compactMap { frame -> CGFloat? in
+            guard frame.hasReliableLandmarks else { return nil }
+            return frame.mouthOpeningRatio
+        }
+        let widths = window.compactMap { frame -> CGFloat? in
+            guard frame.hasReliableLandmarks else { return nil }
+            return frame.mouthWidthRatio
+        }
+        guard openings.count >= 4, widths.count >= 4 else { return .noEvidence }
+
+        // Absolute IOD units, not a % of the current value — a closed
+        // mouth's opening is a small number, so a relative threshold
+        // fires on jitter alone. Tune against Face Lab's Opening/Width
+        // readout: they should sit still while you only move your head,
+        // and jump when you open or smile.
+        let openingRange = robustRange(openings)
+        let widthRange = robustRange(widths)
+        let openingChanged = openingRange >= 0.08 && hasSustainedShift(openings)
+        let widthChanged = widthRange >= 0.1 && hasSustainedShift(widths)
+        guard openingChanged || widthChanged else { return .noEvidence }
+
+        return LivenessSignalScore(score: 1.0, confidence: 1.0)
+    }
+
+    /// 15th–85th percentile span, so one noisy frame can't look like an
+    /// expression. On a short window this is close to min–max.
+    private static func robustRange(_ values: [CGFloat]) -> CGFloat {
+        guard values.count >= 2 else { return 0 }
+        let sorted = values.sorted()
+        let low = sorted[(sorted.count - 1) / 6]
+        let high = sorted[(sorted.count * 5) / 6]
+        return high - low
+    }
+
+    /// Both a low and a high cluster exist — rejects a single spike
+    /// sitting far from an otherwise flat series.
+    private static func hasSustainedShift(_ values: [CGFloat]) -> Bool {
+        guard let minValue = values.min(), let maxValue = values.max(), maxValue > minValue else { return false }
+        let midpoint = (minValue + maxValue) / 2
+        return values.filter { $0 < midpoint }.count >= 2 && values.filter { $0 > midpoint }.count >= 2
     }
 
     // MARK: - S5: scale/depth dynamics (weak, supporting)

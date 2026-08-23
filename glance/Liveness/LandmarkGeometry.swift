@@ -81,21 +81,89 @@ nonisolated enum LandmarkGeometry {
         return hypot(left.x - right.x, left.y - right.y)
     }
 
-    /// Height/width of an eye region's bounding box — a cheap stand-in for
-    /// the classic 6-point eye-aspect-ratio (Vision's eye outline point
+    /// Height/width of a landmark region's bounding box — a cheap stand-in
+    /// for the classic 6-point eye-aspect-ratio (Vision's eye outline point
     /// count isn't the fixed 6 that formula assumes). A blink collapses
     /// this toward 0; a fully open eye sits in a roughly stable band per
     /// person. Used only as supporting evidence — see `LivenessScoring`'s
     /// blink signal, which treats a *dip and recovery* as the event, not
     /// this raw ratio's absolute value.
-    static func eyeAspectRatio(of eyeRegion: VNFaceLandmarkRegion2D, imageSize: CGSize) -> CGFloat? {
-        let points = imagePoints(of: eyeRegion, imageSize: imageSize)
+    static func boundingBoxAspectRatio(of region: VNFaceLandmarkRegion2D, imageSize: CGSize) -> CGFloat? {
+        let points = imagePoints(of: region, imageSize: imageSize)
         guard points.count >= 3, let minX = points.map(\.x).min(), let maxX = points.map(\.x).max(),
               let minY = points.map(\.y).min(), let maxY = points.map(\.y).max()
         else { return nil }
         let width = maxX - minX
         guard width > 0 else { return nil }
         return (maxY - minY) / width
+    }
+
+    static func eyeAspectRatio(of eyeRegion: VNFaceLandmarkRegion2D, imageSize: CGSize) -> CGFloat? {
+        boundingBoxAspectRatio(of: eyeRegion, imageSize: imageSize)
+    }
+
+    /// Mouth *shape* in a face-aligned frame, not "did the mouth region
+    /// move in the image." Coordinates are rotated so the eye line is the
+    /// x-axis and scaled by interocular distance, which cancels whole-head
+    /// translation, roll, and lean-in. What's left:
+    ///
+    /// - `opening`: vertical extent of the inner lips (outer if inner is
+    ///   missing) — grows when the mouth opens, shrinks when it closes.
+    /// - `width`: horizontal extent of the outer lips — grows when the
+    ///   mouth widens into a smile, shrinks when it relaxes.
+    ///
+    /// Small yaw still foreshortens width by ~cos(yaw), a few percent at
+    /// typical pose, well under a real smile. See `LivenessScoring.mouthDynamics`.
+    static func mouthExpressionMetrics(
+        innerLips: VNFaceLandmarkRegion2D?,
+        outerLips: VNFaceLandmarkRegion2D?,
+        leftEyeCenter: CGPoint,
+        rightEyeCenter: CGPoint,
+        imageSize: CGSize
+    ) -> (opening: CGFloat, width: CGFloat)? {
+        guard let outerLips else { return nil }
+        return mouthExpressionMetrics(
+            outerLipPoints: imagePoints(of: outerLips, imageSize: imageSize),
+            innerLipPoints: innerLips.map { imagePoints(of: $0, imageSize: imageSize) } ?? [],
+            leftEyeCenter: leftEyeCenter,
+            rightEyeCenter: rightEyeCenter
+        )
+    }
+
+    static func mouthExpressionMetrics(
+        outerLipPoints: [CGPoint],
+        innerLipPoints: [CGPoint],
+        leftEyeCenter: CGPoint,
+        rightEyeCenter: CGPoint
+    ) -> (opening: CGFloat, width: CGFloat)? {
+        let iod = hypot(rightEyeCenter.x - leftEyeCenter.x, rightEyeCenter.y - leftEyeCenter.y)
+        guard iod > 0, outerLipPoints.count >= 3 else { return nil }
+
+        let axisX = (rightEyeCenter.x - leftEyeCenter.x) / iod
+        let axisY = (rightEyeCenter.y - leftEyeCenter.y) / iod
+        let origin = CGPoint(
+            x: (leftEyeCenter.x + rightEyeCenter.x) / 2,
+            y: (leftEyeCenter.y + rightEyeCenter.y) / 2
+        )
+
+        func aligned(_ point: CGPoint) -> CGPoint {
+            let vx = point.x - origin.x
+            let vy = point.y - origin.y
+            return CGPoint(
+                x: (vx * axisX + vy * axisY) / iod,
+                y: (-vx * axisY + vy * axisX) / iod
+            )
+        }
+
+        let outer = outerLipPoints.map(aligned)
+        guard let minX = outer.map(\.x).min(), let maxX = outer.map(\.x).max() else { return nil }
+        let width = maxX - minX
+
+        let openingPoints = innerLipPoints.count >= 3 ? innerLipPoints.map(aligned) : outer
+        guard let minY = openingPoints.map(\.y).min(), let maxY = openingPoints.map(\.y).max() else { return nil }
+        let opening = maxY - minY
+
+        return (opening, width)
     }
 
     /// The named region accessor on `VNFaceLandmarks2D` for each

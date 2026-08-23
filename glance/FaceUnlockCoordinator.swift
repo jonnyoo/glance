@@ -541,7 +541,7 @@ final class FaceUnlockCoordinator {
             let previousBoundingBox = lastFaceBoundingBox
             let outcome = await Task.detached(priority: .userInitiated) { () -> (FaceRecognitionResult, LivenessFrame)? in
                 guard let result = try? pipeline.recognize(in: frame, preferNear: previousBoundingBox) else { return nil }
-                return (result, LivenessFeatureExtractor.extract(from: result))
+                return (result, LivenessFeatureExtractor.extract(from: result, frame: frame))
             }.value
 
             guard let (result, livenessFrame) = outcome else {

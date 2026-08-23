@@ -231,7 +231,12 @@ struct FaceLabView: View {
                         .frame(width: 140)
                 }
 
-                if case .notLive(let reason) = controller.currentLiveness.verdict {
+                if let remaining = controller.currentLiveness.liveProofRemaining,
+                   let source = controller.currentLiveness.liveProofSource {
+                    Text("\(source.title) detected — holding 100% for \(Int(ceil(remaining)))s")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                } else if case .notLive(let reason) = controller.currentLiveness.verdict {
                     Text(reason)
                         .font(.caption)
                         .foregroundStyle(.orange)
@@ -252,6 +257,24 @@ struct FaceLabView: View {
                             livenessSignalRow(signal, result)
                         }
                     }
+                }
+
+                // Raw numbers behind the derived scores above — the actual
+                // measurement each formula is applied to. Watching these
+                // directly is how to tell "the threshold is wrong" from
+                // "the underlying signal isn't moving": e.g. deliberately
+                // blink and watch whether Left/Right EAR actually dips, or
+                // open/smile and watch Mouth opening/width: they should
+                // sit still if you only move your head, and jump when the
+                // expression actually changes.
+                if let frame = controller.lastLivenessFrame {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Left EAR: \(ratioString(frame.leftEyeAspectRatio))  Right EAR: \(ratioString(frame.rightEyeAspectRatio))")
+                        Text("Mouth opening: \(ratioString(frame.mouthOpeningRatio))  Mouth width: \(ratioString(frame.mouthWidthRatio))")
+                        Text("Nose offset: \(ratioString(frame.noseOffsetRatio))  Device overlap: \(percentString(frame.deviceOverlapFraction))")
+                    }
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
                 }
 
                 Divider()
@@ -313,6 +336,16 @@ struct FaceLabView: View {
             }
             .padding(.vertical, 4)
         }
+    }
+
+    private func ratioString(_ value: CGFloat?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%+.3f", value)
+    }
+
+    private func percentString(_ value: CGFloat?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%.0f%%", value * 100)
     }
 
     private func livenessSignalRow(_ signal: LivenessSignal, _ result: LivenessSignalScore) -> some View {

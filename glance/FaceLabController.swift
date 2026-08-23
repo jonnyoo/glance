@@ -63,6 +63,14 @@ final class FaceLabController {
     /// `overallScore` and the per-signal breakdown matter here.
     private let livenessAnalyzer = LivenessAnalyzer(threshold: 0.5)
     private(set) var currentLiveness = LivenessBreakdown.empty
+    /// The single most recent extracted frame — separate from the window
+    /// `livenessAnalyzer` holds internally, which isn't itself inspectable.
+    /// Exists so the debug view can show raw numbers (eye-aspect-ratio,
+    /// mouth opening/width, device overlap) live, not just the derived 0...1
+    /// signal scores — needed to tell "the threshold is wrong" from "the
+    /// underlying measurement isn't moving at all," which isn't visible
+    /// from the score alone.
+    private(set) var lastLivenessFrame: LivenessFrame?
     /// Local, debug-only cutoff for the live readout's pass/fail line and
     /// the calibration chart's threshold marker — deliberately independent
     /// of `GlanceSettings.livenessThreshold` (the real enforced gate, set
@@ -119,6 +127,7 @@ final class FaceLabController {
         currentResult = nil
         livenessAnalyzer.reset()
         currentLiveness = .empty
+        lastLivenessFrame = nil
         log("Camera stopped.")
     }
 
@@ -165,10 +174,11 @@ final class FaceLabController {
         do {
             let (result, livenessFrame) = try await Task.detached(priority: .userInitiated) {
                 let result = try pipeline.recognize(in: frame)
-                return (result, LivenessFeatureExtractor.extract(from: result))
+                return (result, LivenessFeatureExtractor.extract(from: result, frame: frame))
             }.value
             detectedFaces = [result.face]
             currentResult = result
+            lastLivenessFrame = livenessFrame
             currentLiveness = livenessAnalyzer.observe(livenessFrame)
         } catch FaceRecognitionPipelineError.noFaceDetected {
             detectedFaces = []

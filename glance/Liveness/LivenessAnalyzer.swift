@@ -27,13 +27,61 @@ enum LivenessVerdict: Equatable {
     case live
 }
 
+/// Why overall liveness is currently forced to 100% — a blink or a
+/// decent amount of mouth/lip motion, each of which a still photo cannot
+/// produce. Held for `LivenessAnalyzer.liveProofHoldDuration` after the
+/// event, so a single blink (or a few words) covers the rest of a short
+/// unlock scan instead of falling out of the ~1s scoring window.
+enum LiveProofSource: Equatable {
+    case blink
+    case mouth
+
+    var title: String {
+        switch self {
+        case .blink: return "Blink"
+        case .mouth: return "Mouth movement"
+        }
+    }
+}
+
 struct LivenessBreakdown {
     let overallScore: Float
     let signalScores: [LivenessSignal: LivenessSignalScore]
     let verdict: LivenessVerdict
     let frameCount: Int
+    /// Remaining time on the blink/mouth live-proof hold. `nil` when the
+    /// overall score is coming from the weighted signals as usual.
+    let liveProofRemaining: TimeInterval?
+    let liveProofSource: LiveProofSource?
+
+    init(
+        overallScore: Float,
+        signalScores: [LivenessSignal: LivenessSignalScore],
+        verdict: LivenessVerdict,
+        frameCount: Int,
+        liveProofRemaining: TimeInterval? = nil,
+        liveProofSource: LiveProofSource? = nil
+    ) {
+        self.overallScore = overallScore
+        self.signalScores = signalScores
+        self.verdict = verdict
+        self.frameCount = frameCount
+        self.liveProofRemaining = liveProofRemaining
+        self.liveProofSource = liveProofSource
+    }
 
     static let empty = LivenessBreakdown(overallScore: 0, signalScores: [:], verdict: .insufficientData, frameCount: 0)
+
+    func holdingLive(for remaining: TimeInterval, source: LiveProofSource) -> LivenessBreakdown {
+        LivenessBreakdown(
+            overallScore: 1,
+            signalScores: signalScores,
+            verdict: .live,
+            frameCount: frameCount,
+            liveProofRemaining: remaining,
+            liveProofSource: source
+        )
+    }
 }
 
 @MainActor
@@ -48,6 +96,17 @@ final class LivenessAnalyzer {
 
     private var frames: [LivenessFrame] = []
     private(set) var lastBreakdown = LivenessBreakdown.empty
+    /// Set when a blink or mouth-motion event fires; overall stays at 100%
+    /// until this instant regardless of the other signals (and of the hard
+    /// vetoes — a photo cannot blink or independently move its lips).
+    private var provenLiveUntil: Date?
+    private var proofSource: LiveProofSource?
+
+    /// How long a blink or mouth-motion event keeps overall liveness at
+    /// 100%. Long enough to cover a typical unlock scan after a single
+    /// blink; short enough that Face Lab returns to the live weighted
+    /// score instead of looking stuck.
+    static let liveProofHoldDuration: TimeInterval = 10
 
     init(
         windowDuration: TimeInterval = 1.0,
@@ -62,6 +121,8 @@ final class LivenessAnalyzer {
     func reset() {
         frames.removeAll()
         lastBreakdown = .empty
+        provenLiveUntil = nil
+        proofSource = nil
     }
 
     /// Feeds one frame into the rolling window and returns the current
@@ -74,9 +135,35 @@ final class LivenessAnalyzer {
     func observe(_ frame: LivenessFrame) -> LivenessBreakdown {
         frames.append(frame)
         frames.removeAll { frame.timestamp.timeIntervalSince($0.timestamp) > windowDuration }
-        let breakdown = Self.evaluate(frames, minFramesRequired: minFramesRequired, threshold: thresholdProvider())
+
+        // Proof is checked on the rolling window itself, even before
+        // `evaluate` has enough frames for a weighted verdict — a blink
+        // in the first few frames should still immediately pass.
+        if let source = Self.detectedLiveProof(in: frames) {
+            provenLiveUntil = Date().addingTimeInterval(Self.liveProofHoldDuration)
+            proofSource = source
+        }
+
+        var breakdown = Self.evaluate(frames, minFramesRequired: minFramesRequired, threshold: thresholdProvider())
+        if let until = provenLiveUntil, let source = proofSource, until > Date() {
+            breakdown = breakdown.holdingLive(for: until.timeIntervalSinceNow, source: source)
+        } else {
+            provenLiveUntil = nil
+            proofSource = nil
+        }
         lastBreakdown = breakdown
         return breakdown
+    }
+
+    /// A blink or a decent amount of mouth motion in this window — either
+    /// is treated as decisive proof of a live face. Independent of
+    /// `evaluate`'s min-frame gate so the hold can start immediately.
+    nonisolated static func detectedLiveProof(in window: [LivenessFrame]) -> LiveProofSource? {
+        let blink = LivenessScoring.blinkDynamics(window)
+        if blink.confidence > 0, blink.score >= 1 { return .blink }
+        let mouth = LivenessScoring.mouthDynamics(window)
+        if mouth.confidence > 0, mouth.score >= 1 { return .mouth }
+        return nil
     }
 
     /// The pure evaluation step — a `static` function taking the window
@@ -91,28 +178,32 @@ final class LivenessAnalyzer {
             return LivenessBreakdown(overallScore: 0, signalScores: [:], verdict: .insufficientData, frameCount: window.count)
         }
 
-        // Hard veto, checked first: no weighted combination of the other
-        // signals should be able to outvote "this never moved at all."
-        let staticGuard = LivenessScoring.staticGuard(window)
-        if staticGuard.confidence > 0, staticGuard.score < 0.5 {
-            var scores: [LivenessSignal: LivenessSignalScore] = [.staticGuard: staticGuard]
-            for signal in LivenessSignal.allCases where signal != .staticGuard {
-                scores[signal] = score(for: signal, window: window)
-            }
-            return LivenessBreakdown(
-                overallScore: 0,
-                signalScores: scores,
-                verdict: .notLive(reason: "No natural motion detected — possible static photo."),
-                frameCount: window.count
-            )
+        // Every signal is always computed, even once a veto fires below —
+        // so the debug UI can show the full breakdown regardless of which
+        // path decided the verdict, rather than a partial one.
+        var scores: [LivenessSignal: LivenessSignalScore] = [:]
+        for signal in LivenessSignal.allCases {
+            scores[signal] = score(for: signal, window: window)
         }
 
-        var scores: [LivenessSignal: LivenessSignalScore] = [.staticGuard: staticGuard]
+        // Hard vetoes, checked before any weighted combination: no vote
+        // tally should be able to outvote direct evidence like "this never
+        // moved at all" or "there's a phone-shaped rectangle right where
+        // the face is."
+        for (signal, reason) in [
+            (LivenessSignal.staticGuard, "No natural motion detected — possible static photo."),
+            (LivenessSignal.deviceBezel, "A device-shaped rectangle was detected around the face — this looks like a photo or screen."),
+        ] {
+            let result = scores[signal] ?? .noEvidence
+            if result.confidence > 0, result.score < 0.5 {
+                return LivenessBreakdown(overallScore: 0, signalScores: scores, verdict: .notLive(reason: reason), frameCount: window.count)
+            }
+        }
+
         var weightedSum: Float = 0
         var weightTotal: Float = 0
-        for signal in LivenessSignal.allCases where signal != .staticGuard {
-            let result = score(for: signal, window: window)
-            scores[signal] = result
+        for signal in LivenessSignal.allCases where signal != .staticGuard && signal != .deviceBezel {
+            let result = scores[signal] ?? .noEvidence
             let effectiveWeight = signal.weight * result.confidence
             weightedSum += effectiveWeight * result.score
             weightTotal += effectiveWeight
@@ -135,9 +226,11 @@ final class LivenessAnalyzer {
         case .residualCoherence: return LivenessScoring.residualCoherence(window)
         case .poseDepthConsistency: return LivenessScoring.poseDepthConsistency(window)
         case .blinkDynamics: return LivenessScoring.blinkDynamics(window)
+        case .mouthDynamics: return LivenessScoring.mouthDynamics(window)
         case .scaleDynamics: return LivenessScoring.scaleDynamics(window)
         case .temporalNaturalness: return LivenessScoring.temporalNaturalness(window)
         case .staticGuard: return LivenessScoring.staticGuard(window)
+        case .deviceBezel: return LivenessScoring.deviceBezel(window)
         }
     }
 }

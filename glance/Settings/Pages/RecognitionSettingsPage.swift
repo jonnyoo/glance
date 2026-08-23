@@ -238,9 +238,9 @@ private enum LivenessStrictnessLevel: Int, CaseIterable {
 
     var threshold: Float {
         switch self {
-        case .convenience: return 0.35
-        case .balanced: return 0.50
-        case .security: return 0.65
+        case .convenience: return 0.71
+        case .balanced: return 0.74
+        case .security: return 0.77
         }
     }
 

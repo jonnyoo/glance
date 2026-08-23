@@ -131,8 +131,9 @@ private func generatePlanarSequence(frameCount: Int, noiseStd: CGFloat, seed: UI
             yaw: Float(rotation), pitch: 0, roll: Float(rotation),
             normalizedFaceWidth: 0.3,
             leftEyeAspectRatio: 0.35, rightEyeAspectRatio: 0.35,
+            mouthOpeningRatio: nil, mouthWidthRatio: nil,
             noseOffsetRatio: 0,   // a plane's nose offset doesn't move with "yaw" — the whole point
-            quality: 0.8, hasReliableLandmarks: true
+            quality: 0.8, hasReliableLandmarks: true, deviceOverlapFraction: nil
         ))
     }
     return frames
@@ -192,8 +193,9 @@ private func generateLiveSequence(frameCount: Int, noiseStd: CGFloat, seed: UInt
             yaw: Float(yaw), pitch: 0, roll: 0,
             normalizedFaceWidth: 0.3,
             leftEyeAspectRatio: 0.35, rightEyeAspectRatio: 0.35,
+            mouthOpeningRatio: nil, mouthWidthRatio: nil,
             noseOffsetRatio: noseOffset,
-            quality: 0.9, hasReliableLandmarks: true
+            quality: 0.9, hasReliableLandmarks: true, deviceOverlapFraction: nil
         ))
     }
     return frames
