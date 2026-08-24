@@ -2,9 +2,8 @@
 //  SettingsTab.swift
 //  glance
 //
-//  The sidebar's tab list and section grouping. DEBUG is the temporary
-//  home for the pre-Settings debug console (Credentials / Face Lab / Face
-//  Unlock) — kept only for ongoing testing, per Jonathan.
+//  The sidebar's tab list and section grouping. DEBUG currently holds only
+//  Face Lab — the remaining live test harness, kept for ongoing tuning.
 //
 
 import SwiftUI
@@ -22,9 +21,7 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
     case camera
     case recognition
     case about
-    case debugCredentials
     case debugFaceLab
-    case debugFaceUnlock
 
     var id: String { rawValue }
 
@@ -36,9 +33,7 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
         case .camera: return "Camera"
         case .recognition: return "Recognition"
         case .about: return "About"
-        case .debugCredentials: return "Credentials"
         case .debugFaceLab: return "Face Lab"
-        case .debugFaceUnlock: return "Face Unlock"
         }
     }
 
@@ -54,9 +49,7 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
         case .camera: return .system("video.fill")
         case .recognition: return .system("sparkle")
         case .about: return .system("info.circle.fill")
-        case .debugCredentials: return .system("lock.shield")
         case .debugFaceLab: return .system("flask")
-        case .debugFaceUnlock: return .system("faceid")
         }
     }
 
@@ -89,9 +82,7 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
         case .camera: return GlanceTheme.badgeCamera
         case .recognition: return GlanceTheme.badgeRecognition
         case .about: return GlanceTheme.badgeGeneral
-        case .debugCredentials: return GlanceTheme.badgeGeneral
         case .debugFaceLab: return GlanceTheme.badgeGeneral
-        case .debugFaceUnlock: return GlanceTheme.badgeGeneral
         }
     }
 
@@ -102,7 +93,7 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
         case .general: return nil
         case .yourFace, .password, .camera, .recognition: return .authentication
         case .about: return .glance
-        case .debugCredentials, .debugFaceLab, .debugFaceUnlock: return .debug
+        case .debugFaceLab: return .debug
         }
     }
 

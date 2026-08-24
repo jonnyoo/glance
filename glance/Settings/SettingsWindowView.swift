@@ -205,12 +205,8 @@ struct SettingsWindowView: View {
                 )
             case .about:
                 AboutSettingsPage()
-            case .debugCredentials:
-                CredentialPOCView(controller: environment.pocController)
             case .debugFaceLab:
                 FaceLabView(controller: environment.faceLabController)
-            case .debugFaceUnlock:
-                FaceUnlockView(coordinator: environment.faceUnlockCoordinator)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

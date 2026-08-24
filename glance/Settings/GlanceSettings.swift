@@ -6,7 +6,7 @@
 //  `UserDefaults.standard` — each property's `didSet` writes through
 //  immediately, so there's no explicit "save" step. This is the first
 //  preference-persistence layer in the app; before this, `isEnabled` /
-//  `matchThreshold` / `autoInjectOnLock` all silently reset on every launch.
+//  `matchThreshold` silently reset on every launch.
 //
 
 import Foundation

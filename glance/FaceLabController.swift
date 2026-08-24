@@ -151,8 +151,8 @@ final class FaceLabController {
 
     /// Face embeddings are encrypted under the same Touch-ID-gated session
     /// key as the stored Mac password (see SecureFaceStore) — this mirrors
-    /// POCController.unlockSession() so Face Lab can be used standalone
-    /// without switching to the Credentials tab first.
+    /// POCController.unlockSession() so Face Lab can unlock the session
+    /// without leaving this page.
     func unlockSession() async {
         sessionError = nil
         do {

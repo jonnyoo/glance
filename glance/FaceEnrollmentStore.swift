@@ -9,10 +9,9 @@
 //  the Mac.
 //
 //  Because storage is now encrypted under the session key, reading/writing
-//  requires an unlocked session (the same Touch ID gate the Credentials tab
-//  already uses). `isLocked` and `reloadIfUnlocked()` let the UI handle that
-//  rather than silently showing "no identities" when the real state is
-//  "locked."
+//  requires an unlocked session (the same Touch ID gate Password settings
+//  uses). `isLocked` and `reloadIfUnlocked()` let the UI handle that rather
+//  than silently showing "no identities" when the real state is "locked."
 //
 
 import Foundation

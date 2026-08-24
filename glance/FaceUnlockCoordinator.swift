@@ -125,9 +125,8 @@ final class FaceUnlockCoordinator {
         observeLockAndWakeEvents()
     }
 
-    /// Re-subscribes on every change, matching the pattern used by
-    /// `POCController.observeLockAndWakeEvents` — `withObservationTracking`
-    /// only fires once per registration.
+    /// Re-subscribes on every change — `withObservationTracking` only fires
+    /// once per registration.
     private func observeLockAndWakeEvents() {
         withObservationTracking {
             _ = lockMonitor.isScreenLocked
@@ -140,8 +139,7 @@ final class FaceUnlockCoordinator {
             Task { @MainActor [weak self] in
                 self?.observeLockAndWakeEvents()
                 // Brief settle delay: right after wake, CGSession's
-                // reported state can lag the true state by a beat — same
-                // reasoning as POCController's own auto-inject path.
+                // reported state can lag the true state by a beat.
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 self?.evaluateTrigger()
             }
@@ -190,7 +188,7 @@ final class FaceUnlockCoordinator {
         guard NotchGeometry.preferredScreen() != nil else { return }
 
         guard SecureCredentialManager.isSessionUnlocked else {
-            statusMessage = "Face unlock is on, but the session is locked — authenticate once via the Credentials tab first."
+            statusMessage = "Face unlock is on, but the session is locked — authenticate once from Password settings first."
             return
         }
         guard SecureCredentialManager.hasStoredPassword() else {
