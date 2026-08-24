@@ -44,6 +44,6 @@ enum GlanceTheme {
         static let rowDetail = SwiftUI.Font.system(size: 11, weight: .regular)
         static let passwordCaption = SwiftUI.Font.system(size: 12, weight: .medium)
         static let passwordPlaceholder = SwiftUI.Font.system(size: 12, weight: .regular)
-        static let instruction = SwiftUI.Font.system(size: 17, weight: .medium)
+        static let instruction = SwiftUI.Font.system(size: 15, weight: .medium)
     }
 }

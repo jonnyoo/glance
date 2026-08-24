@@ -35,7 +35,8 @@ enum OnboardingStep: CaseIterable {
     }
 
     /// Whether this step shows the Figma "Back"/primary button pair. Enroll
-    /// is fully guided (no buttons); complete and intro have only one side.
+    /// is fully guided (close control only); complete and intro have only
+    /// one side.
     var showsBackButton: Bool {
         switch self {
         case .permissions, .preSetup, .name, .password: return true
@@ -128,7 +129,6 @@ final class OnboardingController {
     let camera = CameraManager()
     let pipeline = FaceRecognitionPipeline()
     private let store = FaceEnrollmentStore.shared
-    private let guideWindowController = EnrollmentGuideWindowController()
 
     private(set) var step: OnboardingStep = .intro
 
@@ -285,6 +285,10 @@ final class OnboardingController {
     /// simple debounce so a single lucky frame near a pose boundary doesn't
     /// trigger a capture, and consecutive captures are naturally spaced out.
     private let requiredMatchStreak = 3
+    /// Once yaw/pitch (or center) already matches the current pose, wait
+    /// this long before samples start counting so the user has settled
+    /// into the turn rather than being captured mid-motion.
+    private let poseHoldDuration: Duration = .milliseconds(500)
     /// Vision's capture-quality score has no fixed universal cutoff; this is
     /// a permissive floor so we don't block enrollment on a nil/low score
     /// from a fast-moving frame — better to accept a mediocre sample than to
@@ -297,6 +301,13 @@ final class OnboardingController {
     /// yaw/pitch readout still run during this window; only capture is held
     /// back.
     private let initialCaptureDelay: Duration = .seconds(1.5)
+    /// Enrollment wants a closer face than unlock's bystander cutoff —
+    /// sitting back in a chair is still "prominent" enough to unlock, but
+    /// too far for a reliable template. Floor is still the shared
+    /// prominence width so a tighter Recognition setting can't be bypassed.
+    private var enrollmentMinimumFaceWidth: Float {
+        max(FaceRecognitionPipeline.minimumProminentFaceWidth, 0.24)
+    }
 
     // Pose-matching bands, in radians. Yaw's sign (left turn -> positive)
     // matches the mirrored front-camera preview as expected. Pitch's sign
@@ -319,8 +330,9 @@ final class OnboardingController {
     private(set) var currentYaw: Float?
     private(set) var currentPitch: Float?
     /// Whether the last-seen face read as too small (too far from the
-    /// camera) to enroll reliably — read by EnrollmentGuideOverlay to swap
-    /// the pose instruction for a "move closer" prompt.
+    /// camera) to enroll reliably — the enroll step swaps its pose
+    /// instruction for a "move closer" prompt and overlays a chevron on
+    /// the preview while this is true.
     private(set) var isTooFar = false
     private(set) var enrollmentComplete = false
 
@@ -332,9 +344,8 @@ final class OnboardingController {
     /// own to light).
     private(set) var centerPulseTick = 0
 
-    /// Whether the full-screen dim + arrow + instruction overlay should be
-    /// visible right now — false once enrollment completes, ahead of the
-    /// checkmark sequence.
+    /// Whether pose instructions should be visible in the enroll panel —
+    /// false once enrollment completes, ahead of the checkmark sequence.
     private(set) var guideVisible = false
     /// Whether the camera preview should be visible — faded out as part of
     /// the camera-complete sequence.
@@ -371,21 +382,26 @@ final class OnboardingController {
     /// back the very first pose (always `.center`) rather than pausing
     /// again after every later pose change.
     private var captureReadyAt: ContinuousClock.Instant = .now
+    /// When the current pose first started matching continuously. `nil`
+    /// while the head isn't in the requested yaw/pitch band (or the face
+    /// is too far); capture waits `poseHoldDuration` past this instant.
+    private var poseHoldStartedAt: ContinuousClock.Instant?
 
     var currentPose: EnrollmentPose? {
         EnrollmentPose(rawValue: currentPoseIndex)
     }
 
-    /// Running clockwise rotation for the full-screen arrow. A direct
-    /// formula (not an incremented running total) so it's always derived
-    /// from `currentPoseIndex` alone, yet still never "wraps backward" at
-    /// the 315->0 compass boundary — SwiftUI animates the raw numeric
-    /// value, so 270, 315, 360, 405... reads as continuous clockwise
-    /// motion instead of snapping back through 0.
-    var arrowAngle: Double {
-        let leftBase = EnrollmentPose.left.compassAngle ?? 270
-        guard currentPoseIndex >= 1 else { return leftBase }
-        return leftBase + Double(currentPoseIndex - 1) * 45
+    /// Copy shown under the camera during enrollment — pose guidance, or
+    /// a closer-up prompt when the face is too small in frame.
+    var enrollmentInstruction: String {
+        if isTooFar { return "Bring your face closer" }
+        return currentPose?.instruction ?? ""
+    }
+
+    private enum EnrollFrameOutcome: Sendable {
+        case noFace
+        case tooFar
+        case ready(FaceRecognitionResult)
     }
 
     var overallEnrollmentProgress: Double {
@@ -454,18 +470,19 @@ final class OnboardingController {
         switch step {
         case .permissions: startPermissionsPolling()
         case .enroll:
-            // Deferred a tick so the (comparatively heavy) camera start and
-            // full-screen guide window creation don't land in the same
-            // runloop turn as the panel-resize/scroll transition kicking
-            // off — doing both at once was visibly stealing frames from the
-            // spring animation instead of letting it start smoothly.
+            // Deferred a tick so the (comparatively heavy) camera start
+            // doesn't land in the same runloop turn as the panel-resize/
+            // scroll transition kicking off — doing both at once was
+            // visibly stealing frames from the spring animation instead of
+            // letting it start smoothly.
             Task { @MainActor [weak self] in self?.beginEnrollment() }
         default: break
         }
     }
 
-    /// Steps backward. `.enroll` is fully guided (no Back button reaches
-    /// it), so the steps on either side of it handle their own retreat.
+    /// Steps backward. The enroll close control also lands here: in the
+    /// full setup flow that's a retreat to pre-setup, and in add/recapture
+    /// it's a cancel.
     func back() {
         navDirection = .backward
         // In the password-only flow there is no earlier step to return to —
@@ -478,6 +495,18 @@ final class OnboardingController {
             return
         }
         switch step {
+        case .enroll where isEnrollmentOnly:
+            // Nothing precedes enrollment in the add/recapture flows, and
+            // unsaved samples are worthless — Close is a cancel.
+            teardown()
+            NotchOverlayController.shared.dismissOnboarding()
+        case .enroll:
+            // Full setup: discard the in-progress capture and return to
+            // pre-setup. The camera has to stop here; `.enroll` is the
+            // only step that owns it.
+            resetEnrollmentState()
+            camera.stop()
+            withAnimation(OnboardingMetrics.stepAnimation) { step = .preSetup }
         case .password:
             // Back to naming, deliberately *without* resetting: the
             // collected samples and the typed name both survive the trip,
@@ -516,6 +545,8 @@ final class OnboardingController {
         capturedForCurrentPose = 0
         capturedPoses = []
         matchStreak = 0
+        poseHoldStartedAt = nil
+        isTooFar = false
         enrollmentComplete = false
         guideVisible = false
         cameraPreviewVisible = true
@@ -524,21 +555,21 @@ final class OnboardingController {
     }
 
     private func beginEnrollment() {
+        guard step == .enroll else { return }
         guideVisible = true
         cameraPreviewVisible = true
         showCheckmark = false
         poseStartedAt = .now
         captureReadyAt = .now + initialCaptureDelay
+        poseHoldStartedAt = nil
         Task { await camera.start() }
-        guideWindowController.present(for: self)
     }
 
-    /// Tears down everything onboarding spun up: camera, permissions
-    /// polling, and the full-screen guide windows. Idempotent.
+    /// Tears down everything onboarding spun up: camera and permissions
+    /// polling. Idempotent.
     func teardown() {
         stopPermissionsPolling()
         camera.stop()
-        guideWindowController.dismiss()
     }
 
     // MARK: - Permissions
@@ -608,28 +639,71 @@ final class OnboardingController {
         defer { isProcessingFrame = false }
 
         let pipeline = self.pipeline
-        let result = try? await Task.detached(priority: .userInitiated) {
-            try pipeline.recognize(in: cameraFrame.image)
+        let minimumWidth = enrollmentMinimumFaceWidth
+        let image = cameraFrame.image
+        let outcome = await Task.detached(priority: .userInitiated) {
+            do {
+                let faces = try FaceDetector.detectFaces(in: image)
+                guard let face = FaceRecognitionPipeline.largestFace(in: faces) else {
+                    return EnrollFrameOutcome.noFace
+                }
+                if Float(face.normalizedBoundingBox.width) < minimumWidth {
+                    return EnrollFrameOutcome.tooFar
+                }
+                return EnrollFrameOutcome.ready(try pipeline.recognize(face, in: image))
+            } catch {
+                return EnrollFrameOutcome.noFace
+            }
         }.value
 
-        guard let result, let yaw = result.face.yaw, let pitch = result.face.pitch else {
+        switch outcome {
+        case .noFace:
             faceDetected = false
             currentYaw = nil
             currentPitch = nil
             matchStreak = 0
+            poseHoldStartedAt = nil
             isTooFar = false
             return
+        case .tooFar:
+            faceDetected = true
+            currentYaw = nil
+            currentPitch = nil
+            matchStreak = 0
+            poseHoldStartedAt = nil
+            isTooFar = true
+            return
+        case .ready(let result):
+            guard let yaw = result.face.yaw, let pitch = result.face.pitch else {
+                faceDetected = true
+                currentYaw = nil
+                currentPitch = nil
+                matchStreak = 0
+                poseHoldStartedAt = nil
+                isTooFar = false
+                return
+            }
+            faceDetected = true
+            currentYaw = yaw
+            currentPitch = pitch
+            isTooFar = false
+            await processMatchedEnrollFrame(result, yaw: yaw, pitch: pitch, pose: pose)
         }
-        faceDetected = true
-        currentYaw = yaw
-        currentPitch = pitch
-        isTooFar = Float(result.face.normalizedBoundingBox.width) < FaceRecognitionPipeline.minimumProminentFaceWidth
+    }
+
+    private func processMatchedEnrollFrame(
+        _ result: FaceRecognitionResult,
+        yaw: Float,
+        pitch: Float,
+        pose: EnrollmentPose
+    ) async {
 
         // Let the user settle in front of the camera before the center pose
         // starts counting — detection above still ran, so the ring's live
         // readout isn't frozen, only capture is held back.
         guard ContinuousClock.now >= captureReadyAt else {
             matchStreak = 0
+            poseHoldStartedAt = nil
             return
         }
 
@@ -640,10 +714,17 @@ final class OnboardingController {
         // accepted toward enrollment.
         let alignmentOK = result.alignmentTier == .fivePoint
         let widened = ContinuousClock.now - poseStartedAt > stallTimeout
-        guard qualityOK, alignmentOK, poseMatches(yaw: yaw, pitch: pitch, pose: pose, widened: widened) else {
+        let poseOK = poseMatches(yaw: yaw, pitch: pitch, pose: pose, widened: widened)
+        guard qualityOK, alignmentOK, !isTooFar, poseOK else {
             matchStreak = 0
+            poseHoldStartedAt = nil
             return
         }
+
+        if poseHoldStartedAt == nil {
+            poseHoldStartedAt = .now
+        }
+        guard ContinuousClock.now - poseHoldStartedAt! >= poseHoldDuration else { return }
 
         matchStreak += 1
         guard matchStreak >= requiredMatchStreak else { return }
@@ -666,6 +747,7 @@ final class OnboardingController {
             currentPoseIndex += 1
             capturedForCurrentPose = 0
             poseStartedAt = .now
+            poseHoldStartedAt = nil
             if currentPoseIndex >= EnrollmentPose.allCases.count {
                 await finishEnrollment()
             }
@@ -699,7 +781,7 @@ final class OnboardingController {
         }
     }
 
-    /// Runs the camera-complete sequence: guide overlay fades, camera
+    /// Runs the camera-complete sequence: pose instructions fade, camera
     /// preview fades, the checkmark draws on, then auto-advances to the
     /// naming step. Samples stay in memory here — every flow now names the
     /// identity before anything is written, and in the full setup flow
@@ -710,7 +792,6 @@ final class OnboardingController {
 
         guideVisible = false
         try? await Task.sleep(for: .seconds(OnboardingMetrics.guideOverlayFadeOut))
-        guideWindowController.dismiss()
 
         cameraPreviewVisible = false
         try? await Task.sleep(for: .seconds(OnboardingMetrics.previewFadeOut))

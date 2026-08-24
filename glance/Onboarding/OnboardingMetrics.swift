@@ -42,8 +42,8 @@ enum OnboardingMetrics {
     static let pillPermissionsHeight: CGFloat = 245
     static let notchPreSetupHeight: CGFloat = 220
     static let pillPreSetupHeight: CGFloat = 220
-    static let notchEnrollHeight: CGFloat = 310
-    static let pillEnrollHeight: CGFloat = 310
+    static let notchEnrollHeight: CGFloat = 344
+    static let pillEnrollHeight: CGFloat = 350
     static let notchNameHeight: CGFloat = 230
     static let pillNameHeight: CGFloat = 230
     static let notchPasswordHeight: CGFloat = 260
@@ -173,6 +173,12 @@ enum OnboardingMetrics {
     /// snapping all ten ticks at once.
     static let tickStagger: Double = 0.008
 
+    /// Diameter reserved for the camera + ring, including room for lit
+    /// ticks that grow outward from `tickRingOuterDiameter`.
+    static var enrollCameraClusterDiameter: CGFloat {
+        tickRingOuterDiameter + tickLengthLit * 2
+    }
+
     // MARK: - Enrollment camera-complete sequence timings (seconds)
 
     static let guideOverlayFadeOut: Double = 0.35
@@ -184,13 +190,22 @@ enum OnboardingMetrics {
     static let cameraCompleteToNameDelay: Double = 3.0
     static let completeScreenDismissDelay: Double = 3.0
 
-    // MARK: - Full-screen guide overlay
+    // MARK: - In-panel enrollment chrome
 
-    static let guideDimOpacity: Double = 0.5
-    static let guideArrowSize: CGFloat = 84
-    static let guideTextSpacing: CGFloat = 20
-    static let guideFadeIn: Double = 0.3
-    static let guideFadeOut: Double = 0.35
+    static let enrollInstructionBottomPadding: CGFloat = 30
+    static let enrollInstructionHorizontalPadding: CGFloat = 20
+    static let enrollCameraTopPaddingNotch: CGFloat = 40
+    static let enrollCameraTopPaddingPill: CGFloat = 30
+
+    static let enrollCloseButtonSize: CGFloat = 28
+    /// Inset from the panel's top and trailing edges — independent of
+    /// enroll content padding so the control sits on the window chrome,
+    /// not the camera cluster.
+    static let enrollCloseButtonEdgePadding: CGFloat = 18
+
+    static let enrollTooFarChevronSize: CGFloat = 32
+    static let enrollInstructionFadeIn: Double = 0.3
+    static let enrollInstructionFadeOut: Double = 0.35
 }
 
 extension View {

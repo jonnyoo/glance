@@ -79,7 +79,14 @@ final class FaceRecognitionPipeline {
         guard let face = Self.selectDominantFace(in: faces, preferNear: previousBoundingBox) else {
             throw FaceRecognitionPipelineError.noFaceDetected
         }
+        return try recognize(face, in: frame)
+    }
 
+    /// Aligns and embeds an already-chosen face. Enrollment uses this after
+    /// picking the largest face *without* the prominence filter, so a
+    /// too-small face can be flagged as "move closer" instead of looking
+    /// like nobody is there.
+    nonisolated func recognize(_ face: DetectedFace, in frame: CGImage) throws -> FaceRecognitionResult {
         let inputImage: CGImage
         let tier: AlignmentTier
         if embedder.requiresAlignment {
@@ -98,6 +105,14 @@ final class FaceRecognitionPipeline {
 
         let embedding = try embedder.embedding(for: inputImage)
         return FaceRecognitionResult(embedding: embedding, alignedImage: inputImage, alignmentTier: tier, quality: face.quality, face: face)
+    }
+
+    /// Largest face by area, with no prominence cutoff. Enrollment needs
+    /// this to tell "too far" apart from "no face" — `selectDominantFace`
+    /// drops small faces entirely, which is correct for unlock but would
+    /// make the closer-up prompt unreachable.
+    nonisolated static func largestFace(in faces: [DetectedFace]) -> DetectedFace? {
+        faces.max { $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height }
     }
 
     /// Below this fraction of frame width, a detected face is treated as a
