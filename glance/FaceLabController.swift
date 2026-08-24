@@ -34,16 +34,6 @@ struct CalibrationSample: Identifiable {
     let isGenuine: Bool
 }
 
-/// One manually-tagged liveness score — "this overall score came from a
-/// live face" or "from a spoof attempt (photo/screen)." Same role as
-/// `CalibrationSample` above, for `LivenessAnalyzer`'s threshold instead of
-/// the match threshold.
-struct LivenessCalibrationSample: Identifiable {
-    let id = UUID()
-    let overallScore: Float
-    let isLive: Bool
-}
-
 @Observable
 @MainActor
 final class FaceLabController {
@@ -57,29 +47,51 @@ final class FaceLabController {
     /// Fed every frame a face is detected, live — same as
     /// `FaceUnlockCoordinator`'s scan loop, so this is exactly what the
     /// real unlock path would see, not a separately-tuned debug copy.
-    /// Constructed with a placeholder internal threshold: Face Lab never
-    /// reads `.verdict` off this directly (see `isLive` below), so what
-    /// this analyzer instance itself considers "live" is irrelevant — only
-    /// `overallScore` and the per-signal breakdown matter here.
-    private let livenessAnalyzer = LivenessAnalyzer(threshold: 0.5)
-    private(set) var currentLiveness = LivenessBreakdown.empty
+    private let livenessAnalyzer = LivenessAnalyzer()
+    private(set) var currentLiveness = LivenessSnapshot.empty
+    /// Diagnostics behind the flat-vs-3D cue (excess ratio, coherence, pair
+    /// counts, yaw range) — the numbers that explain *why* that cue is
+    /// reading what it reads, which the cue's own 0...1 level can't show.
+    private(set) var currentGeometry = GeometryLivenessResult.empty
     /// The single most recent extracted frame — separate from the window
     /// `livenessAnalyzer` holds internally, which isn't itself inspectable.
-    /// Exists so the debug view can show raw numbers (eye-aspect-ratio,
-    /// mouth opening/width, device overlap) live, not just the derived 0...1
-    /// signal scores — needed to tell "the threshold is wrong" from "the
-    /// underlying measurement isn't moving at all," which isn't visible
-    /// from the score alone.
+    /// Exists so the debug view can show raw measurements (eye-aspect-ratio,
+    /// device overlap, specular fraction) live, not just the derived cue
+    /// levels — needed to tell "the threshold is wrong" from "the underlying
+    /// measurement isn't moving at all," which isn't visible from the level
+    /// alone.
     private(set) var lastLivenessFrame: LivenessFrame?
-    /// Local, debug-only cutoff for the live readout's pass/fail line and
-    /// the calibration chart's threshold marker — deliberately independent
-    /// of `GlanceSettings.livenessThreshold` (the real enforced gate, set
-    /// from the Recognition page), same reasoning as `threshold` below for
-    /// match confidence: tuning this here must never silently change what
-    /// actually unlocks the Mac.
-    var livenessThreshold: Double = 0.5
-    var isLiveAccordingToLocalThreshold: Bool {
-        currentLiveness.overallScore >= Float(livenessThreshold)
+
+    /// Face Lab drives mode and tuning locally rather than reading
+    /// `GlanceSettings`, so experimenting here can never silently change
+    /// what actually unlocks the Mac. Heavy by default in the lab — the
+    /// point of this tab is to watch the confirm cues, which Light mode
+    /// short-circuits entirely.
+    var livenessMode: LivenessMode = .heavy
+    var livenessTuning = LivenessTuning.default
+    var enabledLivenessCues: Set<LivenessCue> = Set(LivenessCue.allCases)
+
+    func isLivenessCueEnabled(_ cue: LivenessCue) -> Bool {
+        enabledLivenessCues.contains(cue)
+    }
+
+    func setLivenessCue(_ cue: LivenessCue, enabled: Bool) {
+        if enabled {
+            enabledLivenessCues.insert(cue)
+        } else {
+            enabledLivenessCues.remove(cue)
+        }
+    }
+
+    /// Restarts just the liveness half without touching the camera or
+    /// recognition — cue firing latches for a whole scan by design, so
+    /// re-testing a spoof after one has been caught needs an explicit
+    /// clear.
+    func resetLiveness() {
+        livenessAnalyzer.reset()
+        currentLiveness = .empty
+        currentGeometry = .empty
+        log("Liveness cues reset.")
     }
 
     var enrollName: String = ""
@@ -104,6 +116,11 @@ final class FaceLabController {
 
     init() {
         observeFrames()
+        livenessAnalyzer.modeProvider = { [weak self] in self?.livenessMode ?? .heavy }
+        livenessAnalyzer.tuningProvider = { [weak self] in self?.livenessTuning ?? .default }
+        livenessAnalyzer.enabledCuesProvider = { [weak self] in
+            self?.enabledLivenessCues ?? Set(LivenessCue.allCases)
+        }
         store.reloadIfUnlocked()
         if pipeline.usingFallbackEmbedder {
             log("ArcFace unavailable (\(pipeline.fallbackReason ?? "unknown reason")) — using Vision Feature Print instead.")
@@ -127,6 +144,7 @@ final class FaceLabController {
         currentResult = nil
         livenessAnalyzer.reset()
         currentLiveness = .empty
+        currentGeometry = .empty
         lastLivenessFrame = nil
         log("Camera stopped.")
     }
@@ -166,20 +184,22 @@ final class FaceLabController {
     /// processed — a simple "always work on the latest frame" throttle
     /// instead of a fixed timer.
     private func processLatestFrame() async {
-        guard !isProcessingFrame, let frame = camera.currentFrame else { return }
+        guard !isProcessingFrame, let cameraFrame = camera.currentFrame else { return }
         isProcessingFrame = true
         defer { isProcessingFrame = false }
 
         let pipeline = self.pipeline
         do {
             let (result, livenessFrame) = try await Task.detached(priority: .userInitiated) {
-                let result = try pipeline.recognize(in: frame)
-                return (result, LivenessFeatureExtractor.extract(from: result, frame: frame))
+                let result = try pipeline.recognize(in: cameraFrame.image)
+                let faceCrop = CameraManager.renderCrop(from: cameraFrame, imageRect: result.face.boundingBox)
+                return (result, LivenessFeatureExtractor.extract(from: result, frame: cameraFrame.image, faceCrop: faceCrop))
             }.value
             detectedFaces = [result.face]
             currentResult = result
             lastLivenessFrame = livenessFrame
             currentLiveness = livenessAnalyzer.observe(livenessFrame)
+            currentGeometry = livenessAnalyzer.lastGeometry
         } catch FaceRecognitionPipelineError.noFaceDetected {
             detectedFaces = []
             currentResult = nil
@@ -349,41 +369,6 @@ final class FaceLabController {
         let impostor = calibrationSamples.filter { !$0.isGenuine }.map(\.centroidSimilarity)
         guard let minGenuine = genuine.min(), let maxImpostor = impostor.max() else { return false }
         return maxImpostor >= minGenuine
-    }
-
-    // MARK: - Liveness calibration
-
-    /// Same idea as `calibrationSamples` above, for `LivenessAnalyzer`'s
-    /// threshold: record what the analyzer's overall score actually was
-    /// while you deliberately held up a live face vs. a spoof attempt, then
-    /// look at where the two distributions land relative to each other.
-    private(set) var livenessCalibrationSamples: [LivenessCalibrationSample] = []
-
-    func recordLivenessCalibrationSample(isLive: Bool) {
-        guard currentLiveness.frameCount > 0 else {
-            log("Nothing to record — no liveness window yet.")
-            return
-        }
-        livenessCalibrationSamples.append(LivenessCalibrationSample(overallScore: currentLiveness.overallScore, isLive: isLive))
-        log("Liveness calibration: recorded \(isLive ? "live" : "spoof") sample at \(String(format: "%.3f", currentLiveness.overallScore)).")
-    }
-
-    func clearLivenessCalibrationSamples() {
-        livenessCalibrationSamples.removeAll()
-    }
-
-    var suggestedLivenessThreshold: Float? {
-        let live = livenessCalibrationSamples.filter(\.isLive).map(\.overallScore)
-        let spoof = livenessCalibrationSamples.filter { !$0.isLive }.map(\.overallScore)
-        guard let minLive = live.min(), let maxSpoof = spoof.max() else { return nil }
-        return (minLive + maxSpoof) / 2
-    }
-
-    var livenessDistributionsOverlap: Bool {
-        let live = livenessCalibrationSamples.filter(\.isLive).map(\.overallScore)
-        let spoof = livenessCalibrationSamples.filter { !$0.isLive }.map(\.overallScore)
-        guard let minLive = live.min(), let maxSpoof = spoof.max() else { return false }
-        return maxSpoof >= minLive
     }
 
     private func log(_ message: String) {

@@ -3,13 +3,12 @@
 //  glance
 //
 //  The Vision-facing half of liveness: turns one `FaceRecognitionResult`
-//  (plus the full camera frame it came from) into a `LivenessFrame`
-//  (defined in LivenessScoring.swift, which has no Vision dependency) —
-//  plain points and scalars, no Vision types — which is all
-//  `LivenessScoring`/`LivenessAnalyzer` ever see. Keeping the Vision-facing
-//  extraction isolated to this one file, separate from `LivenessFrame`'s
-//  own declaration, is what lets the scoring math compile and run
-//  standalone (see `tools/liveness_selftest.swift`) with no
+//  (plus the camera frames it came from) into a `LivenessFrame` (defined in
+//  LivenessScoring.swift, which has no Vision dependency) — plain points and
+//  scalars, no Vision types — which is all the cue functions ever see.
+//  Keeping the Vision-facing extraction isolated to this one file, separate
+//  from `LivenessFrame`'s own declaration, is what lets the decision logic
+//  compile and run standalone (see `tools/liveness_selftest.swift`) with no
 //  `FaceRecognitionPipeline`/CoreML dependency chain to drag in.
 //
 
@@ -19,29 +18,35 @@ import CoreGraphics
 nonisolated enum LivenessFeatureExtractor {
     /// Extracts a `LivenessFrame` from one recognition result. Never fails —
     /// a face with no landmarks still yields a frame (with `landmarks: []`),
-    /// since pose/quality/bbox data alone is still worth having in the
-    /// window; downstream signals that need landmarks just get zero
-    /// confidence from it.
+    /// since pose and device-overlap data alone is still worth having in the
+    /// window; cues that need landmarks just abstain on it.
     ///
     /// - Parameter frame: the full camera frame `result` was recognized
     ///   from — not `result.alignedImage`, which is a tightly-cropped,
     ///   pose-normalized 112x112 warp with no room around the face to see
     ///   a device edge in. Needed for `DeviceBezelDetector`, which has to
     ///   look *around* the face, not just at it.
-    static func extract(from result: FaceRecognitionResult, frame: CGImage, timestamp: Date = Date()) -> LivenessFrame {
+    /// - Parameter faceCrop: a native-resolution crop around the face (see
+    ///   `CameraManager.renderCrop`), used for the gloss/glare cue. `nil`
+    ///   when no native-resolution frame was available — that cue simply
+    ///   abstains in that case, same as landmark-dependent cues do when
+    ///   `face.landmarks` is `nil` below.
+    static func extract(
+        from result: FaceRecognitionResult, frame: CGImage, faceCrop: CGImage? = nil, timestamp: Date = Date()
+    ) -> LivenessFrame {
         let face = result.face
         let deviceOverlap = DeviceBezelDetector.detect(in: frame, faceBoundingBox: face.boundingBox).faceOverlapFraction
+        let glare = faceCrop.flatMap { GlareCueExtractor.extract(faceCrop: $0) }
 
         guard let landmarks = face.landmarks else {
             return LivenessFrame(
                 timestamp: timestamp, landmarks: [], interocularDistance: nil,
-                yaw: face.yaw, pitch: face.pitch, roll: face.roll,
-                normalizedFaceWidth: face.normalizedBoundingBox.width,
+                yaw: face.yaw,
                 leftEyeAspectRatio: nil, rightEyeAspectRatio: nil,
-                mouthOpeningRatio: nil, mouthWidthRatio: nil,
                 noseOffsetRatio: nil,
-                quality: face.quality, hasReliableLandmarks: false,
-                deviceOverlapFraction: deviceOverlap
+                hasReliableLandmarks: false,
+                deviceOverlapFraction: deviceOverlap,
+                glare: glare
             )
         }
 
@@ -54,20 +59,6 @@ nonisolated enum LivenessFeatureExtractor {
         let eyeLeft = LandmarkGeometry.eyeCenter(pupil: landmarks.leftPupil, eye: landmarks.leftEye, imageSize: imageSize)
         let eyeRight = LandmarkGeometry.eyeCenter(pupil: landmarks.rightPupil, eye: landmarks.rightEye, imageSize: imageSize)
 
-        var mouthOpeningRatio: CGFloat?
-        var mouthWidthRatio: CGFloat?
-        if let eyeLeft, let eyeRight,
-           let expression = LandmarkGeometry.mouthExpressionMetrics(
-                innerLips: landmarks.innerLips,
-                outerLips: landmarks.outerLips,
-                leftEyeCenter: eyeLeft,
-                rightEyeCenter: eyeRight,
-                imageSize: imageSize
-           ) {
-            mouthOpeningRatio = expression.opening
-            mouthWidthRatio = expression.width
-        }
-
         var noseOffsetRatio: CGFloat?
         if let interocular, interocular > 0, let eyeLeft, let eyeRight,
            let nose = landmarks.nose, let noseCenter = LandmarkGeometry.centroid(of: nose, imageSize: imageSize) {
@@ -79,14 +70,12 @@ nonisolated enum LivenessFeatureExtractor {
             timestamp: timestamp,
             landmarks: points,
             interocularDistance: interocular,
-            yaw: face.yaw, pitch: face.pitch, roll: face.roll,
-            normalizedFaceWidth: face.normalizedBoundingBox.width,
+            yaw: face.yaw,
             leftEyeAspectRatio: leftEAR, rightEyeAspectRatio: rightEAR,
-            mouthOpeningRatio: mouthOpeningRatio, mouthWidthRatio: mouthWidthRatio,
             noseOffsetRatio: noseOffsetRatio,
-            quality: face.quality,
             hasReliableLandmarks: result.alignmentTier == .fivePoint,
-            deviceOverlapFraction: deviceOverlap
+            deviceOverlapFraction: deviceOverlap,
+            glare: glare
         )
     }
 }

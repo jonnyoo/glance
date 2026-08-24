@@ -644,6 +644,43 @@ struct UnlockAnimationPicker: View {
     }
 }
 
+/// Liveness depth picker — the option-tile row that connects, inside one
+/// `SettingsGroup`, to the "Liveness checks" toggle above it (see
+/// `RecognitionSettingsPage`). Same shape as `UnlockAnimationPicker`:
+/// mutually exclusive tiles, greyed out by `isEnabled` when the row above
+/// is off.
+struct LivenessModePicker: View {
+    @Binding var selection: LivenessMode
+    var isEnabled: Bool = true
+
+    var body: some View {
+        SettingsOptionRow {
+            ForEach(LivenessMode.allCases) { mode in
+                SettingsOptionTile(
+                    title: mode.title,
+                    isSelected: selection == mode,
+                    action: { selection = mode }
+                ) {
+                    Image(systemName: iconName(for: mode))
+                        .font(.system(size: 20, weight: .regular))
+                        .foregroundStyle(SettingsOptionTile<EmptyView>.previewTint(isSelected: selection == mode))
+                }
+            }
+        }
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.4)
+    }
+
+    /// A half-filled shield for Light (it only screens *out* spoofs) versus
+    /// a checked one for Heavy (it also demands positive proof of life).
+    private func iconName(for mode: LivenessMode) -> String {
+        switch mode {
+        case .light: return "shield.lefthalf.filled"
+        case .heavy: return "checkmark.shield.fill"
+        }
+    }
+}
+
 /// Multi-select picker for what arms Face Unlock — the option-tile row that
 /// connects, inside one `SettingsGroup`, to the "Enable Face Unlock" toggle
 /// above it (see `GeneralSettingsPage`). Unlike the animation picker, tiles

@@ -86,9 +86,9 @@ nonisolated enum LandmarkGeometry {
     /// count isn't the fixed 6 that formula assumes). A blink collapses
     /// this toward 0; a fully open eye sits in a roughly stable band per
     /// person. Used only as supporting evidence — see `LivenessScoring`'s
-    /// blink signal, which treats a *dip and recovery* as the event, not
-    /// this raw ratio's absolute value.
-    static func boundingBoxAspectRatio(of region: VNFaceLandmarkRegion2D, imageSize: CGSize) -> CGFloat? {
+    /// blink cue, which treats a *dip and recovery* as the event, not this
+    /// raw ratio's absolute value.
+    private static func boundingBoxAspectRatio(of region: VNFaceLandmarkRegion2D, imageSize: CGSize) -> CGFloat? {
         let points = imagePoints(of: region, imageSize: imageSize)
         guard points.count >= 3, let minX = points.map(\.x).min(), let maxX = points.map(\.x).max(),
               let minY = points.map(\.y).min(), let maxY = points.map(\.y).max()
@@ -100,70 +100,6 @@ nonisolated enum LandmarkGeometry {
 
     static func eyeAspectRatio(of eyeRegion: VNFaceLandmarkRegion2D, imageSize: CGSize) -> CGFloat? {
         boundingBoxAspectRatio(of: eyeRegion, imageSize: imageSize)
-    }
-
-    /// Mouth *shape* in a face-aligned frame, not "did the mouth region
-    /// move in the image." Coordinates are rotated so the eye line is the
-    /// x-axis and scaled by interocular distance, which cancels whole-head
-    /// translation, roll, and lean-in. What's left:
-    ///
-    /// - `opening`: vertical extent of the inner lips (outer if inner is
-    ///   missing) — grows when the mouth opens, shrinks when it closes.
-    /// - `width`: horizontal extent of the outer lips — grows when the
-    ///   mouth widens into a smile, shrinks when it relaxes.
-    ///
-    /// Small yaw still foreshortens width by ~cos(yaw), a few percent at
-    /// typical pose, well under a real smile. See `LivenessScoring.mouthDynamics`.
-    static func mouthExpressionMetrics(
-        innerLips: VNFaceLandmarkRegion2D?,
-        outerLips: VNFaceLandmarkRegion2D?,
-        leftEyeCenter: CGPoint,
-        rightEyeCenter: CGPoint,
-        imageSize: CGSize
-    ) -> (opening: CGFloat, width: CGFloat)? {
-        guard let outerLips else { return nil }
-        return mouthExpressionMetrics(
-            outerLipPoints: imagePoints(of: outerLips, imageSize: imageSize),
-            innerLipPoints: innerLips.map { imagePoints(of: $0, imageSize: imageSize) } ?? [],
-            leftEyeCenter: leftEyeCenter,
-            rightEyeCenter: rightEyeCenter
-        )
-    }
-
-    static func mouthExpressionMetrics(
-        outerLipPoints: [CGPoint],
-        innerLipPoints: [CGPoint],
-        leftEyeCenter: CGPoint,
-        rightEyeCenter: CGPoint
-    ) -> (opening: CGFloat, width: CGFloat)? {
-        let iod = hypot(rightEyeCenter.x - leftEyeCenter.x, rightEyeCenter.y - leftEyeCenter.y)
-        guard iod > 0, outerLipPoints.count >= 3 else { return nil }
-
-        let axisX = (rightEyeCenter.x - leftEyeCenter.x) / iod
-        let axisY = (rightEyeCenter.y - leftEyeCenter.y) / iod
-        let origin = CGPoint(
-            x: (leftEyeCenter.x + rightEyeCenter.x) / 2,
-            y: (leftEyeCenter.y + rightEyeCenter.y) / 2
-        )
-
-        func aligned(_ point: CGPoint) -> CGPoint {
-            let vx = point.x - origin.x
-            let vy = point.y - origin.y
-            return CGPoint(
-                x: (vx * axisX + vy * axisY) / iod,
-                y: (-vx * axisY + vy * axisX) / iod
-            )
-        }
-
-        let outer = outerLipPoints.map(aligned)
-        guard let minX = outer.map(\.x).min(), let maxX = outer.map(\.x).max() else { return nil }
-        let width = maxX - minX
-
-        let openingPoints = innerLipPoints.count >= 3 ? innerLipPoints.map(aligned) : outer
-        guard let minY = openingPoints.map(\.y).min(), let maxY = openingPoints.map(\.y).max() else { return nil }
-        let opening = maxY - minY
-
-        return (opening, width)
     }
 
     /// The named region accessor on `VNFaceLandmarks2D` for each
@@ -198,6 +134,216 @@ nonisolated enum LandmarkGeometry {
             }
         }
         return result
+    }
+
+    // MARK: - Homography (projective) transform
+
+    /// 3×3 homography mapping `p` → `((h11 x + h12 y + h13) / w, (h21 x + h22 y + h23) / w)`
+    /// with `w = h31 x + h32 y + h33`. This is exactly the model a flat
+    /// photograph (or a phone screen) is limited to, including perspective
+    /// tilt — strictly more general than `solveSimilarityTransform`.
+    struct Homography {
+        let h11, h12, h13, h21, h22, h23, h31, h32, h33: CGFloat
+
+        func apply(_ point: CGPoint) -> CGPoint {
+            let w = h31 * point.x + h32 * point.y + h33
+            guard abs(w) > 1e-12 else { return point }
+            return CGPoint(
+                x: (h11 * point.x + h12 * point.y + h13) / w,
+                y: (h21 * point.x + h22 * point.y + h23) / w
+            )
+        }
+    }
+
+    /// Hartley-normalized DLT homography with `h33 = 1`, solved as an 8×8
+    /// normal-equation system. Needs at least 4 correspondences; 6+ is
+    /// the practical floor used by callers so the fit is overdetermined.
+    static func solveHomography(from sourcePoints: [CGPoint], to destinationPoints: [CGPoint], weights: [CGFloat]? = nil) -> Homography? {
+        guard sourcePoints.count == destinationPoints.count, sourcePoints.count >= 4 else { return nil }
+        if let weights {
+            guard weights.count == sourcePoints.count else { return nil }
+        }
+
+        guard let srcT = normalizingTransform(sourcePoints),
+              let dstT = normalizingTransform(destinationPoints)
+        else { return nil }
+
+        let n = sourcePoints.count
+        var ata = Array(repeating: Array(repeating: CGFloat(0), count: 8), count: 8)
+        var atb = Array(repeating: CGFloat(0), count: 8)
+
+        for i in 0..<n {
+            let src = applyNormalization(sourcePoints[i], srcT)
+            let dst = applyNormalization(destinationPoints[i], dstT)
+            let w = (weights?[i] ?? 1).squareRoot()
+            guard w > 0 else { continue }
+            let x = src.x, y = src.y, u = dst.x, v = dst.y
+            // Two DLT rows, h33 fixed at 1:
+            // [x y 1 0 0 0 -u x -u y] · h = u
+            // [0 0 0 x y 1 -v x -v y] · h = v
+            let row0: [CGFloat] = [x * w, y * w, w, 0, 0, 0, -u * x * w, -u * y * w]
+            let row1: [CGFloat] = [0, 0, 0, x * w, y * w, w, -v * x * w, -v * y * w]
+            let b0 = u * w
+            let b1 = v * w
+            accumulateNormalEquations(row0, b0, into: &ata, atb: &atb)
+            accumulateNormalEquations(row1, b1, into: &ata, atb: &atb)
+        }
+
+        guard let h = solveLinearSystem(ata, atb) else { return nil }
+        let hNorm = Homography(
+            h11: h[0], h12: h[1], h13: h[2],
+            h21: h[3], h22: h[4], h23: h[5],
+            h31: h[6], h32: h[7], h33: 1
+        )
+        return denormalizeHomography(hNorm, source: srcT, destination: dstT)
+    }
+
+    /// Two-pass IRLS around `solveHomography`, Tukey biweight. A single
+    /// wildly jittered landmark can't pull the plane around. The cutoff
+    /// uses the full-set median so a smiling mouth (large but not wild)
+    /// stays in the fit and keeps the nose inside the hull — dropping it
+    /// lets an underconstrained upper-face homography absorb parallax.
+    static func solveRobustHomography(from sourcePoints: [CGPoint], to destinationPoints: [CGPoint]) -> Homography? {
+        guard var current = solveHomography(from: sourcePoints, to: destinationPoints) else { return nil }
+        for _ in 0..<2 {
+            let residuals = zip(sourcePoints, destinationPoints).map { hypot($1.x - current.apply($0).x, $1.y - current.apply($0).y) }
+            let scale = max(medianValue(residuals), 1e-4)
+            let cutoff = 4.685 * 1.4826 * scale
+            var weights: [CGFloat] = residuals.map { r in
+                let u = r / cutoff
+                if u >= 1 { return 0 }
+                let t = 1 - u * u
+                return t * t
+            }
+            let inliers = weights.filter { $0 > 0 }.count
+            if inliers < 6 {
+                weights = Array(repeating: 1, count: sourcePoints.count)
+            }
+            if let refined = solveHomography(from: sourcePoints, to: destinationPoints, weights: weights) {
+                current = refined
+            }
+        }
+        return current
+    }
+
+    private struct SimilarityNorm {
+        let scale: CGFloat
+        let centerX: CGFloat
+        let centerY: CGFloat
+    }
+
+    /// Translate to centroid, scale so mean distance from origin is √2.
+    private static func normalizingTransform(_ points: [CGPoint]) -> SimilarityNorm? {
+        let n = CGFloat(points.count)
+        guard n > 0 else { return nil }
+        let cx = points.reduce(CGFloat(0)) { $0 + $1.x } / n
+        let cy = points.reduce(CGFloat(0)) { $0 + $1.y } / n
+        let meanDist = points.reduce(CGFloat(0)) { $0 + hypot($1.x - cx, $1.y - cy) } / n
+        guard meanDist > 1e-8 else { return nil }
+        return SimilarityNorm(scale: CGFloat(2).squareRoot() / meanDist, centerX: cx, centerY: cy)
+    }
+
+    private static func applyNormalization(_ point: CGPoint, _ t: SimilarityNorm) -> CGPoint {
+        CGPoint(x: t.scale * (point.x - t.centerX), y: t.scale * (point.y - t.centerY))
+    }
+
+    /// `H = Tdst⁻¹ · Hn · Tsrc`.
+    private static func denormalizeHomography(_ h: Homography, source: SimilarityNorm, destination: SimilarityNorm) -> Homography {
+        let s1 = source.scale, cx1 = source.centerX, cy1 = source.centerY
+        let s2 = destination.scale, cx2 = destination.centerX, cy2 = destination.centerY
+        // Tsrc
+        let ts = (s1, CGFloat(0), -s1 * cx1, CGFloat(0), s1, -s1 * cy1, CGFloat(0), CGFloat(0), CGFloat(1))
+        // Hn · Tsrc
+        let hn = (h.h11, h.h12, h.h13, h.h21, h.h22, h.h23, h.h31, h.h32, h.h33)
+        let m = multiply3x3(hn, ts)
+        // Tdst⁻¹
+        let ti = (1 / s2, CGFloat(0), cx2, CGFloat(0), 1 / s2, cy2, CGFloat(0), CGFloat(0), CGFloat(1))
+        let r = multiply3x3(ti, m)
+        return Homography(h11: r.0, h12: r.1, h13: r.2, h21: r.3, h22: r.4, h23: r.5, h31: r.6, h32: r.7, h33: r.8)
+    }
+
+    private static func multiply3x3(
+        _ a: (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat),
+        _ b: (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat)
+    ) -> (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat) {
+        (
+            a.0 * b.0 + a.1 * b.3 + a.2 * b.6,
+            a.0 * b.1 + a.1 * b.4 + a.2 * b.7,
+            a.0 * b.2 + a.1 * b.5 + a.2 * b.8,
+            a.3 * b.0 + a.4 * b.3 + a.5 * b.6,
+            a.3 * b.1 + a.4 * b.4 + a.5 * b.7,
+            a.3 * b.2 + a.4 * b.5 + a.5 * b.8,
+            a.6 * b.0 + a.7 * b.3 + a.8 * b.6,
+            a.6 * b.1 + a.7 * b.4 + a.8 * b.7,
+            a.6 * b.2 + a.7 * b.5 + a.8 * b.8
+        )
+    }
+
+    private static func accumulateNormalEquations(_ row: [CGFloat], _ b: CGFloat, into ata: inout [[CGFloat]], atb: inout [CGFloat]) {
+        for i in 0..<8 {
+            atb[i] += row[i] * b
+            for j in 0..<8 {
+                ata[i][j] += row[i] * row[j]
+            }
+        }
+    }
+
+    /// Gaussian elimination with partial pivoting. `nil` if singular.
+    static func solveLinearSystem(_ matrix: [[CGFloat]], _ rhs: [CGFloat]) -> [CGFloat]? {
+        let n = rhs.count
+        guard matrix.count == n, matrix.allSatisfy({ $0.count == n }) else { return nil }
+        var a = matrix
+        var b = rhs
+        for k in 0..<n {
+            var pivot = k
+            var maxVal = abs(a[k][k])
+            if k + 1 < n {
+                for i in (k + 1)..<n {
+                    let v = abs(a[i][k])
+                    if v > maxVal {
+                        maxVal = v
+                        pivot = i
+                    }
+                }
+            }
+            if maxVal < 1e-12 { return nil }
+            if pivot != k {
+                a.swapAt(k, pivot)
+                b.swapAt(k, pivot)
+            }
+            let diag = a[k][k]
+            if k + 1 < n {
+                for i in (k + 1)..<n {
+                    let factor = a[i][k] / diag
+                    for j in k..<n {
+                        a[i][j] -= factor * a[k][j]
+                    }
+                    b[i] -= factor * b[k]
+                }
+            }
+        }
+        var x = [CGFloat](repeating: 0, count: n)
+        for i in stride(from: n - 1, through: 0, by: -1) {
+            var sum = b[i]
+            if i + 1 < n {
+                for j in (i + 1)..<n {
+                    sum -= a[i][j] * x[j]
+                }
+            }
+            guard abs(a[i][i]) > 1e-12 else { return nil }
+            x[i] = sum / a[i][i]
+        }
+        return x
+    }
+
+    static func medianValue(_ values: [CGFloat]) -> CGFloat {
+        guard !values.isEmpty else { return 0 }
+        let sorted = values.sorted()
+        let mid = sorted.count / 2
+        if sorted.count.isMultiple(of: 2) {
+            return (sorted[mid - 1] + sorted[mid]) / 2
+        }
+        return sorted[mid]
     }
 
     // MARK: - Similarity transform

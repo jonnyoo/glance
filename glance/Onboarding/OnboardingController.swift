@@ -603,13 +603,13 @@ final class OnboardingController {
 
     private func processEnrollFrame() async {
         guard step == .enroll, !enrollmentComplete, !isProcessingFrame,
-              let frame = camera.currentFrame, let pose = currentPose else { return }
+              let cameraFrame = camera.currentFrame, let pose = currentPose else { return }
         isProcessingFrame = true
         defer { isProcessingFrame = false }
 
         let pipeline = self.pipeline
         let result = try? await Task.detached(priority: .userInitiated) {
-            try pipeline.recognize(in: frame)
+            try pipeline.recognize(in: cameraFrame.image)
         }.value
 
         guard let result, let yaw = result.face.yaw, let pitch = result.face.pitch else {

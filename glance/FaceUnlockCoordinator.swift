@@ -75,17 +75,6 @@ final class FaceUnlockCoordinator {
     /// failure animation — a single bad-angle frame from the right person
     /// shouldn't trigger it, so this requires it to persist.
     private let wrongFaceStreakThreshold = 6
-    /// A face that matches the enrolled identity but keeps failing the
-    /// liveness check for this many *consecutive* matched frames aborts the
-    /// scan visibly instead of silently retrying for the rest of the scan
-    /// window. This closes the hole the old `LivenessMonitor` left open: a
-    /// `.notLive` verdict never aborted anything, so a static photo got
-    /// effectively unlimited attempts within one scan window — any single
-    /// lucky window passed was enough to unlock. Set higher than
-    /// `wrongFaceStreakThreshold` since liveness is a probabilistic signal,
-    /// not a hard similarity cutoff — a bit more patience avoids failing a
-    /// genuine user on a couple of noisy frames.
-    private let spoofFrameStreakThreshold = 10
 
     private(set) var statusMessage = "Idle"
     private(set) var lastOutcome: String?
@@ -479,20 +468,27 @@ final class FaceUnlockCoordinator {
     private enum ScanOutcome {
         case matched
         case consistentlyWrongFace
-        /// The enrolled identity matched, but the liveness analyzer kept
-        /// reading it as not-live for `spoofFrameStreakThreshold`
-        /// consecutive matched frames — resolves through the same visible
-        /// failure path as `.consistentlyWrongFace`.
+        /// A deny cue fired — glare or a device rectangle — so this
+        /// presentation is being actively rejected as a spoof, regardless
+        /// of whether it matched. Resolves through the same visible failure
+        /// path as `.consistentlyWrongFace`.
         case spoofSuspected
         case noResolution
     }
 
     /// Runs until either a live match unlocks (`.matched`), the same face
     /// reads as confidently-not-a-match for `wrongFaceStreakThreshold`
-    /// consecutive frames (`.consistentlyWrongFace`), a matched face keeps
-    /// failing liveness for `spoofFrameStreakThreshold` consecutive frames
-    /// (`.spoofSuspected`), or `deadline` passes with none of the above
-    /// (`.noResolution`).
+    /// consecutive frames (`.consistentlyWrongFace`), a liveness deny cue
+    /// fires (`.spoofSuspected`), or `deadline` passes with none of the
+    /// above (`.noResolution`).
+    ///
+    /// Recognition and liveness run **concurrently**, and each latches when
+    /// it succeeds: whichever finishes first waits for the other rather
+    /// than restarting it, so the unlock fires the moment the second one
+    /// lands. Liveness never *fails* the scan by staying undecided — in
+    /// Heavy mode a face that never produces a confirm cue simply keeps
+    /// being scanned until `deadline`, which is the user's own
+    /// face-detection duration.
     ///
     /// `requireOverlayScanning` also bails early if the overlay's own
     /// timeout already collapsed the UI, so this loop never keeps running
@@ -501,9 +497,20 @@ final class FaceUnlockCoordinator {
     /// in the first place, so requiring it there would make this return
     /// `.noResolution` before ever looking at a frame.
     private func observeScanWindow(deadline: Date, requireOverlayScanning: Bool) async -> ScanOutcome {
-        let liveness = LivenessAnalyzer(threshold: GlanceSettings.shared.livenessThreshold)
+        let livenessEnabled = GlanceSettings.shared.livenessChecksEnabled
+        let liveness = LivenessAnalyzer()
+        liveness.modeProvider = { GlanceSettings.shared.livenessMode }
         var consecutiveWrongFaceFrames = 0
-        var spoofFrameStreak = 0
+
+        /// The two halves of the gate, latched independently. `readyMatch`
+        /// is cleared the moment a detected face *fails* to match, so a
+        /// latched match can't be handed to someone who steps in front of
+        /// the camera afterwards — the latch only survives frames that keep
+        /// agreeing, or frames with no face at all.
+        var readyMatch: ScoredIdentity?
+        /// Turning liveness off in Settings makes this half permanently
+        /// ready, which is exactly what that switch means.
+        var livenessConfirmed = !livenessEnabled
         /// Which face (by normalized bounding box) recognition locked onto
         /// last frame — passed back in so `selectDominantFace` stays on the
         /// same person across frames instead of re-picking independently
@@ -518,15 +525,15 @@ final class FaceUnlockCoordinator {
         /// a poll finding the same frame twice would feed the liveness
         /// window a spurious zero-motion sample, corrupting the very signal
         /// this exists to measure.
-        var lastProcessedFrame: CGImage?
+        var lastProcessedFrameID: UInt64?
 
         while Date() < deadline, !Task.isCancelled,
               !requireOverlayScanning || NotchOverlayController.shared.phase == .scanning {
             guard LockMonitor.isScreenActuallyLocked() else { return .noResolution }
 
-            guard let frame = camera.currentFrame, frame !== lastProcessedFrame else {
+            guard let frame = camera.currentFrame, frame.id != lastProcessedFrameID else {
                 // 20ms rather than the old 150ms: dense enough to keep the
-                // liveness window's ~1s sample count high (the whole point
+                // liveness window's ~2s sample count high (the whole point
                 // of raising the frame rate — see LivenessAnalyzer), short
                 // enough to notice a fresh camera frame (~33ms native
                 // cadence) with little added latency. The identity check
@@ -535,30 +542,43 @@ final class FaceUnlockCoordinator {
                 try? await Task.sleep(nanoseconds: 20_000_000)
                 continue
             }
-            lastProcessedFrame = frame
+            lastProcessedFrameID = frame.id
 
             let pipeline = self.pipeline
             let previousBoundingBox = lastFaceBoundingBox
             let outcome = await Task.detached(priority: .userInitiated) { () -> (FaceRecognitionResult, LivenessFrame)? in
-                guard let result = try? pipeline.recognize(in: frame, preferNear: previousBoundingBox) else { return nil }
-                return (result, LivenessFeatureExtractor.extract(from: result, frame: frame))
+                guard let result = try? pipeline.recognize(in: frame.image, preferNear: previousBoundingBox) else { return nil }
+                let faceCrop = CameraManager.renderCrop(from: frame, imageRect: result.face.boundingBox)
+                return (result, LivenessFeatureExtractor.extract(from: result, frame: frame.image, faceCrop: faceCrop))
             }.value
 
             guard let (result, livenessFrame) = outcome else {
                 consecutiveWrongFaceFrames = 0
-                spoofFrameStreak = 0
                 lastFaceBoundingBox = nil
                 try? await Task.sleep(nanoseconds: 20_000_000)
                 continue
             }
             lastFaceBoundingBox = result.face.normalizedBoundingBox
 
-            // Fed regardless of whether this frame matches anyone — unlike
-            // the old LivenessMonitor (only ever observed inside `if let
-            // matched`), liveness is now judged independently of match
-            // confidence, so a brief dip in similarity mid-scan (occlusion,
-            // odd lighting) doesn't leave gaps in its window.
-            let breakdown = liveness.observe(livenessFrame)
+            // Fed regardless of whether this frame matches anyone, so the
+            // window stays dense and liveness stays a genuinely independent
+            // gate rather than one starved by recognition's own confidence.
+            var confirmingCue: LivenessCue?
+            if livenessEnabled {
+                let snapshot = liveness.observe(livenessFrame)
+                switch snapshot.decision {
+                case .denied:
+                    // A deny cue overrides everything, including a match
+                    // and any confirmation that already happened.
+                    lastOutcome = snapshot.decision.denialReason
+                    return .spoofSuspected
+                case .confirmed(let cue):
+                    livenessConfirmed = true
+                    confirmingCue = cue
+                case .pending:
+                    break
+                }
+            }
 
             // `activeIdentities`, not `identities`: someone switched off on
             // the Your Face page stays enrolled but must not unlock the Mac.
@@ -567,33 +587,28 @@ final class FaceUnlockCoordinator {
 
             if let matched {
                 consecutiveWrongFaceFrames = 0
-                switch breakdown.verdict {
-                case .live:
-                    spoofFrameStreak = 0
-                    statusMessage = "Recognized — unlocking…"
-                    lastOutcome = "Matched \(matched.identity.name) at \(String(format: "%.3f", matched.centroidSimilarity)), live (\(Int(breakdown.overallScore * 100))%)."
-                    await pocController.injectStoredPassword(requireAuthoritativeLock: true)
-                    return .matched
-                case .notLive(let reason):
-                    lastOutcome = reason
-                    spoofFrameStreak += 1
-                    if spoofFrameStreak >= spoofFrameStreakThreshold {
-                        return .spoofSuspected
-                    }
-                case .insufficientData:
-                    break
-                }
+                readyMatch = matched
             } else {
                 // A face WAS detected and aligned (result != nil) but didn't
                 // match anyone above threshold — only escalate to "wrong
                 // face" once this recurs across several consecutive frames,
                 // so a single bad-angle read doesn't falsely show the
                 // failure animation for the right person.
-                spoofFrameStreak = 0
+                readyMatch = nil
                 consecutiveWrongFaceFrames += 1
                 if consecutiveWrongFaceFrames >= wrongFaceStreakThreshold {
                     return .consistentlyWrongFace
                 }
+            }
+
+            if let readyMatch, livenessConfirmed {
+                statusMessage = "Recognized — unlocking…"
+                let livenessNote = livenessEnabled
+                    ? (confirmingCue.map { "live via \($0.title)" } ?? "liveness clear")
+                    : "liveness off"
+                lastOutcome = "Matched \(readyMatch.identity.name) at \(String(format: "%.3f", readyMatch.centroidSimilarity)), \(livenessNote)."
+                await pocController.injectStoredPassword(requireAuthoritativeLock: true)
+                return .matched
             }
 
             try? await Task.sleep(nanoseconds: 20_000_000)
