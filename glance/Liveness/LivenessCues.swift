@@ -139,7 +139,7 @@ enum LivenessMode: String, CaseIterable, Identifiable, Sendable {
 /// persistent overlap is worth acting on. Retune from Face Lab, where every
 /// cue's live reading and frame count are shown directly.
 struct LivenessTuning: Equatable {
-    var glossLevel: Float = 0.15
+    var glossLevel: Float = 0.04
     var glossFrames: Int = 3
 
     /// 0.2, matching the explicit spec this cue was built to: "if device
@@ -148,7 +148,7 @@ struct LivenessTuning: Equatable {
     /// was already the one signal proven reliable in real-device testing
     /// before this redesign, so it doesn't need the same margin of safety
     /// the newer pixel cues do.
-    var deviceLevel: Float = 0.2
+    var deviceLevel: Float = 0.15
     var deviceFrames: Int = 3
 
     /// 0.25, not the 0.5 you might expect from "spikes up". The synthetic
