@@ -392,9 +392,11 @@ final class OnboardingController {
         EnrollmentPose(rawValue: currentPoseIndex)
     }
 
-    /// Copy shown under the camera during enrollment — pose guidance, or
-    /// a closer-up prompt when the face is too small in frame.
+    /// Copy shown under the camera during enrollment — pose guidance, a
+    /// closer-up prompt when the face is too small in frame, or the
+    /// completion line while the checkmark plays.
     var enrollmentInstruction: String {
+        if enrollmentComplete { return "Face captured" }
         if isTooFar { return "Bring your face closer" }
         return currentPose?.instruction ?? ""
     }
@@ -793,8 +795,6 @@ final class OnboardingController {
     /// `finish(password:)` produces.
     private func finishEnrollment() async {
         enrollmentComplete = true
-
-        guideVisible = false
         sweepWindow.dismiss()
         try? await Task.sleep(for: .seconds(OnboardingMetrics.guideOverlayFadeOut))
 

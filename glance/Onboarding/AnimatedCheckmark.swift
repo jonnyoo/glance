@@ -32,7 +32,9 @@ struct AnimatedCheckmark: View {
             .trim(from: 0, to: progress)
             .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
             .onAppear {
-                withAnimation(.easeOut(duration: OnboardingMetrics.checkmarkDrawDuration)) {
+                withAnimation(
+                    .timingCurve(0.65, 0.0, 0.35, 1.0, duration: OnboardingMetrics.checkmarkDrawDuration)
+                ) {
                     progress = 1
                 }
             }

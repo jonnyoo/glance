@@ -228,7 +228,7 @@ struct EnrollStepView: View {
             .id(controller.enrollmentInstruction)
             .transition(.opacity)
             .animation(.easeInOut(duration: 0.2), value: controller.enrollmentInstruction)
-            .opacity(controller.guideVisible && !controller.showCheckmark ? 1 : 0)
+            .opacity(controller.guideVisible ? 1 : 0)
             .animation(
                 .easeInOut(
                     duration: controller.guideVisible

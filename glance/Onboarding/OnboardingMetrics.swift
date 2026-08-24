@@ -169,6 +169,19 @@ enum OnboardingMetrics {
     static let tickLengthUnlit: CGFloat = 12
     static let tickLengthLit: CGFloat = 20
     static let tickWidth: CGFloat = 2.4
+    /// Stroke width of the solid ring the ticks merge into on completion.
+    /// Deliberately its own constant rather than reusing `tickLengthLit`
+    /// (the original approach) — that coupled the ring's thickness to the
+    /// individual tick length, so thinning the ring meant either shrinking
+    /// every lit tick too or fighting the frame math. `EnrollmentRingView`
+    /// keeps the ring's outer edge exactly where the lit ticks' outer tips
+    /// were (`diameter/2 + tickLengthLit`) regardless of this value, so it
+    /// can be tuned on its own.
+    static let completionRingWidth: CGFloat = 14
+    /// Width ticks expand to when they merge into the completion ring.
+    static var tickWidthComplete: CGFloat {
+        2 * .pi * (tickRingOuterDiameter / 2) / CGFloat(tickCount) * 1.2
+    }
     /// Per-tick stagger so a captured sector fills as a sweep rather than
     /// snapping all ten ticks at once.
     static let tickStagger: Double = 0.008
@@ -184,7 +197,7 @@ enum OnboardingMetrics {
     static let guideOverlayFadeOut: Double = 0.35
     static let previewFadeOut: Double = 0.4
     static let checkmarkDelay: Double = 0.2
-    static let checkmarkDrawDuration: Double = 0.5
+    static let checkmarkDrawDuration: Double = 0.28
     /// How long the checkmark holds after the nine poses before the panel
     /// moves on to the naming step.
     static let cameraCompleteToNameDelay: Double = 3.0
