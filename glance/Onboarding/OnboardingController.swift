@@ -129,6 +129,7 @@ final class OnboardingController {
     let camera = CameraManager()
     let pipeline = FaceRecognitionPipeline()
     private let store = FaceEnrollmentStore.shared
+    private let sweepWindow = EnrollmentSweepWindowController()
 
     private(set) var step: OnboardingStep = .intro
 
@@ -306,7 +307,7 @@ final class OnboardingController {
     /// too far for a reliable template. Floor is still the shared
     /// prominence width so a tighter Recognition setting can't be bypassed.
     private var enrollmentMinimumFaceWidth: Float {
-        max(FaceRecognitionPipeline.minimumProminentFaceWidth, 0.24)
+        max(FaceRecognitionPipeline.minimumProminentFaceWidth, 0.22)
     }
 
     // Pose-matching bands, in radians. Yaw's sign (left turn -> positive)
@@ -506,6 +507,7 @@ final class OnboardingController {
             // only step that owns it.
             resetEnrollmentState()
             camera.stop()
+            sweepWindow.dismiss()
             withAnimation(OnboardingMetrics.stepAnimation) { step = .preSetup }
         case .password:
             // Back to naming, deliberately *without* resetting: the
@@ -562,14 +564,16 @@ final class OnboardingController {
         poseStartedAt = .now
         captureReadyAt = .now + initialCaptureDelay
         poseHoldStartedAt = nil
+        sweepWindow.present(for: self)
         Task { await camera.start() }
     }
 
-    /// Tears down everything onboarding spun up: camera and permissions
-    /// polling. Idempotent.
+    /// Tears down everything onboarding spun up: camera, sweep overlay,
+    /// and permissions polling. Idempotent.
     func teardown() {
         stopPermissionsPolling()
         camera.stop()
+        sweepWindow.dismiss()
     }
 
     // MARK: - Permissions
@@ -791,6 +795,7 @@ final class OnboardingController {
         enrollmentComplete = true
 
         guideVisible = false
+        sweepWindow.dismiss()
         try? await Task.sleep(for: .seconds(OnboardingMetrics.guideOverlayFadeOut))
 
         cameraPreviewVisible = false

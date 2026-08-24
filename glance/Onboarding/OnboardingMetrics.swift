@@ -206,6 +206,21 @@ enum OnboardingMetrics {
     static let enrollTooFarChevronSize: CGFloat = 32
     static let enrollInstructionFadeIn: Double = 0.3
     static let enrollInstructionFadeOut: Double = 0.35
+
+    // MARK: - Enrollment direction sweep
+
+    /// Pause between the last streak of a cycle finishing and the next
+    /// cycle starting, so the motion reads as a repeated cue rather than
+    /// a continuous wash of light.
+    static let sweepLoopGap: Double = 1
+    /// Caps the stacked streak opacities so the camera preview stays
+    /// visually dominant even when several ribbons overlap.
+    static let sweepMasterOpacity: Double = 0.6
+    static let sweepFadeIn: Double = 0.5
+    static let sweepFadeOut: Double = 0.35
+    static let sweepDirectionCrossfade: Double = 0.25
+    /// Beat of stillness after a pose change before the next sweep plays.
+    static let sweepPoseDelay: Double = 0.36
 }
 
 extension View {
