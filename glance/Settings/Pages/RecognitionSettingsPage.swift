@@ -87,6 +87,7 @@ struct RecognitionSettingsPage: View {
                 SettingsGroup {
                     SettingsRowContent(
                         title: "Liveness detection",
+                        info: "Checks that you're a live person, not a photo. May increase unlock time."
                     ) {
                         GlanceToggle(isOn: $settings.livenessChecksEnabled)
                     }

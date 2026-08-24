@@ -113,20 +113,20 @@ struct SettingsInfoButton: View {
 
     var body: some View {
         Button {
-            isPresented = true
+            isPresented.toggle()
         } label: {
-            Image(systemName: "info.circle")
+            Image(systemName: "info.circle.fill")
                 .font(.system(size: 12, weight: .regular))
                 .foregroundStyle(SettingsMetrics.textTertiary)
         }
         .buttonStyle(.plain)
-        // `.top`: the arrow attaches to the button's top edge, so the
-        // bubble itself opens upward — matching the reference screenshot
-        // this shipped with (bubble above, arrow pointing down at the
-        // glyph) rather than AppKit's default of opening downward.
-        .popover(isPresented: $isPresented, arrowEdge: .top) {
+        .accessibilityLabel("More information")
+        // Arrow on the popover's bottom edge so the bubble sits above the
+        // glyph, pointing down at it. AppKit may flip if there's no room.
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             Text(text)
                 .font(.system(size: 12))
+                .foregroundStyle(SettingsMetrics.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(width: 220, alignment: .leading)
                 .padding(12)
