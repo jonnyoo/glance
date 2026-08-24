@@ -99,16 +99,55 @@ struct SettingsTabIconBadge: View {
     }
 }
 
+/// Small "i" glyph that reveals a short explanation in a native popover on
+/// tap — the same pattern as macOS's own inline info buttons (e.g. Control
+/// Center's per-item tooltips). Deliberately just a `Button` + `.popover`:
+/// AppKit already draws the floating bubble, arrow, and vibrant background
+/// for free, so there's no chrome to reinvent here — only the trigger glyph
+/// and the text inside it are this view's job. Drop it next to any row's
+/// title (see `SettingsRowContent.info`) or standalone anywhere else a
+/// setting needs a one-line explanation.
+struct SettingsInfoButton: View {
+    let text: String
+    @State private var isPresented = false
+
+    var body: some View {
+        Button {
+            isPresented = true
+        } label: {
+            Image(systemName: "info.circle")
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(SettingsMetrics.textTertiary)
+        }
+        .buttonStyle(.plain)
+        // `.top`: the arrow attaches to the button's top edge, so the
+        // bubble itself opens upward — matching the reference screenshot
+        // this shipped with (bubble above, arrow pointing down at the
+        // glyph) rather than AppKit's default of opening downward.
+        .popover(isPresented: $isPresented, arrowEdge: .top) {
+            Text(text)
+                .font(.system(size: 12))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 220, alignment: .leading)
+                .padding(12)
+        }
+    }
+}
+
 /// One settings row: label (+ optional subtitle) on the leading edge,
 /// arbitrary trailing control. Matches the pill-shaped rows in the Figma
 /// design (430x50, radius 17, translucent fill + hairline border).
 struct SettingsRow<Trailing: View>: View {
     let title: String
     var subtitle: String? = nil
+    /// Explanatory text for an inline `SettingsInfoButton` next to the
+    /// title — `nil` (the default) renders no icon, so this is opt-in per
+    /// row rather than a change every existing call site needs to notice.
+    var info: String? = nil
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
-        SettingsRowContent(title: title, subtitle: subtitle, trailing: trailing)
+        SettingsRowContent(title: title, subtitle: subtitle, info: info, trailing: trailing)
             .background(SettingsMetrics.rowColor)
             .overlay(
                 RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius)
@@ -122,14 +161,22 @@ struct SettingsRow<Trailing: View>: View {
 struct SettingsRowContent<Trailing: View>: View {
     let title: String
     var subtitle: String? = nil
+    /// Explanatory text for an inline `SettingsInfoButton` next to the
+    /// title — `nil` (the default) renders no icon.
+    var info: String? = nil
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(SettingsMetrics.rowFont)
-                    .foregroundStyle(SettingsMetrics.textPrimary)
+                HStack(spacing: 5) {
+                    Text(title)
+                        .font(SettingsMetrics.rowFont)
+                        .foregroundStyle(SettingsMetrics.textPrimary)
+                    if let info {
+                        SettingsInfoButton(text: info)
+                    }
+                }
                 if let subtitle {
                     Text(subtitle)
                         .font(.system(size: 11))
@@ -675,8 +722,8 @@ struct LivenessModePicker: View {
     /// a checked one for Heavy (it also demands positive proof of life).
     private func iconName(for mode: LivenessMode) -> String {
         switch mode {
-        case .light: return "shield.lefthalf.filled"
-        case .heavy: return "checkmark.shield.fill"
+        case .light: return "sun.min.fill"
+        case .heavy: return "sun.max.fill"
         }
     }
 }

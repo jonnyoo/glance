@@ -86,7 +86,7 @@ struct RecognitionSettingsPage: View {
                 SettingsSectionTitle(text: "Liveness")
                 SettingsGroup {
                     SettingsRowContent(
-                        title: "Liveness checks",
+                        title: "Liveness detection",
                     ) {
                         GlanceToggle(isOn: $settings.livenessChecksEnabled)
                     }

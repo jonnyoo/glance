@@ -142,8 +142,14 @@ struct LivenessTuning: Equatable {
     var glossLevel: Float = 0.15
     var glossFrames: Int = 3
 
-    var deviceLevel: Float = 0.3
-    var deviceFrames: Int = 5
+    /// 0.2, matching the explicit spec this cue was built to: "if device
+    /// detector goes off even a bit (at least 20%) for a few frames, fail."
+    /// Deliberately much lower than `glossLevel` — `DeviceBezelDetector`
+    /// was already the one signal proven reliable in real-device testing
+    /// before this redesign, so it doesn't need the same margin of safety
+    /// the newer pixel cues do.
+    var deviceLevel: Float = 0.2
+    var deviceFrames: Int = 3
 
     /// 0.25, not the 0.5 you might expect from "spikes up". The synthetic
     /// self-test measures a clean 3D face at only ~0.21 once ~1px of
@@ -164,7 +170,7 @@ struct LivenessTuning: Equatable {
     /// itself as live. 0.8 corresponds to r >= 0.6: a genuinely positive
     /// relationship of the kind only a nose sitting off the eye plane
     /// produces.
-    var depthPoseLevel: Float = 0.4
+    var depthPoseLevel: Float = 0.8
     var depthPoseFrames: Int = 2
 
     /// A blink is already a discrete dip-and-recover event detected across
