@@ -178,6 +178,11 @@ enum OnboardingMetrics {
     /// were (`diameter/2 + tickLengthLit`) regardless of this value, so it
     /// can be tuned on its own.
     static let completionRingWidth: CGFloat = 14
+    /// How far inside the lit ticks' outer tips the completion ring's own
+    /// outer edge sits — without this it sits exactly on top of them
+    /// (`diameter/2 + tickLengthLit`), which reads as slightly too large
+    /// once the ticks vanish and only the ring is left.
+    static let completionRingRadiusInset: CGFloat = 8
     /// Width ticks expand to when they merge into the completion ring.
     static var tickWidthComplete: CGFloat {
         2 * .pi * (tickRingOuterDiameter / 2) / CGFloat(tickCount) * 1.2

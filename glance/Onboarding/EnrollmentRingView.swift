@@ -44,16 +44,16 @@ struct EnrollmentRingView: View {
                     )
             }
 
-            // Frame diameter is solved to keep the ring's outer edge fixed
-            // at `diameter/2 + tickLengthLit` — exactly where the lit
-            // ticks' outer tips sit — regardless of `completionRingWidth`,
-            // so a thinner ring still reads as "the ticks settled into
-            // this," not as a smaller circle floating inside them.
+            // Frame diameter is solved to put the ring's outer edge at
+            // `diameter/2 + tickLengthLit - completionRingRadiusInset` —
+            // just inside where the lit ticks' outer tips sit, rather than
+            // exactly on top of them, so the ring reads as a hair smaller
+            // once the ticks vanish and it's left on its own.
             Circle()
                 .stroke(GlanceTheme.accent, lineWidth: OnboardingMetrics.completionRingWidth)
                 .frame(
-                    width: diameter + 2 * OnboardingMetrics.tickLengthLit - OnboardingMetrics.completionRingWidth,
-                    height: diameter + 2 * OnboardingMetrics.tickLengthLit - OnboardingMetrics.completionRingWidth
+                    width: diameter + 2 * (OnboardingMetrics.tickLengthLit - OnboardingMetrics.completionRingRadiusInset) - OnboardingMetrics.completionRingWidth,
+                    height: diameter + 2 * (OnboardingMetrics.tickLengthLit - OnboardingMetrics.completionRingRadiusInset) - OnboardingMetrics.completionRingWidth
                 )
                 .opacity(isComplete ? 1 : 0)
                 .scaleEffect(isComplete ? 1 : 0.92)
