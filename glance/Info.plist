@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	Sparkle configuration. This file is a *base* Info.plist — Xcode still
+	generates the rest (CFBundleIdentifier, CFBundleShortVersionString,
+	NSCameraUsageDescription, etc. via GENERATE_INFOPLIST_FILE / the
+	INFOPLIST_KEY_* build settings) and merges these keys in on top. See
+	RELEASING.md for the full release process these keys are part of.
+	-->
+
+	<!-- Where Sparkle looks for the appcast feed. -->
+	<key>SUFeedURL</key>
+	<string>https://tryglance.app/appcast.xml</string>
+
+	<!--
+	EdDSA public key used to verify that a downloaded update was actually
+	signed by you, not tampered with in transit or on GitHub. Generate the
+	matching key pair with Sparkle's `generate_keys` tool (see
+	RELEASING.md step 1) — it prints the public key to paste here and
+	stores the private key in your login Keychain. Sparkle will refuse to
+	install ANY update until this is a real key: UpdaterController.start()
+	catches that failure and disables update-checking rather than
+	crashing, but nothing will actually update until this placeholder is
+	replaced.
+	-->
+	<key>SUPublicEDKey</key>
+    <string>o9uQmlzKzh7NZvFtVktVh/wqw4Ie6WshX8K8NFDweWY=</string>
+
+	<!-- Ask before installing, never install silently in the background. -->
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+
+	<!-- Not sandboxed (see glance.entitlements) — Sparkle's default direct
+	     install path works with no XPC installer service needed. -->
+	<key>SUEnableInstallerLauncherService</key>
+	<false/>
+</dict>
+</plist>

@@ -122,7 +122,6 @@ final class GlanceSettings {
         static let hapticFeedbackEnabled = "GlanceSettings.hapticFeedbackEnabled"
         static let preferredDisplayID = "GlanceSettings.preferredDisplayID"
         static let preferredDisplayName = "GlanceSettings.preferredDisplayName"
-        static let autoCheckForUpdates = "GlanceSettings.autoCheckForUpdates"
         static let autoLockIntervalDays = "GlanceSettings.autoLockIntervalDays"
         static let defaultCameraID = "GlanceSettings.defaultCameraID"
         static let builtInDisplayCameraID = "GlanceSettings.builtInDisplayCameraID"
@@ -256,10 +255,6 @@ final class GlanceSettings {
     var preferredDisplayName: String? {
         didSet { defaults.set(preferredDisplayName, forKey: Key.preferredDisplayName) }
     }
-    /// UI-only for now — no update mechanism exists yet.
-    var autoCheckForUpdates: Bool {
-        didSet { defaults.set(autoCheckForUpdates, forKey: Key.autoCheckForUpdates) }
-    }
     /// Enforced by `SessionAutoLocker`, not here — this is only the stored
     /// preference.
     var autoLockInterval: AutoLockInterval {
@@ -333,7 +328,6 @@ final class GlanceSettings {
         preferredDisplayID = defaults.string(forKey: Key.preferredDisplayID)
         preferredDisplayName = defaults.string(forKey: Key.preferredDisplayName)
 
-        autoCheckForUpdates = defaults.object(forKey: Key.autoCheckForUpdates) as? Bool ?? true
         // Defaults to 7 days: long enough not to nag someone who uses face
         // unlock daily, short enough that an abandoned Mac doesn't keep a
         // usable session key in memory indefinitely.

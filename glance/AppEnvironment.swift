@@ -22,6 +22,11 @@ final class AppEnvironment {
     /// timer — letting it deallocate would silently stop enforcing the
     /// auto-lock interval.
     let sessionAutoLocker: SessionAutoLocker
+    /// Sparkle auto-update controller — see `Updater/UpdaterController.swift`
+    /// and RELEASING.md. Constructed here (not started) so the About page
+    /// and `AppDelegate` share the exact same instance; `AppDelegate.
+    /// applicationDidFinishLaunching` calls `updater.start()` once.
+    let updater = UpdaterController()
 
     init() {
         faceUnlockCoordinator = FaceUnlockCoordinator(pocController: pocController)

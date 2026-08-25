@@ -131,6 +131,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self, selector: #selector(windowWillClose(_:)),
             name: NSWindow.willCloseNotification, object: nil
         )
+
+        // Safe to call with the placeholder `SUPublicEDKey` still in
+        // Info.plist — see `UpdaterController.start()`'s doc comment.
+        environment.updater.start()
     }
 
     /// Hides the Dock icon once the Settings window closes and no other
@@ -138,9 +142,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// `canBecomeMain` windows count: this app can spawn other AppKit
     /// windows behind the scenes (e.g. the lock-screen notch overlay),
     /// which must never trigger this or the Dock icon would vanish while
-    /// an unlock scan is actually in progress.
+    /// an unlock scan is actually in progress. Sparkle's update windows are
+    /// also `canBecomeMain`, so this additionally backs off while one is
+    /// showing — otherwise closing Settings mid-update would flip the Dock
+    /// icon off while Sparkle's own window is still on screen.
     @objc private func windowWillClose(_ notification: Notification) {
         guard let closingWindow = notification.object as? NSWindow, closingWindow.canBecomeMain else { return }
+        guard !environment.updater.isPresentingUpdateUI else { return }
         let stillOpen = NSApp.windows.contains { $0 !== closingWindow && $0.canBecomeMain && $0.isVisible }
         guard !stillOpen else { return }
         NSApp.setActivationPolicy(.accessory)

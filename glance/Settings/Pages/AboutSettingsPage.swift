@@ -7,7 +7,7 @@ import SwiftUI
 import AppKit
 
 struct AboutSettingsPage: View {
-    @Bindable private var settings = GlanceSettings.shared
+    @Bindable var updater: UpdaterController
 
     private var versionString: String {
         let info = Bundle.main.infoDictionary
@@ -44,13 +44,15 @@ struct AboutSettingsPage: View {
             SettingsActionRowContent(
                 title: "Check for Updates",
                 buttonTitle: "Check",
-                isEnabled: false
-            ) {}
+                isEnabled: updater.canCheckForUpdates
+            ) {
+                updater.checkForUpdates()
+            }
 
             SettingsGroupDivider()
 
             SettingsRowContent(title: "Automatically check for updates") {
-                GlanceToggle(isOn: $settings.autoCheckForUpdates)
+                GlanceToggle(isOn: $updater.automaticallyChecksForUpdates)
             }
 
             SettingsGroupDivider()
