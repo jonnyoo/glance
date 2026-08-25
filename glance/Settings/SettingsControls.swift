@@ -562,6 +562,10 @@ struct SettingsOptionTile<Preview: View>: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
+    /// Defaults to the standard swatch height every other option picker
+    /// uses; `UnlockAnimationPicker` passes a taller value so its artwork
+    /// has real room — see `SettingsMetrics.unlockAnimationPreviewHeight`.
+    var previewHeight: CGFloat = SettingsMetrics.optionPreviewHeight
     @ViewBuilder var preview: () -> Preview
 
     /// Tint for artwork drawn as plain shapes, so tiles that don't supply
@@ -577,7 +581,7 @@ struct SettingsOptionTile<Preview: View>: View {
             VStack(spacing: 8) {
                 preview()
                     .frame(maxWidth: .infinity)
-                    .frame(height: SettingsMetrics.optionPreviewHeight)
+                    .frame(height: previewHeight)
                     .background {
                         SettingsMetrics.optionPreviewFill
                         if isSelected {
@@ -653,13 +657,20 @@ struct UnlockAnimationPicker: View {
     @Binding var selection: UnlockAnimationStyle
     var isEnabled: Bool = true
 
+    /// How long the live preview holds on the success animation before
+    /// collapsing — matches Face Lab's own "Preview ✓" button
+    /// (`FaceLabView.swift`), the only other place that drives
+    /// `NotchOverlayController` one-shot for a demo rather than a real scan.
+    private static let previewHoldDuration: Duration = .seconds(1.5)
+
     var body: some View {
         SettingsOptionRow {
             ForEach(UnlockAnimationStyle.selectableCases) { style in
                 SettingsOptionTile(
                     title: style.title,
                     isSelected: selection == style,
-                    action: { selection = style }
+                    action: { selectAndPreview(style) },
+                    previewHeight: SettingsMetrics.unlockAnimationPreviewHeight
                 ) {
                     preview(for: style, isSelected: selection == style)
                 }
@@ -669,24 +680,83 @@ struct UnlockAnimationPicker: View {
         .opacity(isEnabled ? 1 : 0.4)
     }
 
-    /// Static silhouettes standing in for what each style actually does to
-    /// the notch/pill: `.minimal` only widens it into a capsule strip,
-    /// `.original` expands it into a full rounded panel.
+    /// Tapping a tile both picks it (even if it's already the current
+    /// selection — there's no reason a re-tap shouldn't also replay the
+    /// preview) and plays that style's real animation on the actual notch/
+    /// pill, via the same one-shot path Face Lab's preview buttons use.
+    /// `styleOverride` is what makes this show *the tapped* style rather
+    /// than whatever's currently saved — tapping "Original" while "Minimal"
+    /// is selected must preview Original, not silently no-op or show the
+    /// wrong one.
+    private func selectAndPreview(_ style: UnlockAnimationStyle) {
+        selection = style
+        NotchOverlayController.shared.present(styleOverride: style)
+        Task {
+            try? await Task.sleep(for: Self.previewHoldDuration)
+            NotchOverlayController.shared.finish(success: true)
+        }
+    }
+
+    /// Artificial standing for what each style actually looks like — a
+    /// black pill (minimal) or a black rounded panel (original), each
+    /// showing the real unlock animation's still poster frame, matching
+    /// the real notch/pill shapes closely enough to read as "this is what
+    /// it'll look like" rather than an abstract swatch.
     @ViewBuilder
     private func preview(for style: UnlockAnimationStyle, isSelected: Bool) -> some View {
-        let tint = SettingsOptionTile<EmptyView>.previewTint(isSelected: isSelected)
         switch style {
         case .minimal:
-            Capsule(style: .continuous)
-                .fill(tint)
-                .frame(width: 46, height: 13)
+            // Inset from the tile's own edges on both sides — unlike the
+            // real minimal pill (which only widens a hardware notch's
+            // existing flanks or floats on an external display), there's no
+            // surrounding chrome here to imply "this is a small detached
+            // capsule," so the margin has to do that job instead.
+            HStack(spacing: 10) {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                Spacer(minLength: 8)
+                UnlockStillThumbnail()
+                    .frame(width: 24, height: 24)
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 38)
+            .background(Color.black, in: Capsule(style: .continuous))
+            .padding(.horizontal, 16)
         case .original:
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(tint)
-                .frame(width: 38, height: 30)
+            // Fills the tile edge-to-edge, no inset — the real original
+            // style expands to fill the whole panel, so its preview should
+            // read as "the whole shape," not an object floating inside it.
+            VStack {
+            UnlockStillThumbnail()
+                .padding(14)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            // .padding(4)
+            .background(Color.black, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .frame(width: 85, height: 85)
         case .none:
             // Not offered as a tile — `showUnlockAnimation` covers it.
             EmptyView()
+        }
+    }
+}
+
+/// The unlock animation's still poster frame (`unlockstatic.png` — the same
+/// asset `ScanAnimationView` shows at rest before any video starts) as a
+/// plain SwiftUI `Image`, for the Animation section's static previews.
+/// Deliberately not `ScanAnimationView` itself: that's an `AVPlayer`-backed
+/// `NSViewRepresentable` built to *play* the unlock/failure videos, which
+/// these previews never do — they only ever want the one still frame.
+private struct UnlockStillThumbnail: View {
+    var body: some View {
+        if let url = Bundle.main.url(forResource: "unlockstatic", withExtension: "png"),
+           let nsImage = NSImage(contentsOf: url) {
+            Image(nsImage: nsImage)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        } else {
+            Color.clear
         }
     }
 }

@@ -276,13 +276,20 @@ final class NotchOverlayController {
     /// Shows the overlay in its scanning state. Safe to call again while
     /// already visible. `onRetry` runs if the attempt fails and the user
     /// hovers the overlay; pass nil to just collapse on hover instead.
-    func present(onRetry: (() -> Void)? = nil) {
+    ///
+    /// - Parameter styleOverride: forces a specific `.minimal`/`.original`
+    ///   rendering regardless of the user's actual saved preference — used
+    ///   by the Animation section's live preview (tapping "Original" shows
+    ///   the original layout even if "Minimal" is what's actually selected).
+    ///   `nil` (every other caller) keeps the normal behavior of reading
+    ///   `GlanceSettings.shared.effectiveUnlockAnimationStyle`.
+    func present(styleOverride: UnlockAnimationStyle? = nil, onRetry: (() -> Void)? = nil) {
         isArmed = false
         onActivate = onRetry
         resolveTask?.cancel(); resolveTask = nil
         scanTimeoutTask?.cancel(); scanTimeoutTask = nil
         geometry = windowController.currentGeometry
-        activeUnlockStyle = GlanceSettings.shared.effectiveUnlockAnimationStyle
+        activeUnlockStyle = styleOverride ?? GlanceSettings.shared.effectiveUnlockAnimationStyle
         primeWindowIfNeeded { [weak self] in
             guard let self else { return }
             content = .scan(.idle)

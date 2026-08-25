@@ -174,6 +174,11 @@ enum SettingsMetrics {
     /// Taller card used by multi-option pickers (e.g. Unlock Animation).
     static let optionCardVerticalPadding: CGFloat = 14
     static let optionPreviewHeight: CGFloat = 58
+    /// Taller variant for `UnlockAnimationPicker` specifically — the
+    /// minimal/original artwork needs real room to read as an actual pill/
+    /// panel shape with a lock icon and a still frame inside it, not just a
+    /// small silhouette swatch like the other option pickers use.
+    static let unlockAnimationPreviewHeight: CGFloat = 108
     static let optionPreviewCornerRadius: CGFloat = 13
     static let optionPreviewFill = adaptiveColor(
         dark: NSColor(white: 1, alpha: 0.05),
