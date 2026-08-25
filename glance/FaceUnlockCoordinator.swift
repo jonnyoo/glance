@@ -61,7 +61,6 @@ final class FaceUnlockCoordinator {
     var matchThreshold: Float {
         didSet { GlanceSettings.shared.matchThreshold = matchThreshold }
     }
-    private let minMargin: Float = 0.05
     /// Each scan cycle runs for this long looking for either a confident
     /// live match or a consistently-wrong face before giving up quietly.
     /// Both this and NotchOverlayController's own scanning timeout read the
@@ -581,7 +580,7 @@ final class FaceUnlockCoordinator {
             // `activeIdentities`, not `identities`: someone switched off on
             // the Your Face page stays enrolled but must not unlock the Mac.
             let scored = pipeline.score(result.embedding, against: FaceEnrollmentStore.shared.activeIdentities)
-            let matched = pipeline.bestMatch(in: scored, threshold: matchThreshold, minMargin: minMargin)
+            let matched = pipeline.bestMatch(in: scored, threshold: matchThreshold)
 
             if let matched {
                 consecutiveWrongFaceFrames = 0

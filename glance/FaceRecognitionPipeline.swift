@@ -195,8 +195,8 @@ extension FaceRecognitionPipeline {
     /// Compares `embedding` against every enrolled identity, sorted by
     /// centroid similarity descending. Includes stale identities (samples
     /// from a different embedder) — callers decide how to surface that;
-    /// `bestMatch(in:threshold:minMargin:)` below excludes them from
-    /// actually matching.
+    /// `bestMatch(in:threshold:)` below excludes them from actually
+    /// matching.
     nonisolated func score(_ embedding: [Float], against identities: [FaceIdentity]) -> [ScoredIdentity] {
         identities.compactMap { identity in
             guard let template = identity.template, !identity.samples.isEmpty else { return nil }
@@ -209,18 +209,30 @@ extension FaceRecognitionPipeline {
     }
 
     /// The shared match decision, applied to an already-sorted `score(...)`
-    /// result: not stale, both centroid and max-sample similarity clear
-    /// `threshold`, and — once more than one identity is enrolled — a
-    /// `minMargin` lead over the runner-up. Both the Face Lab debug UI and
-    /// `FaceUnlockCoordinator` call this same function rather than each
-    /// having their own copy of the logic — tuning one without the other
-    /// would be a real risk for a security-sensitive comparison.
-    nonisolated func bestMatch(in scored: [ScoredIdentity], threshold: Float, minMargin: Float = 0.05) -> ScoredIdentity? {
+    /// result: not stale, and both centroid and max-sample similarity clear
+    /// `threshold`. Both the Face Lab debug UI and `FaceUnlockCoordinator`
+    /// call this same function rather than each having their own copy of
+    /// the logic — tuning one without the other would be a real risk for a
+    /// security-sensitive comparison.
+    ///
+    /// Deliberately no runner-up margin check: an earlier version required
+    /// the top score to beat the second-closest identity by 0.05, to guard
+    /// against two different enrolled people scoring close enough that
+    /// picking the higher one was a coin flip. Dropped because "identity"
+    /// here isn't necessarily "one distinct person" — the same person is
+    /// meant to be enrollable multiple times under different appearances
+    /// (glasses, lighting, hairstyle), and two such profiles legitimately
+    /// score close to each other on every future capture of that same
+    /// face. A margin built to catch ambiguity between different people
+    /// can't tell that apart from "these two profiles agree," and rejected
+    /// the second case unconditionally, forever — not a tunable threshold
+    /// problem. If cross-person ambiguity ever needs catching again, it
+    /// has to be identity-aware (e.g. only compare across different
+    /// `FaceIdentity.id`s that aren't themselves same-person aliases), not
+    /// a flat score gap.
+    nonisolated func bestMatch(in scored: [ScoredIdentity], threshold: Float) -> ScoredIdentity? {
         guard let first = scored.first, !first.identity.isStale(comparedTo: embedder) else { return nil }
         guard first.centroidSimilarity >= threshold, first.maxSampleSimilarity >= threshold else { return nil }
-        if scored.count > 1 {
-            guard first.centroidSimilarity - scored[1].centroidSimilarity >= minMargin else { return nil }
-        }
         return first
     }
 }

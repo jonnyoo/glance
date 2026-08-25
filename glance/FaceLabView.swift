@@ -462,8 +462,9 @@ struct FaceLabView: View {
     //
     // A prototype of what the "Your Face" settings tab will show once it
     // stops reading `identities.first`. Everything below the UI already
-    // supported several people: the store keeps an array, and
-    // `bestMatch`'s minMargin gate only engages past one identity.
+    // supported several people: the store keeps an array, and `bestMatch`
+    // scores every enrolled identity independently — including several
+    // profiles for the same person under different appearances.
 
     private var identitiesSection: some View {
         GroupBox("Identities") {

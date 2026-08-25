@@ -101,10 +101,6 @@ final class FaceLabController {
     /// this stays tunable regardless of which embedder is active — see the
     /// calibration harness for picking a value empirically.
     var threshold: Double = 0.6
-    /// Minimum lead the best match must have over the runner-up once more
-    /// than one identity is enrolled, so a close tie between two people
-    /// doesn't produce a confident-looking single "best match."
-    private let minMargin: Float = 0.05
 
     private(set) var recognitionResults: [RecognitionResult] = []
     private(set) var bestMatch: RecognitionResult?
@@ -313,7 +309,7 @@ final class FaceLabController {
             )
         }
 
-        let matched = pipeline.bestMatch(in: scored, threshold: Float(threshold), minMargin: minMargin)
+        let matched = pipeline.bestMatch(in: scored, threshold: Float(threshold))
         bestMatch = matched.map {
             RecognitionResult(name: $0.identity.name, centroidSimilarity: $0.centroidSimilarity, maxSampleSimilarity: $0.maxSampleSimilarity, isStale: false)
         }
