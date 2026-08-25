@@ -48,7 +48,11 @@ struct SettingsWindowView: View {
             SettingsMetrics.sidebarBackgroundColor
 
             HStack(spacing: 0) {
-                SettingsSidebar(selection: $selection, pocController: environment.pocController)
+                SettingsSidebar(
+                    selection: $selection,
+                    pocController: environment.pocController,
+                    isDebugSectionRevealed: environment.isDebugSectionRevealed
+                )
 
                 ZStack {
                     // Opaque underlay casts the panel drop shadow. Shadow on
@@ -204,7 +208,7 @@ struct SettingsWindowView: View {
                     pocController: environment.pocController
                 )
             case .about:
-                AboutSettingsPage(updater: environment.updater)
+                AboutSettingsPage(updater: environment.updater, environment: environment)
             case .debugFaceLab:
                 FaceLabView(controller: environment.faceLabController)
             }

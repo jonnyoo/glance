@@ -101,6 +101,12 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
     /// section (`nil`).
     static let sectionOrder: [SettingsSection?] = [nil, .authentication, .glance, .debug]
 
+    /// `sectionOrder`, minus `.debug` unless it's been unlocked this launch
+    /// — see `AppEnvironment.isDebugSectionRevealed`.
+    static func sectionOrder(includingDebug: Bool) -> [SettingsSection?] {
+        includingDebug ? sectionOrder : sectionOrder.filter { $0 != .debug }
+    }
+
     static func tabs(in section: SettingsSection?) -> [SettingsTab] {
         allCases.filter { $0.section == section }
     }

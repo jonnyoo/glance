@@ -12,6 +12,10 @@ import SwiftUI
 struct SettingsSidebar: View {
     @Binding var selection: SettingsTab
     @Bindable var pocController: POCController
+    /// Whether the Debug/Face Lab section should render at all — see
+    /// `AppEnvironment.isDebugSectionRevealed`. Hidden by default; this view
+    /// has no way to reveal it itself, only to reflect what's already true.
+    let isDebugSectionRevealed: Bool
 
     @State private var isUnlocking = false
 
@@ -29,7 +33,7 @@ struct SettingsSidebar: View {
             // non-scrolling sidebar, and the full tab list comfortably fits
             // the window height without one.
             VStack(alignment: .leading, spacing: SettingsMetrics.sidebarSectionSpacing) {
-                ForEach(SettingsTab.sectionOrder, id: \.self) { section in
+                ForEach(SettingsTab.sectionOrder(includingDebug: isDebugSectionRevealed), id: \.self) { section in
                     sectionGroup(section)
                 }
             }

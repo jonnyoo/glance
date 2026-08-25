@@ -8,6 +8,17 @@ import AppKit
 
 struct AboutSettingsPage: View {
     @Bindable var updater: UpdaterController
+    let environment: AppEnvironment
+
+    /// Secret-tap state for revealing the Debug/Face Lab sidebar section —
+    /// see `AppEnvironment.isDebugSectionRevealed`. `lastTapDate` is what
+    /// makes this "5 times *consecutively*" rather than "5 times ever": a
+    /// pause of more than a second resets the count, so absent-minded
+    /// clicking around the About page over time can't accidentally trip it.
+    @State private var iconTapCount = 0
+    @State private var lastTapDate: Date?
+    private let requiredTapCount = 5
+    private let tapResetInterval: TimeInterval = 1.0
 
     private var versionString: String {
         let info = Bundle.main.infoDictionary
@@ -28,6 +39,8 @@ struct AboutSettingsPage: View {
                 .frame(width: 80, height: 80)
                 .padding(.top, 16)
                 .padding(.bottom, 8)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: handleIconTap)
 
             Text("Glance")
                 .font(.system(size: 22, weight: .semibold))
@@ -67,5 +80,17 @@ struct AboutSettingsPage: View {
                 }
             }
         }
+    }
+
+    private func handleIconTap() {
+        let now = Date()
+        if let lastTapDate, now.timeIntervalSince(lastTapDate) > tapResetInterval {
+            iconTapCount = 0
+        }
+        lastTapDate = now
+        iconTapCount += 1
+        guard iconTapCount >= requiredTapCount else { return }
+        iconTapCount = 0
+        environment.isDebugSectionRevealed = true
     }
 }

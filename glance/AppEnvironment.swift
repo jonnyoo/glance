@@ -28,6 +28,14 @@ final class AppEnvironment {
     /// applicationDidFinishLaunching` calls `updater.start()` once.
     let updater = UpdaterController()
 
+    /// Debug/Face Lab sidebar section — hidden by default, revealed by
+    /// tapping the app icon on the About page 5 times in a row (see
+    /// `AboutSettingsPage`). Deliberately a plain in-memory `var`, never
+    /// backed by `UserDefaults`: `AppEnvironment` is constructed fresh every
+    /// launch, so this resets to `false` every time with no extra code —
+    /// exactly the "always hidden on relaunch" behavior asked for.
+    var isDebugSectionRevealed = false
+
     init() {
         faceUnlockCoordinator = FaceUnlockCoordinator(pocController: pocController)
         sessionAutoLocker = SessionAutoLocker(pocController: pocController)
