@@ -299,8 +299,14 @@ final class GlanceSettings {
     }
 
     private init() {
-        isFaceUnlockEnabled = defaults.object(forKey: Key.isFaceUnlockEnabled) as? Bool ?? false
-        matchThreshold = defaults.object(forKey: Key.matchThreshold) as? Float ?? 0.6
+        // Enabled out of the box — a fresh install has just finished
+        // enrolling a face and setting a password via onboarding
+        // specifically to use Face Unlock, so requiring an extra opt-in
+        // toggle afterward would be a dead end, not a safety rail.
+        isFaceUnlockEnabled = defaults.object(forKey: Key.isFaceUnlockEnabled) as? Bool ?? true
+        // Matches `MatchConfidenceLevel.standard` ("Default" on the
+        // Recognition page) — see RecognitionSettingsPage.swift.
+        matchThreshold = defaults.object(forKey: Key.matchThreshold) as? Float ?? 0.66
         livenessChecksEnabled = defaults.object(forKey: Key.livenessChecksEnabled) as? Bool ?? true
         // Light by default, deliberately. Heavy requires one of flat-vs-3D,
         // depth/pose, or a blink to actually fire before it will unlock —
@@ -310,7 +316,9 @@ final class GlanceSettings {
         // a phone screen) without ever blocking a legitimate scan.
         livenessMode = defaults.string(forKey: Key.livenessMode)
             .flatMap(LivenessMode.init(rawValue:)) ?? .light
-        minimumFaceWidth = defaults.object(forKey: Key.minimumFaceWidth) as? Float ?? 0.18
+        // Matches `DetectionDistanceLevel.standard` ("Default" on the
+        // Recognition page) — see RecognitionSettingsPage.swift.
+        minimumFaceWidth = defaults.object(forKey: Key.minimumFaceWidth) as? Float ?? 0.21
 
         // Resolve the stored style first, `.none` included, then split it
         // into the pick + the on/off flag the UI now works in.
@@ -331,9 +339,11 @@ final class GlanceSettings {
         showUnlockAnimation = defaults.object(forKey: Key.showUnlockAnimation) as? Bool
             ?? (storedStyle != .none)
 
-        // Every trigger on by default — that's what the app did before this
-        // was configurable (it armed on any lock-related signal), so an
-        // existing install sees no behavior change.
+        // On wake and on lock, not on space, by default. `.onSpace` needs
+        // the Input Monitoring permission (see `UnlockTrigger.onSpace`'s
+        // doc comment) — a fresh install shouldn't be asking for an extra
+        // TCC grant it hasn't earned yet, when the other two triggers
+        // already cover the normal "walk up to a locked Mac" case.
         let storedTriggers = (defaults.array(forKey: Key.unlockTriggers) as? [String])?
             .compactMap { raw -> UnlockTrigger? in
                 // "onActivity" was merged into "onWake" — an install that
@@ -344,7 +354,7 @@ final class GlanceSettings {
                 return UnlockTrigger(rawValue: raw)
             }
         unlockTriggers = storedTriggers.map(Set.init).flatMap { $0.isEmpty ? nil : $0 }
-            ?? Set(UnlockTrigger.allCases)
+            ?? [.onWake, .onLock]
         retryOnHover = defaults.object(forKey: Key.retryOnHover) as? Bool ?? true
         faceDetectionSeconds = (defaults.object(forKey: Key.faceDetectionSeconds) as? Int)
             .map { min(max($0, Self.faceDetectionRange.lowerBound), Self.faceDetectionRange.upperBound) }
