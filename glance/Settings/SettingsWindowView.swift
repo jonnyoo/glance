@@ -41,8 +41,27 @@ struct SettingsWindowView: View {
     let environment: AppEnvironment
     @State private var selection: SettingsTab = .general
     @State private var headerTrailingAction: HeaderAction?
+    @Environment(\.dismissWindow) private var dismissWindow
 
+    /// Defense-in-depth, not the primary gate: `AppDelegate
+    /// .presentOnboardingGate()` already closes this window before
+    /// onboarding starts and refuses to reopen it while onboarding is
+    /// active, on every entry point (launch, Dock reopen, menu bar
+    /// "Settings"). This is only here in case this content somehow renders
+    /// before that runs — SwiftUI's exact `Window`-scene-creation timing
+    /// relative to `applicationDidFinishLaunching` isn't itself guaranteed —
+    /// so a real user should never see this branch, only a blank frame for
+    /// at most a frame or two before `dismissWindow` closes it right back.
     var body: some View {
+        if GlanceSettings.shared.hasCompletedOnboarding {
+            settingsContent
+        } else {
+            Color.clear
+                .onAppear { dismissWindow(id: "settings") }
+        }
+    }
+
+    private var settingsContent: some View {
         ZStack {
             VisualEffectView()
             SettingsMetrics.sidebarBackgroundColor

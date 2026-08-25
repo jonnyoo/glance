@@ -19,7 +19,10 @@ import AVFoundation
 import AppKit
 import SwiftUI
 
-enum OnboardingStep: CaseIterable {
+/// `String`-backed (not just `CaseIterable`) so `GlanceSettings
+/// .onboardingResumeStep` can persist it directly by name — see that
+/// property's doc comment for why resume needs persistence at all.
+enum OnboardingStep: String, CaseIterable {
     case intro
     case permissions
     case preSetup
@@ -41,6 +44,24 @@ enum OnboardingStep: CaseIterable {
         switch self {
         case .permissions, .preSetup, .name, .password: return true
         case .intro, .enroll, .complete: return false
+        }
+    }
+
+    /// Where a first-run flow should resume if the app quit while on this
+    /// step — see `OnboardingController.step`'s `didSet`. `.enroll`,
+    /// `.name`, and `.password` all depend on in-memory state
+    /// (`collectedSamples`, captured poses) that a fresh launch doesn't
+    /// have, so all three collapse back to `.preSetup` — the last step
+    /// before anything camera/capture-related happens — rather than
+    /// resuming directly into a step whose prerequisites no longer exist.
+    /// This is also exactly why a user who quit mid-enrollment must never
+    /// be dropped straight back into the camera step: `.preSetup` is a
+    /// plain explainer screen with a "Next" button, not an automatic
+    /// camera prompt.
+    var resumeTarget: OnboardingStep {
+        switch self {
+        case .enroll, .name, .password: return .preSetup
+        case .intro, .permissions, .preSetup, .complete: return self
         }
     }
 }
@@ -131,7 +152,24 @@ final class OnboardingController {
     private let store = FaceEnrollmentStore.shared
     private let sweepWindow = EnrollmentSweepWindowController()
 
-    private(set) var step: OnboardingStep = .intro
+    /// Persists the resume point for a true first-run flow on every step
+    /// change (see `isFirstRunFlow` and `OnboardingStep.resumeTarget`) —
+    /// this is what lets `AppDelegate` drop a relaunched, mid-onboarding
+    /// user back where they left off instead of always restarting at
+    /// `.intro`. Settings-triggered flows (`isEnrollmentOnly`/
+    /// `isPasswordOnly`) never touch this: quitting mid-"change password"
+    /// must not make onboarding think it needs to resume there.
+    private(set) var step: OnboardingStep = .intro {
+        didSet {
+            guard isFirstRunFlow else { return }
+            if step == .complete {
+                GlanceSettings.shared.hasCompletedOnboarding = true
+                GlanceSettings.shared.onboardingResumeStep = nil
+            } else {
+                GlanceSettings.shared.onboardingResumeStep = step.resumeTarget
+            }
+        }
+    }
 
     /// True when this flow was started by `startEnrollmentOnly()` — shows
     /// only the guided pose-capture step (reusing `.enroll`, no new
@@ -143,6 +181,16 @@ final class OnboardingController {
     /// `isEnrollmentOnly`: jumps straight to `.password` and treats Back as
     /// "cancel" rather than stepping into a setup flow that isn't running.
     private let isPasswordOnly: Bool
+
+    /// True only for the genuine first-run flow — not a settings-triggered
+    /// re-enrollment, add-identity, recapture, or password-change. This is
+    /// what `step`'s `didSet` gates on: only this flow's progress is worth
+    /// persisting as a resume point, and only this flow reaching `.complete`
+    /// means *onboarding itself* is done. Also true when replayed manually
+    /// via Face Lab's "Start Onboarding" debug button — indistinguishable
+    /// from a real first run, which is fine: completing it either way means
+    /// the guided flow genuinely ran to the end.
+    private var isFirstRunFlow: Bool { !isEnrollmentOnly && !isPasswordOnly }
 
     /// Who this run is enrolling. Recapture is keyed by `id` rather than by
     /// name so the naming step can rename an identity in the same pass —
@@ -165,11 +213,26 @@ final class OnboardingController {
     /// pick the scroll direction for the blur transition.
     private(set) var navDirection: NavDirection = .forward
 
-    /// Entry point used by Face Lab's "Start Onboarding" button. Onboarding
-    /// has no window of its own — it's presented entirely inside the notch.
-    static func startFlow() {
+    /// Entry point used by Face Lab's "Start Onboarding" button, and by
+    /// `AppDelegate` both at first launch and whenever the user tries to
+    /// reach Settings before onboarding is done. Onboarding has no window
+    /// of its own — it's presented entirely inside the notch.
+    ///
+    /// - Parameter resumingAt: where a previously-quit first-run flow left
+    ///   off (`GlanceSettings.onboardingResumeStep`), or `nil` to start
+    ///   fresh at `.intro` — the default, so every existing zero-argument
+    ///   call site (Face Lab's debug button) is unaffected. `.permissions`
+    ///   is the one resumable step with a side effect (live polling) that
+    ///   jumping straight past `advance()` would otherwise skip.
+    static func startFlow(resumingAt step: OnboardingStep? = nil) {
         let controller = OnboardingController()
         controller.pendingName = defaultName
+        if let step, step != .intro {
+            controller.step = step
+            if step == .permissions {
+                controller.startPermissionsPolling()
+            }
+        }
         NotchOverlayController.shared.presentOnboarding(controller)
     }
 
@@ -944,6 +1007,16 @@ final class OnboardingController {
             guard let self else { return }
             self.teardown()
             NotchOverlayController.shared.dismissOnboarding()
+            // First-run onboarding never opened the Settings window (see
+            // AppDelegate.presentOnboardingGate) — it's the only thing that
+            // was keeping the Dock icon around, so restore the app's normal
+            // "menu bar only, no window open" state now that it's done.
+            // Guarded on no window actually being open, matching
+            // `AppDelegate.windowWillClose`'s own check, in case some other
+            // window legitimately opened during onboarding.
+            if self.isFirstRunFlow, !NSApp.windows.contains(where: { $0.canBecomeMain && $0.isVisible }) {
+                NSApp.setActivationPolicy(.accessory)
+            }
         }
     }
 }

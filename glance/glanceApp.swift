@@ -135,6 +135,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Safe to call with the placeholder `SUPublicEDKey` still in
         // Info.plist — see `UpdaterController.start()`'s doc comment.
         environment.updater.start()
+
+        if !GlanceSettings.shared.hasCompletedOnboarding {
+            presentOnboardingGate()
+        }
+    }
+
+    /// First-run gate: closes whatever the Settings `Window` scene
+    /// auto-opened — it has nothing to show pre-onboarding, since the
+    /// guided flow itself lives entirely in the notch, not this window
+    /// (see `OnboardingController`) — and presents/resumes onboarding.
+    /// Called once at launch if onboarding isn't done yet, and again from
+    /// `revealSettingsWindow()` if the user reaches for Settings through
+    /// the menu bar or Dock mid-onboarding.
+    private func presentOnboardingGate() {
+        for window in NSApp.windows where window.canBecomeMain {
+            window.close()
+        }
+        // Regular, not accessory: unlike a routine background launch, the
+        // user just double-clicked the app and should see it visibly doing
+        // something (Dock icon) rather than only a menu bar glyph.
+        // `OnboardingController.scheduleCompletionDismiss()` reverts this
+        // once the flow actually finishes.
+        NSApp.setActivationPolicy(.regular)
+        OnboardingController.startFlow(resumingAt: GlanceSettings.shared.onboardingResumeStep)
     }
 
     /// Hides the Dock icon once the Settings window closes and no other
@@ -145,10 +169,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// an unlock scan is actually in progress. Sparkle's update windows are
     /// also `canBecomeMain`, so this additionally backs off while one is
     /// showing — otherwise closing Settings mid-update would flip the Dock
-    /// icon off while Sparkle's own window is still on screen.
+    /// icon off while Sparkle's own window is still on screen. Same
+    /// reasoning for onboarding: `presentOnboardingGate()` closes the
+    /// Settings window on purpose to keep it from showing pre-onboarding,
+    /// and that close event must not immediately undo the `.regular`
+    /// policy it just set — `OnboardingController.scheduleCompletionDismiss()`
+    /// is what reverts it once the guided flow actually finishes.
     @objc private func windowWillClose(_ notification: Notification) {
         guard let closingWindow = notification.object as? NSWindow, closingWindow.canBecomeMain else { return }
         guard !environment.updater.isPresentingUpdateUI else { return }
+        guard NotchOverlayController.shared.phase != .onboarding else { return }
         let stillOpen = NSApp.windows.contains { $0 !== closingWindow && $0.canBecomeMain && $0.isVisible }
         guard !stillOpen else { return }
         NSApp.setActivationPolicy(.accessory)
@@ -215,6 +245,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// after the window is already key can leave the Dock icon out of sync
     /// with an already-frontmost app, so the policy change goes first.
     private func revealSettingsWindow() {
+        guard GlanceSettings.shared.hasCompletedOnboarding else {
+            // Re-present rather than unconditionally restart: if onboarding
+            // is already up (the common case — this fires when the user
+            // clicks the menu bar's "Settings" item while mid-flow), a
+            // fresh `startFlow()` here would throw away whatever step
+            // they've already navigated to in the *current* session, since
+            // it only knows about the last step written to disk.
+            if NotchOverlayController.shared.phase != .onboarding {
+                presentOnboardingGate()
+            }
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
         NSApp.setActivationPolicy(.regular)
         if let openSettingsWindowAction {
             openSettingsWindowAction()

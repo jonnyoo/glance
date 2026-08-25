@@ -126,6 +126,8 @@ final class GlanceSettings {
         static let defaultCameraID = "GlanceSettings.defaultCameraID"
         static let builtInDisplayCameraID = "GlanceSettings.builtInDisplayCameraID"
         static let externalDisplayCameraID = "GlanceSettings.externalDisplayCameraID"
+        static let hasCompletedOnboarding = "GlanceSettings.hasCompletedOnboarding"
+        static let onboardingResumeStep = "GlanceSettings.onboardingResumeStep"
     }
 
     @ObservationIgnored private let defaults = UserDefaults.standard
@@ -272,6 +274,30 @@ final class GlanceSettings {
         didSet { defaults.set(externalDisplayCameraID, forKey: Key.externalDisplayCameraID) }
     }
 
+    /// Gates first-run onboarding — `AppDelegate` presents the guided flow
+    /// instead of the Settings window until this is `true`. Set exactly
+    /// once, by `OnboardingController` itself when the true first-run flow
+    /// (not a settings-triggered re-enrollment/password-change flow) reaches
+    /// `.complete`. Never reset by anything in the app — plain
+    /// `UserDefaults`, so `defaults delete com.jonathan.glance` (along with
+    /// clearing the Keychain items and `~/Library/Application Support/glance`)
+    /// is how to force onboarding to run again during development.
+    var hasCompletedOnboarding: Bool {
+        didSet { defaults.set(hasCompletedOnboarding, forKey: Key.hasCompletedOnboarding) }
+    }
+    /// Where to resume first-run onboarding if the app quit mid-flow —
+    /// `nil` once onboarding is complete, or if it hasn't been started yet
+    /// this install (both cases resolve to starting fresh at `.intro`).
+    /// Written by `OnboardingController.step`'s `didSet`, which also
+    /// collapses `.enroll`/`.name`/`.password` down to `.preSetup` before
+    /// storing — those three depend on in-memory capture state
+    /// (`collectedSamples`) that doesn't survive a relaunch, so resuming
+    /// directly into any of them would either show a broken step or, worse,
+    /// silently skip enrollment. See `OnboardingStep.resumeTarget`.
+    var onboardingResumeStep: OnboardingStep? {
+        didSet { defaults.set(onboardingResumeStep?.rawValue, forKey: Key.onboardingResumeStep) }
+    }
+
     private init() {
         isFaceUnlockEnabled = defaults.object(forKey: Key.isFaceUnlockEnabled) as? Bool ?? false
         matchThreshold = defaults.object(forKey: Key.matchThreshold) as? Float ?? 0.6
@@ -336,6 +362,10 @@ final class GlanceSettings {
         defaultCameraID = defaults.string(forKey: Key.defaultCameraID)
         builtInDisplayCameraID = defaults.string(forKey: Key.builtInDisplayCameraID)
         externalDisplayCameraID = defaults.string(forKey: Key.externalDisplayCameraID)
+
+        hasCompletedOnboarding = defaults.object(forKey: Key.hasCompletedOnboarding) as? Bool ?? false
+        onboardingResumeStep = defaults.string(forKey: Key.onboardingResumeStep)
+            .flatMap(OnboardingStep.init(rawValue:))
 
         // Push the persisted value into the nonisolated mirror immediately —
         // otherwise FaceRecognitionPipeline would keep using its own 0.18
