@@ -192,6 +192,27 @@ final class OnboardingController {
     /// the guided flow genuinely ran to the end.
     private var isFirstRunFlow: Bool { !isEnrollmentOnly && !isPasswordOnly }
 
+    /// Whether the intro screen's one-time top-to-bottom light sweep has
+    /// already played this session. Lives here, not as `@State` on
+    /// `IntroStepView`, because that view is torn down and recreated every
+    /// time step navigation leaves `.intro` and returns (Permissions' Back
+    /// button lands here) — the controller is what actually persists for
+    /// the whole session, so it's the only place a "played once" flag
+    /// survives that round trip. Resets naturally on every new flow
+    /// (relaunch, or replaying via Face Lab's "Start Onboarding"), since
+    /// each of those constructs a fresh `OnboardingController`.
+    private var hasPlayedIntroSweep = false
+
+    /// Plays the intro screen's one-time top-to-bottom light sweep,
+    /// full-screen the same way guided enrollment's sweep is — not confined
+    /// to this small notch panel — via the same `sweepWindow` enrollment
+    /// already uses. No-op after the first call this session.
+    func playIntroSweepIfNeeded() {
+        guard !hasPlayedIntroSweep else { return }
+        hasPlayedIntroSweep = true
+        sweepWindow.presentOnce(direction: .down)
+    }
+
     /// Who this run is enrolling. Recapture is keyed by `id` rather than by
     /// name so the naming step can rename an identity in the same pass —
     /// matching by name would either lose the rename or orphan the old

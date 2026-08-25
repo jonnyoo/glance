@@ -42,13 +42,55 @@ final class EnrollmentSweepWindowController {
         host.isPresented = true
 
         let hostingView = NSHostingView(rootView: EnrollmentSweepOverlay(host: host))
-        // Empty SwiftUI roots report a zero intrinsic size. If the hosting
-        // view is allowed to size to that, the window collapses and the
-        // sweep is composited into nothing. Drive size from the panel
-        // instead.
         hostingView.sizingOptions = []
         hostingView.frame = NSRect(origin: .zero, size: screen.frame.size)
 
+        let window = makePanel(on: screen, contentView: hostingView)
+        window.orderFrontRegardless()
+
+        self.host = host
+        self.window = window
+    }
+
+    /// One-shot variant for the intro screen's single top-to-bottom
+    /// flourish — unlike `present(for:)`, this isn't pose-driven or
+    /// continuous (no `Host`, nothing tracking `currentPose`/`guideVisible`):
+    /// it shows exactly one direction once, then tears itself down on a
+    /// timer sized to the sweep's own animation length, with no external
+    /// `dismiss()` call needed. Still the same full-screen panel as guided
+    /// enrollment, not confined to the small notch content — that's the
+    /// whole point of using this window controller instead of a plain
+    /// SwiftUI overlay inside the step view.
+    func presentOnce(direction: EnrollmentSweepDirection) {
+        dismissTask?.cancel()
+        dismissTask = nil
+        tearDownWindow()
+
+        guard let screen = NotchGeometry.preferredScreen() else { return }
+
+        let hostingView = NSHostingView(rootView: EnrollmentDirectionSweep(direction: direction))
+        hostingView.sizingOptions = []
+        hostingView.frame = NSRect(origin: .zero, size: screen.frame.size)
+
+        let window = makePanel(on: screen, contentView: hostingView)
+        window.orderFrontRegardless()
+        self.window = window
+
+        dismissTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(OnboardingMetrics.introSweepAutoDismissDelay))
+            guard let self, !Task.isCancelled else { return }
+            self.tearDownWindow()
+            self.dismissTask = nil
+        }
+    }
+
+    /// Shared panel setup between `present(for:)` and `presentOnce(direction:)`
+    /// — everything except what's actually hosted inside it. Both callers
+    /// set `sizingOptions = []` and an explicit `frame` on their hosting
+    /// view before calling this: empty/near-empty SwiftUI roots report a
+    /// zero intrinsic size, and a hosting view left to size to that
+    /// collapses the window, compositing the sweep into nothing.
+    private func makePanel(on screen: NSScreen, contentView: NSView) -> NSPanel {
         let window = NSPanel(
             contentRect: screen.frame,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -66,12 +108,9 @@ final class EnrollmentSweepWindowController {
         // always reads on top of the sweep, with no masking needed.
         window.level = .mainMenu + 2
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
-        window.contentView = hostingView
+        window.contentView = contentView
         window.setFrame(screen.frame, display: true)
-        window.orderFrontRegardless()
-
-        self.host = host
-        self.window = window
+        return window
     }
 
     func dismiss() {

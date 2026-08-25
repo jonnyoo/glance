@@ -42,6 +42,12 @@ struct IntroStepView: View {
         .onboardingContentPadding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(GlanceTheme.panel)
+        .onAppear {
+            // Full-screen, like the enrollment step's guidance sweep — not
+            // confined to this small notch panel. See
+            // `EnrollmentSweepWindowController.presentOnce(direction:)`.
+            controller.playIntroSweepIfNeeded()
+        }
     }
 }
 

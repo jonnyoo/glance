@@ -239,6 +239,14 @@ enum OnboardingMetrics {
     static let sweepDirectionCrossfade: Double = 0.25
     /// Beat of stillness after a pose change before the next sweep plays.
     static let sweepPoseDelay: Double = 0.36
+
+    /// How long `EnrollmentSweepWindowController.presentOnce(direction:)`
+    /// waits before tearing its window down. Sized to the slowest streak in
+    /// `EnrollmentDirectionSweep.makeSpecs()` (duration + delay, worst case
+    /// ~1.34s) plus a small buffer — long enough that no streak is cut off
+    /// mid-fade, short enough that the window doesn't linger once nothing
+    /// is left visible on screen.
+    static let introSweepAutoDismissDelay: Double = 1.6
 }
 
 extension View {
