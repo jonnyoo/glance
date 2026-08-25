@@ -75,7 +75,7 @@ struct AboutSettingsPage: View {
                 buttonTitle: "Send"
             ) {
                 // TODO: point this at the real feedback destination once one exists.
-                if let url = URL(string: "https://glance.app/feedback") {
+                if let url = URL(string: "https://tryglance.app/feedback") {
                     NSWorkspace.shared.open(url)
                 }
             }
