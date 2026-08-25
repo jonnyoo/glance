@@ -165,11 +165,22 @@ final class OnboardingController {
             if step == .complete {
                 GlanceSettings.shared.hasCompletedOnboarding = true
                 GlanceSettings.shared.onboardingResumeStep = nil
+                onFirstRunComplete?()
             } else {
                 GlanceSettings.shared.onboardingResumeStep = step.resumeTarget
             }
         }
     }
+
+    /// Fires exactly once — the instant the true first-run flow reaches
+    /// `.complete` — so `AppDelegate` can start Sparkle right after
+    /// onboarding finishes rather than at launch, where it would show its
+    /// own "Check for updates automatically?" consent alert in the middle
+    /// of guided setup. Wired by `startFlow(resumingAt:onFirstRunComplete:)`;
+    /// `nil` for every other entry point (Face Lab's debug button included),
+    /// which is fine — by the time any of those are reachable, onboarding
+    /// has already completed once for real and this has already fired.
+    var onFirstRunComplete: (() -> Void)?
 
     /// True when this flow was started by `startEnrollmentOnly()` — shows
     /// only the guided pose-capture step (reusing `.enroll`, no new
@@ -245,9 +256,11 @@ final class OnboardingController {
     ///   call site (Face Lab's debug button) is unaffected. `.permissions`
     ///   is the one resumable step with a side effect (live polling) that
     ///   jumping straight past `advance()` would otherwise skip.
-    static func startFlow(resumingAt step: OnboardingStep? = nil) {
+    /// - Parameter onFirstRunComplete: see the property of the same name.
+    static func startFlow(resumingAt step: OnboardingStep? = nil, onFirstRunComplete: (() -> Void)? = nil) {
         let controller = OnboardingController()
         controller.pendingName = defaultName
+        controller.onFirstRunComplete = onFirstRunComplete
         if let step, step != .intro {
             controller.step = step
             if step == .permissions {

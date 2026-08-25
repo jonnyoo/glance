@@ -75,6 +75,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// own scene — can reliably re-create a closed `Window` scene.
     var openSettingsWindowAction: (() -> Void)?
 
+    /// Guards `environment.updater.start()` against running twice — it's
+    /// reachable from two places (see `startUpdaterIfNeeded()`'s call
+    /// sites) and Sparkle's own docs don't promise starting an already-
+    /// started `SPUUpdater` is a safe no-op.
+    private var hasStartedUpdater = false
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         // Custom mark (`Assets.xcassets/MenuBarIcon`), not an SF Symbol.
@@ -132,11 +138,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             name: NSWindow.willCloseNotification, object: nil
         )
 
-        // Safe to call with the placeholder `SUPublicEDKey` still in
-        // Info.plist — see `UpdaterController.start()`'s doc comment.
-        environment.updater.start()
-
-        if !GlanceSettings.shared.hasCompletedOnboarding {
+        // Deferred until onboarding is actually done — Sparkle's standard
+        // updater shows its own "Check for updates automatically?" consent
+        // alert the moment it starts, the very first time
+        // `SUEnableAutomaticChecks` has never been set, which is *always*
+        // true on a fresh install. Starting it unconditionally here used to
+        // pop that prompt in the middle of the guided setup flow, well
+        // before the user has even finished telling the app who they are.
+        if GlanceSettings.shared.hasCompletedOnboarding {
+            startUpdaterIfNeeded()
+        } else {
             presentOnboardingGate()
         }
     }
@@ -158,7 +169,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // `OnboardingController.scheduleCompletionDismiss()` reverts this
         // once the flow actually finishes.
         NSApp.setActivationPolicy(.regular)
-        OnboardingController.startFlow(resumingAt: GlanceSettings.shared.onboardingResumeStep)
+        OnboardingController.startFlow(
+            resumingAt: GlanceSettings.shared.onboardingResumeStep,
+            onFirstRunComplete: { [weak self] in self?.startUpdaterIfNeeded() }
+        )
+    }
+
+    /// Safe to call with the placeholder `SUPublicEDKey` still in
+    /// Info.plist — see `UpdaterController.start()`'s doc comment. Called
+    /// either right at launch (onboarding already done in a past session)
+    /// or from `OnboardingController`'s first-run completion callback —
+    /// `hasStartedUpdater` collapses those two paths into "exactly once."
+    private func startUpdaterIfNeeded() {
+        guard !hasStartedUpdater else { return }
+        hasStartedUpdater = true
+        environment.updater.start()
     }
 
     /// Hides the Dock icon once the Settings window closes and no other
