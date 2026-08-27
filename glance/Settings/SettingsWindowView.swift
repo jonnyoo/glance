@@ -152,6 +152,15 @@ struct SettingsWindowView: View {
         // same #347DFF as GlanceTheme. This only takes effect because the
         // window can become key; see WindowConfiguringView.configure.
         .tint(GlanceTheme.accent)
+        // `Window` (unlike `WindowGroup`) is a singleton scene — closing it
+        // only orders the NSWindow out, but SwiftUI keeps this view's
+        // `@State` alive in memory for whenever `openWindow(id:)` shows it
+        // again. Without this, `selection` silently remembers whatever tab
+        // was open when the window last closed, so reopening (Dock icon,
+        // menu bar "Settings", or the Sparkle-style "already have a window"
+        // resume) lands back where the user left off instead of on
+        // General, as requested.
+        .onDisappear { selection = .general }
     }
 
     /// The header floats over the scroll content in a `ZStack` (rather than
