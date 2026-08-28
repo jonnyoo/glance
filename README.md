@@ -163,27 +163,26 @@ tools/                           Model conversion, liveness self-test
 
 ## Building from source
 
-**Prerequisites:** macOS 15+ and Xcode 26+
+### Prerequisites
+- macOS 15+
+- Xcode 26+
 
-```bash
-git clone https://github.com/jonnyoo/glance.git
-open glance/glance.xcodeproj
-```
+### Installation
 
-Build the `glance` scheme. Sparkle resolves automatically via SPM, and the Core ML model is
-committed to the repo, so a fresh clone builds and runs as-is.
+1. Clone repository:
+   ```bash
+   git clone https://github.com/jonnyoo/glance.git
+   cd glance
+   ```
 
-To regenerate the model (e.g. to swap in a different ArcFace variant), see
-[`tools/README.md`](tools/README.md). If it's ever missing at runtime, the pipeline falls back to
-Vision's generic feature-print embedder and says so in the UI — that's a diagnostic path, not a
-supported mode.
+2. Open in Xcode:
+   ```bash
+   open glance/glance.xcodeproj
+   ```
 
-The liveness model has no Vision or AppKit dependencies, so
-[`tools/liveness_selftest.swift`](tools/liveness_selftest.swift) can run the real decision logic
-against synthetic data with no camera.
+3. Run the project:
+    - Click `run` or press `Cmd + R`.
 
-Note that Glance runs unsandboxed and isn't Mac App Store distributable — keystroke injection and
-lock-screen visibility both require it.
 
 ## Contributing
 
