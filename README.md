@@ -14,38 +14,42 @@
   <img src="https://img.shields.io/badge/Swift-SwiftUI-black.svg" alt="Swift">
 </p>
 
-Look at your Mac and it unlocks. Glance recognizes your face on the lock screen and signs you
-in — no typing, no reaching for the Touch ID key. Everything runs on-device using Apple's Vision
-and Core ML frameworks, so your face data and your Mac password never touch the internet.
+Glance brings the FaceID experience of your iPhone to a Mac near you. Unlock your Mac with a glance — no typing, no reaching for the Touch ID key. Everything runs on-device using Apple's Vision
+and Core ML frameworks, so your face data and your Mac password never touch the internet. The UI is built into your Macbook's notch with fluid dynamic island like animations.
 
-It lives in your menu bar and draws its UI in the notch.
+
+https://github.com/user-attachments/assets/453ce8c3-2f7a-4056-9fb3-3ec7f315895b
+
 
 ---
 
-## ⚠️ Glance is not as secure as Touch ID
+## Installation
 
-MacBooks don't come equipped with the depth sensors that make iPhone Face ID trustworthy. An
-iPhone builds a 3D map of your face; a MacBook webcam sees a flat 2D image. That means:
+**Requirements:**
+- macOS 15 Sequoia or later
+- Apple Silicon or Intel Mac
 
-- Glance defeats a **printed photo**, and with reasonable confidence a **photo on a phone screen**.
-- Glance does **not** reliably defeat a **video of you played on a phone** — a real video contains
-  the same natural motion a live face does.
-- macOS has no API that lets a third-party app authorize a login, so Glance unlocks by **typing
-  your stored password**. A successful spoof types your real password.
-- Face recognition is statistical. Close relatives — especially twins — may be able to unlock
-  your Mac.
+<a href="https://github.com/TheBoredTeam/boring.notch/releases/latest/download/boringNotch.dmg" target="_self"><img width="200" src="https://github.com/user-attachments/assets/e3179be1-8416-4b8a-b417-743e1ecc67d6" alt="Download for macOS" /></a>
 
-Glance is a convenience feature, not a security upgrade. It's off by default, and you can leave
-it that way.
+Open the `.dmg` file and drag Glance to `/Applications`, then open it.
+
+
+## Permissions
+
+| Permission | Why |
+|---|---|
+| **Camera** | To see your face. Frames are processed in memory and never written to disk. |
+| **Accessibility** | To type your password into the lock screen. |
+| **Touch ID** | Gates the key that encrypts your face data and password. |
 
 ## How it works
 
-1. **Enroll your face.** Glance guides you through a short capture, turning your head in nine
+1. Launch the app and follow the onboarding to enroll your face. Glance guides you through capturing your face, turning your head in nine
    directions. Each frame becomes a 512-number *embedding* — a mathematical fingerprint — and the
    image is thrown away.
-2. **Store your Mac password once,** encrypted behind Touch ID.
-3. **When your Mac locks,** a pill appears in the notch and starts looking for a face.
-4. **If it's you** — and the liveness checks agree you're a real person — Glance types the
+2. Enter your Mac password once, encrypted behind Touch ID.
+3. When your Mac locks or wakes from sleep, the animation appears in the notch and starts searching for a face.
+4. If it's you — and the liveness checks agree you're a real person — Glance types the
    password and you're in.
 
 ## Features
@@ -56,27 +60,26 @@ it that way.
 | **Multiple identities** | Enroll several people, or several versions of yourself — with glasses, a beard, different lighting. Toggle any of them off without deleting. |
 | **Liveness checks** | Watches for the motion and reflections that separate a real face from a photo. *Light* or *Heavy* strictness, or off. |
 | **Notch UI** | A closed pill that expands into a scan animation with success and failure states. Hover to retry — or turn animations off entirely and Glance stays invisible. |
-| **Camera & display** | Choose which camera to use, including different cameras for the built-in display vs. an external monitor. Pin Glance to one screen or follow the main one. |
+| **Camera & display** | Choose which camera to use, including different cameras for the built-in display vs. an external monitor. |
 | **Auto-locking sessions** | The Touch ID session re-locks itself after an idle period you choose, so an unattended Mac doesn't stay authorized forever. |
-| **Your data, your call** | Edit or delete your enrollment or stored password at any time. The encrypted files are removed immediately. |
+| **Trackpad haptics** | Hovering over the notch will trigger haptics |
+| **Notchless Mac support** | Macs without a notch will be replaced with a pill-shape, dynamic island style design. |
+| **Your data, your call** | Edit or delete your enrolment or stored password at any time. The encrypted files are removed immediately. |
 
-Plus launch at login, trackpad haptics, and in-app updates.
 
-## Install
-
-**Requirements:** macOS 15 Sequoia or later · Apple Silicon · a built-in, external, or Continuity camera
-
-Download the latest release from [tryglance.app](https://tryglance.app), drag Glance to
-`/Applications`, and open it. The first launch walks you through permissions, face enrollment,
-and storing your password.
-
-### Permissions
-
-| Permission | Why |
-|---|---|
-| **Camera** | To see your face. Frames are processed in memory and never written to disk. |
-| **Accessibility** | To type your password into the lock screen. |
-| **Touch ID** | Gates the key that encrypts your face data and password. |
+> [!WARNING]
+> ## Glance is never as secure as Touch ID
+> 
+> MacBooks don't come equipped with the depth sensors that make iPhone Face ID trustworthy. An
+> iPhone builds a 3D map of your face; a MacBook webcam sees a flat 2D image. That means:
+> 
+> - Glance defeats a **printed photo**, and with reasonable confidence a **photo on a phone screen**.
+> - Glance does **not** reliably defeat a **video of you played on a phone**
+> - macOS has no API that lets a third-party app authorize a login, so Glance unlocks by **typing
+>   your stored password**.
+> 
+> Glance is a convenience feature, not a security upgrade. It's off by default, and you can leave
+it that way.
 
 ## Privacy
 
@@ -90,7 +93,7 @@ and storing your password.
 
 ---
 
-# For developers
+# Deeper on security
 
 A single macOS app target — SwiftUI + AppKit, ~15k lines, one dependency (Sparkle).
 
@@ -184,21 +187,16 @@ lock-screen visibility both require it.
 
 ## Contributing
 
-Issues and PRs welcome. The codebase is commented with the *reasoning* behind decisions,
-including several designs that were built, measured, and removed. If you change something in the
-recognition or liveness path, say what you measured — not just what you changed.
+Not currently accepting PRs. Feel free to fork this project.
 
 App feedback goes to [tryglance.app/feedback](https://tryglance.app/feedback).
 
 ## Acknowledgements
 
 - **[The Boring Notch](https://github.com/TheBoredTeam/boring.notch)** — for the notch window
-  physics. Create the window once at a fixed size and animate SwiftUI content inside it, never
-  resizing the window itself. Glance's overlay is built on that.
+  physics.
 - **[InsightFace](https://github.com/deepinsight/insightface)** — the ArcFace model doing the
-  actual recognition.
-- **[Sparkle](https://github.com/sparkle-project/Sparkle)** — in-app updates.
-- **Apple's Vision and Core ML frameworks** — face detection, landmarks, and on-device inference.
+ recognition.
 
 ## License
 
