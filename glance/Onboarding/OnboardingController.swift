@@ -404,7 +404,7 @@ final class OnboardingController {
     /// too far for a reliable template. Floor is still the shared
     /// prominence width so a tighter Recognition setting can't be bypassed.
     private var enrollmentMinimumFaceWidth: Float {
-        max(FaceRecognitionPipeline.minimumProminentFaceWidth, 0.22)
+        max(FaceRecognitionPipeline.minimumProminentFaceWidth, 0.2)
     }
 
     // Pose-matching bands, in radians. Yaw's sign (left turn -> positive)

@@ -160,9 +160,9 @@ private enum MatchConfidenceLevel: Int, CaseIterable {
 
     var threshold: Float {
         switch self {
-        case .lessStrict: return 0.62
-        case .standard: return 0.66
-        case .moreStrict: return 0.7
+        case .lessStrict: return 0.58
+        case .standard: return 0.63
+        case .moreStrict: return 0.68
         }
     }
 
@@ -195,8 +195,8 @@ private enum DetectionDistanceLevel: Int, CaseIterable {
 
     var minimumFaceWidth: Float {
         switch self {
-        case .close: return 0.25
-        case .standard: return 0.21
+        case .close: return 0.24
+        case .standard: return 0.2
         case .far: return 0.17
         }
     }
