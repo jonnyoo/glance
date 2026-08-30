@@ -16,6 +16,10 @@ enum OnboardingMetrics {
     /// regardless of how the state mutation was triggered (a button tap vs.
     /// an async completion handler).
     static let stepAnimation = Animation.spring(response: 0.42, dampingFraction: 0.8)
+    /// Wait for `stepAnimation` to settle before focusing a text field.
+    /// Focusing during the spring is a no-op — the field isn't in a key
+    /// window yet — which is why name/password required a click first.
+    static let fieldAutofocusDelay: Double = 0.48
 
     // MARK: - Panel size — EDIT HERE
     //

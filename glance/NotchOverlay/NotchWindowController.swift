@@ -86,7 +86,7 @@ final class NotchWindowController {
     func setInteractive(_ interactive: Bool, key: Bool = false) {
         window?.ignoresMouseEvents = !interactive
         guard interactive, key, let window else { return }
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
     }
 

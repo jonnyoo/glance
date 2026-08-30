@@ -305,7 +305,7 @@ struct NameStepView: View {
 
             Spacer(minLength: 2)
 
-            PillTextField(placeholder: "Enter a name...", text: $controller.pendingName) {
+            PillTextField(placeholder: "Enter a name...", text: $controller.pendingName, autofocus: true) {
                 controller.confirmName()
             }
 
@@ -320,7 +320,7 @@ struct NameStepView: View {
                 PillButton(title: "Back", style: .secondary) {
                     controller.back()
                 }
-                PillButton(title: controller.nameStepPrimaryTitle, isEnabled: !trimmedName.isEmpty) {
+                PillButton(title: controller.nameStepPrimaryTitle, isEnabled: !trimmedName.isEmpty, isDefault: true) {
                     controller.confirmName()
                 }
             }
@@ -353,7 +353,10 @@ struct PasswordStepView: View {
 
             Spacer(minLength: 2)
 
-            PillSecureField(placeholder: "Enter password...", text: $password)
+            PillSecureField(placeholder: "Enter password...", text: $password, autofocus: true) {
+                guard !password.isEmpty, !controller.isSavingPassword else { return }
+                Task { _ = await controller.finish(password: password) }
+            }
 
             if let error = controller.passwordError {
                 Text(error)
@@ -369,7 +372,8 @@ struct PasswordStepView: View {
                 }
                 PillButton(
                     title: controller.isSavingPassword ? "Saving…" : "Confirm",
-                    isEnabled: !password.isEmpty && !controller.isSavingPassword
+                    isEnabled: !password.isEmpty && !controller.isSavingPassword,
+                    isDefault: true
                 ) {
                     Task { _ = await controller.finish(password: password) }
                 }
