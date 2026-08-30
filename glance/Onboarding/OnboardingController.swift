@@ -165,21 +165,19 @@ final class OnboardingController {
             if step == .complete {
                 GlanceSettings.shared.hasCompletedOnboarding = true
                 GlanceSettings.shared.onboardingResumeStep = nil
-                onFirstRunComplete?()
             } else {
                 GlanceSettings.shared.onboardingResumeStep = step.resumeTarget
             }
         }
     }
 
-    /// Fires exactly once — the instant the true first-run flow reaches
-    /// `.complete` — so `AppDelegate` can start Sparkle right after
-    /// onboarding finishes rather than at launch, where it would show its
-    /// own "Check for updates automatically?" consent alert in the middle
-    /// of guided setup. Wired by `startFlow(resumingAt:onFirstRunComplete:)`;
-    /// `nil` for every other entry point (Face Lab's debug button included),
-    /// which is fine — by the time any of those are reachable, onboarding
-    /// has already completed once for real and this has already fired.
+    /// Fires exactly once — after the true first-run flow's "You're all
+    /// set" screen dismisses — so `AppDelegate` can open Settings (and
+    /// start Sparkle) only once onboarding UI is gone. Wired by
+    /// `startFlow(resumingAt:onFirstRunComplete:)`; `nil` for every other
+    /// entry point (Face Lab's debug button included), which is fine —
+    /// by the time any of those are reachable, onboarding has already
+    /// completed once for real and this has already fired.
     var onFirstRunComplete: (() -> Void)?
 
     /// True when this flow was started by `startEnrollmentOnly()` — shows
@@ -1035,21 +1033,19 @@ final class OnboardingController {
     }
 
     /// The "You're all set" screen has no controls — it dismisses itself.
+    /// First-run then hands off to `onFirstRunComplete` (open Settings,
+    /// start Sparkle) so that work happens after the notch is gone, not
+    /// on top of the completion screen.
     private func scheduleCompletionDismiss() {
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(OnboardingMetrics.completeScreenDismissDelay))
             guard let self else { return }
+            let finishedFirstRun = self.isFirstRunFlow
+            let onComplete = self.onFirstRunComplete
             self.teardown()
             NotchOverlayController.shared.dismissOnboarding()
-            // First-run onboarding never opened the Settings window (see
-            // AppDelegate.presentOnboardingGate) — it's the only thing that
-            // was keeping the Dock icon around, so restore the app's normal
-            // "menu bar only, no window open" state now that it's done.
-            // Guarded on no window actually being open, matching
-            // `AppDelegate.windowWillClose`'s own check, in case some other
-            // window legitimately opened during onboarding.
-            if self.isFirstRunFlow, !NSApp.windows.contains(where: { $0.canBecomeMain && $0.isVisible }) {
-                NSApp.setActivationPolicy(.accessory)
+            if finishedFirstRun {
+                onComplete?()
             }
         }
     }

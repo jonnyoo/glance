@@ -1094,7 +1094,15 @@ final class WindowConfiguringView: NSView {
         window.minSize = target
         window.maxSize = target
 
-        NSApp.activate()
+        // `ignoringOtherApps` is required when this window is first created
+        // after an `.accessory` stretch (first-run onboarding just ended):
+        // there is no click in the activation chain, and a plain
+        // `NSApp.activate()` leaves the window in the inactive look — controls
+        // desaturated, tint ignored — until the user Cmd-Tabs. Menu-bar opens
+        // already call `activate(ignoringOtherApps:)` from AppDelegate; this
+        // covers the automatic post-onboarding path, where this configure
+        // pass is the first moment the NSWindow actually exists.
+        NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
     }
 }

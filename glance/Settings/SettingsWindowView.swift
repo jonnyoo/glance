@@ -43,15 +43,14 @@ struct SettingsWindowView: View {
     @State private var headerTrailingAction: HeaderAction?
     @Environment(\.dismissWindow) private var dismissWindow
 
-    /// Defense-in-depth, not the primary gate: `AppDelegate
-    /// .presentOnboardingGate()` already closes this window before
-    /// onboarding starts and refuses to reopen it while onboarding is
-    /// active, on every entry point (launch, Dock reopen, menu bar
-    /// "Settings"). This is only here in case this content somehow renders
-    /// before that runs — SwiftUI's exact `Window`-scene-creation timing
-    /// relative to `applicationDidFinishLaunching` isn't itself guaranteed —
-    /// so a real user should never see this branch, only a blank frame for
-    /// at most a frame or two before `dismissWindow` closes it right back.
+    /// Defense-in-depth, not the primary gate: Settings is `.suppressed` at
+    /// launch and `AppDelegate.revealSettingsWindow()` refuses to open it
+    /// while onboarding is incomplete. This is only here in case this
+    /// content somehow renders anyway — SwiftUI's exact `Window`-scene
+    /// timing relative to `applicationDidFinishLaunching` isn't itself
+    /// guaranteed — so a real user should never see this branch, only a
+    /// blank frame for at most a frame or two before `dismissWindow`
+    /// closes it right back.
     var body: some View {
         if GlanceSettings.shared.hasCompletedOnboarding {
             settingsContent
@@ -156,10 +155,9 @@ struct SettingsWindowView: View {
         // only orders the NSWindow out, but SwiftUI keeps this view's
         // `@State` alive in memory for whenever `openWindow(id:)` shows it
         // again. Without this, `selection` silently remembers whatever tab
-        // was open when the window last closed, so reopening (Dock icon,
-        // menu bar "Settings", or the Sparkle-style "already have a window"
-        // resume) lands back where the user left off instead of on
-        // General, as requested.
+        // was open when the window last closed, so reopening (menu bar
+        // "Settings", or the automatic post-onboarding open) lands back
+        // where the user left off instead of on General, as requested.
         .onDisappear { selection = .general }
     }
 

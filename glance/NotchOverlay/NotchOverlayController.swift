@@ -326,10 +326,14 @@ final class NotchOverlayController {
     /// by it (guarded by re-checking `content` after the animation delay).
     func dismissOnboarding() {
         guard case .onboarding = content else { return }
+        // Drop key/interactivity *now*, not inside the collapse Task:
+        // first-run completion opens Settings on this same turn, and if
+        // this overlay is still the key window Settings appears inactive
+        // and won't take focus from a click.
+        phase = .collapsing
+        updateInteractivity()
         Task { [weak self] in
             guard let self else { return }
-            self.phase = .collapsing
-            self.updateInteractivity()
             try? await Task.sleep(for: self.collapseAnimationDuration)
             guard case .onboarding = self.content else { return }
             self.content = .scan(.idle)

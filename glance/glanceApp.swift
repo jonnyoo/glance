@@ -17,14 +17,23 @@ struct glanceApp: App {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
-        Window("Glance Settings", id: "settings") {
+        settingsWindow
+    }
+
+    /// Settings is a suppressed scene so it does not appear on launch or
+    /// restore after quit. The `openWindow` action is captured here, not
+    /// in the window's `onAppear`, because the window may never have appeared
+    /// before the menu bar item (or first-run completion) needs to open it.
+    private var settingsWindow: some Scene {
+        let open = openWindow
+        let delegate = appDelegate
+        DispatchQueue.main.async {
+            delegate.bindOpenWindowAction { open(id: "settings") }
+        }
+        return Window("Glance Settings", id: "settings") {
             SettingsWindowView(environment: appDelegate.environment)
-                // Captured once the window's content actually appears —
-                // always before launch finishes, well before the user could
-                // click the menu bar item — so the action is ready the
-                // first time anything needs it.
                 .onAppear {
-                    appDelegate.openSettingsWindowAction = { openWindow(id: "settings") }
+                    delegate.bindOpenWindowAction { open(id: "settings") }
                 }
         }
         // Deliberately no `.windowResizability(.contentSize)`: it kept
@@ -35,6 +44,8 @@ struct glanceApp: App {
         // the window is made non-resizable there, so nothing re-derives it.
         .windowStyle(.hiddenTitleBar)
         .defaultPosition(.center)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
     }
 }
 
@@ -65,6 +76,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// capturing the action as a closure once and calling it later is the
     /// standard way to reach a SwiftUI environment action from AppKit code.
     ///
+    /// Bound from the `App` scene body (not the window's `onAppear`) so it
+    /// is ready before Settings has ever been shown — the window is
+    /// `.suppressed` at launch and would never appear on its own.
+    ///
     /// This exists because `NSApp.windows` stops containing the Settings
     /// window once it's fully closed (not just miniaturized/ordered out) —
     /// walking that array, which is what `revealSettingsWindow()` used to
@@ -75,11 +90,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// own scene — can reliably re-create a closed `Window` scene.
     var openSettingsWindowAction: (() -> Void)?
 
+    /// Called from `glanceApp.body` so `openWindow` is captured even though
+    /// Settings never auto-opens. Reassigning on every scene rebuild is
+    /// intentional — the action is cheap and must not go stale.
+    func bindOpenWindowAction(_ action: @escaping () -> Void) {
+        openSettingsWindowAction = action
+    }
+
     /// Guards `environment.updater.start()` against running twice — it's
     /// reachable from two places (see `startUpdaterIfNeeded()`'s call
     /// sites) and Sparkle's own docs don't promise starting an already-
     /// started `SPUUpdater` is a safe no-op.
     private var hasStartedUpdater = false
+
+    /// Accessory *before* the Dock binds this launch to a persistent tile.
+    /// Default policy is `.regular`, which is what made the pinned icon
+    /// bounce and then get replaced by a Recents tile the moment we later
+    /// hid/showed the Dock icon. Starting accessory means the only Dock
+    /// appearance is the intentional `.regular` when Settings opens.
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -128,6 +159,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         updateSessionMenuItem()
 
+        // SwiftUI can flip the app back to `.regular` while installing
+        // scenes, even with `.defaultLaunchBehavior(.suppressed)`. Re-assert
+        // accessory so launch itself never materializes a Dock icon.
+        NSApp.setActivationPolicy(.accessory)
+
         // `object: nil` (not a specific window reference) deliberately —
         // the Settings window may not exist yet at this point (SwiftUI
         // creates `Window` scene content lazily around launch), and this
@@ -152,26 +188,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// First-run gate: closes whatever the Settings `Window` scene
-    /// auto-opened — it has nothing to show pre-onboarding, since the
-    /// guided flow itself lives entirely in the notch, not this window
-    /// (see `OnboardingController`) — and presents/resumes onboarding.
-    /// Called once at launch if onboarding isn't done yet, and again from
-    /// `revealSettingsWindow()` if the user reaches for Settings through
-    /// the menu bar or Dock mid-onboarding.
+    /// First-run gate: onboarding lives entirely in the notch (see
+    /// `OnboardingController`), so this stays accessory — menu bar + notch,
+    /// no Settings window, no Dock icon. Called once at launch if
+    /// onboarding isn't done yet, and again from `revealSettingsWindow()` if
+    /// the user reaches for Settings through the menu bar mid-flow.
+    /// Closing any main window here is defense in depth: the Settings
+    /// scene is `.suppressed` at launch, but SwiftUI's exact timing relative
+    /// to this method isn't guaranteed.
     private func presentOnboardingGate() {
         for window in NSApp.windows where window.canBecomeMain {
             window.close()
         }
-        // Regular, not accessory: unlike a routine background launch, the
-        // user just double-clicked the app and should see it visibly doing
-        // something (Dock icon) rather than only a menu bar glyph.
-        // `OnboardingController.scheduleCompletionDismiss()` reverts this
-        // once the flow actually finishes.
-        NSApp.setActivationPolicy(.regular)
+        NSApp.setActivationPolicy(.accessory)
         OnboardingController.startFlow(
             resumingAt: GlanceSettings.shared.onboardingResumeStep,
-            onFirstRunComplete: { [weak self] in self?.startUpdaterIfNeeded() }
+            onFirstRunComplete: { [weak self] in
+                // After the "You're all set" screen dismisses — Settings
+                // was never shown during the flow, and this is the first
+                // time it should appear, which is also what brings the Dock
+                // icon back.
+                self?.revealSettingsWindow()
+                self?.startUpdaterIfNeeded()
+            }
         )
     }
 
@@ -194,16 +233,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// an unlock scan is actually in progress. Sparkle's update windows are
     /// also `canBecomeMain`, so this additionally backs off while one is
     /// showing — otherwise closing Settings mid-update would flip the Dock
-    /// icon off while Sparkle's own window is still on screen. Same
-    /// reasoning for onboarding: `presentOnboardingGate()` closes the
-    /// Settings window on purpose to keep it from showing pre-onboarding,
-    /// and that close event must not immediately undo the `.regular`
-    /// policy it just set — `OnboardingController.scheduleCompletionDismiss()`
-    /// is what reverts it once the guided flow actually finishes.
+    /// icon off while Sparkle's own window is still on screen.
     @objc private func windowWillClose(_ notification: Notification) {
         guard let closingWindow = notification.object as? NSWindow, closingWindow.canBecomeMain else { return }
         guard !environment.updater.isPresentingUpdateUI else { return }
-        guard NotchOverlayController.shared.phase != .onboarding else { return }
         let stillOpen = NSApp.windows.contains { $0 !== closingWindow && $0.canBecomeMain && $0.isVisible }
         guard !stillOpen else { return }
         NSApp.setActivationPolicy(.accessory)
@@ -246,20 +279,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return false
     }
 
-    /// The app deliberately survives window close (above), which otherwise
-    /// leaves no way to get the Settings window back for the rest of the
-    /// session — this brings it back when the Dock icon is clicked.
+    /// Settings is only opened from the menu bar (or once, automatically,
+    /// when first-run onboarding finishes). A Dock click must not create
+    /// the window — that was a second entry point, and clicking a pinned
+    /// tile while accessory is also what produced a duplicate Recents
+    /// icon. If Settings is already open, the Dock icon is visible and
+    /// the default reopen behavior just brings that window forward.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
-            revealSettingsWindow()
-        }
-        return true
+        return flag
     }
 
-    /// Same "bring the existing Settings window forward" behavior as
-    /// clicking the Dock icon, invoked from the menu bar item instead —
-    /// one path for "the user wants to see the window," not two to keep
-    /// in sync.
+    /// Menu bar "Settings" — the only user-facing way to open the window
+    /// after onboarding.
     @objc private func openSettingsWindow() {
         revealSettingsWindow()
         NSApp.activate(ignoringOtherApps: true)
@@ -269,6 +300,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// bringing the window forward — switching `.accessory` -> `.regular`
     /// after the window is already key can leave the Dock icon out of sync
     /// with an already-frontmost app, so the policy change goes first.
+    ///
+    /// During onboarding this does *not* open Settings or show a Dock
+    /// icon; it only ensures the notch flow is up.
     private func revealSettingsWindow() {
         guard GlanceSettings.shared.hasCompletedOnboarding else {
             // Re-present rather than unconditionally restart: if onboarding
@@ -295,6 +329,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             for window in NSApp.windows where window.canBecomeMain {
                 window.makeKeyAndOrderFront(nil)
             }
+        }
+        // `openWindow` materializes the scene asynchronously, and coming from
+        // `.accessory` (post-onboarding) there is no user gesture to activate
+        // the app — unlike a menu-bar click. Without this, Settings appears
+        // in the inactive look and clicks won't take focus until the user
+        // Cmd-Tabs away and back. `ignoringOtherApps` is what actually
+        // steals key; a plain `NSApp.activate()` is not enough here.
+        makeSettingsKeyAndActive()
+    }
+
+    /// Makes Settings the key window of an already-`.regular` app. Two
+    /// runloop hops: `openWindow(id:)` hasn't created the `NSWindow` on
+    /// this turn, and `WindowConfiguringView` also configures it on the
+    /// next turn — waiting one extra cycle means we order front after
+    /// that window actually exists.
+    private func makeSettingsKeyAndActive() {
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.async { [weak self] in
+            self?.orderSettingsFront()
+            DispatchQueue.main.async {
+                self?.orderSettingsFront()
+            }
+        }
+    }
+
+    private func orderSettingsFront() {
+        NSApp.activate(ignoringOtherApps: true)
+        if let window = NSApp.windows.first(where: { $0.canBecomeMain }) {
+            window.makeKeyAndOrderFront(nil)
         }
     }
 }
