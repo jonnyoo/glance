@@ -29,7 +29,7 @@ https://github.com/user-attachments/assets/453ce8c3-2f7a-4056-9fb3-3ec7f315895b
 - macOS 15 Sequoia or later
 - Apple Silicon or Intel Mac
 
-<a href="https://tryglance.app" target="_self"><img width="200" src="https://github.com/user-attachments/assets/e3179be1-8416-4b8a-b417-743e1ecc67d6" alt="Download for macOS" /></a>
+<a href="https://github.com/jonnyoo/glance/releases/latest/download/Glance.dmg" target="_self"><img width="200" src="https://github.com/user-attachments/assets/cdb8af97-1ee2-4669-b7cb-dcfb56c9dd61" alt="Download for Mac" /></a>
 
 Open the `.dmg` file and drag Glance to `/Applications`, then open it.
 
