@@ -18,7 +18,7 @@ Glance brings the FaceID experience of your iPhone to a Mac near you. Unlock you
 and Core ML frameworks, so your face data and your Mac password never touch the internet. The UI is built into your Macbook's notch with fluid dynamic island like animations.
 
 
-https://github.com/user-attachments/assets/453ce8c3-2f7a-4056-9fb3-3ec7f315895b
+https://github.com/user-attachments/assets/c417446c-f36d-480c-9f0b-1c78bbc54ecd
 
 
 ---
