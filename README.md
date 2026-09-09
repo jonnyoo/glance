@@ -14,14 +14,28 @@
   <img src="https://img.shields.io/badge/Swift-SwiftUI-black.svg" alt="Swift">
 </p>
 
-Glance brings the FaceID-like experience of your iPhone to a Mac near you. Unlock your Mac with a glance — no typing, no reaching for the Touch ID key. Everything runs on-device using Apple's Vision
+Glance brings the FaceID-like experience of your iPhone to a Mac near you. Unlock your Mac with a glance — no typing, no reaching for the TouchID key. Everything runs on-device using Apple's Vision
 and Core ML frameworks, so your face data and your Mac password never touch the internet. The UI is built into your Macbook's notch with fluid dynamic island like animations.
 
 
-https://github.com/user-attachments/assets/c417446c-f36d-480c-9f0b-1c78bbc54ecd
+https://github.com/user-attachments/assets/77438826-80a9-4ab2-9fc3-42407a2d0adb
 
 
 ---
+
+> [!WARNING]
+> ## Glance is not as secure as Apple's FaceID or TouchID
+> 
+> MacBooks don't come equipped with the depth sensors that make iPhone FaceID trustworthy and secure. An
+> iPhone builds a 3D map of your face; a MacBook webcam sees a flat 2D image. That means:
+> 
+> - Glance defeats, with reasonable confidence, a printed photo and a photo on a phone screen (heavy liveness detection must be turned on)
+> - Glance does not reliably defeat a video of you
+> - macOS has no API that lets a third-party app authorize a login, so Glance unlocks by typing
+>   your stored password on the lock screen
+> 
+> Glance is a convenience feature, not a security upgrade. It's off by default, and you can leave
+it that way.
 
 ## Installation
 
@@ -65,21 +79,6 @@ Open the `.dmg` file and drag Glance to `/Applications`, then open it.
 | **Trackpad haptics** | Hovering over the notch will trigger haptics |
 | **Notchless Mac support** | Macs without a notch will be replaced with a pill-shape, dynamic island style design. |
 | **Your data, your call** | Edit or delete your enrolment or stored password at any time. The encrypted files are removed immediately. |
-
-
-> [!WARNING]
-> ## Glance is never as secure as Touch ID
-> 
-> MacBooks don't come equipped with the depth sensors that make iPhone FaceID trustworthy. An
-> iPhone builds a 3D map of your face; a MacBook webcam sees a flat 2D image. That means:
-> 
-> - Glance defeats a **printed photo**, and with reasonable confidence a **photo on a phone screen**.
-> - Glance does **not** reliably defeat a **video of you played on a phone**
-> - macOS has no API that lets a third-party app authorize a login, so Glance unlocks by **typing
->   your stored password**.
-> 
-> Glance is a convenience feature, not a security upgrade. It's off by default, and you can leave
-it that way.
 
 ---
 
