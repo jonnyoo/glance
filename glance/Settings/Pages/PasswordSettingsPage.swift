@@ -12,6 +12,9 @@ struct PasswordSettingsPage: View {
     @State private var isUnlocking = false
     @State private var sessionError: String?
     @State private var statusMessage: String?
+    /// Set after a successful orphan wipe so the UI leaves `.orphanedKey`
+    /// even if Observation misses a non-@Observable Keychain/file check.
+    @State private var didClearOrphan = false
 
     /// Read from `POCController` rather than a local `@State` copy: the
     /// session can also be locked from outside this view (by
@@ -29,23 +32,38 @@ struct PasswordSettingsPage: View {
     /// wrong with nothing stored to encrypt or remove.
     private enum PageState: Equatable {
         case noPassword
+        /// Session key Keychain item is gone but password/face ciphertext remain
+        /// — unlock can never succeed; must wipe and re-enroll.
+        case orphanedKey
         case locked
         case unlocked
     }
 
     private var pageState: PageState {
-        guard pocController.hasStoredPassword else { return .noPassword }
-        return isSessionUnlocked ? .unlocked : .locked
+        if didClearOrphan { return .noPassword }
+        guard pocController.hasStoredPassword || SecureCredentialManager.hasSessionEncryptedData else {
+            return .noPassword
+        }
+        if isSessionUnlocked { return .unlocked }
+        // Key missing while ciphertext remains → Unlock will never prompt usefully.
+        if SecureCredentialManager.hasSessionEncryptedData,
+           !KeychainManager.exists(account: "sessionKey") {
+            return .orphanedKey
+        }
+        return .locked
     }
 
     var body: some View {
         ZStack(alignment: .top) {
             noPasswordState
                 .opacity(pageState == .noPassword ? 1 : 0)
-                // Hidden from hit-testing *and* accessibility while faded
-                // out, so an invisible copy can't be clicked or focused.
                 .allowsHitTesting(pageState == .noPassword)
                 .accessibilityHidden(pageState != .noPassword)
+
+            orphanedKeyState
+                .opacity(pageState == .orphanedKey ? 1 : 0)
+                .allowsHitTesting(pageState == .orphanedKey)
+                .accessibilityHidden(pageState != .orphanedKey)
 
             lockedState
                 .opacity(pageState == .locked ? 1 : 0)
@@ -59,14 +77,6 @@ struct PasswordSettingsPage: View {
         }
         .animation(SettingsMetrics.stateTransitionAnimation, value: pageState)
         .onAppear { pocController.refreshCredentialStatus() }
-        // The onboarding password step runs in the notch, entirely outside
-        // this window's view hierarchy — this view never disappears while
-        // it's open, so nothing would otherwise prompt a re-check once it
-        // closes. Without this, setting a password via "Set password" (or
-        // changing one via "Change") would leave this page showing stale
-        // state until the user happened to switch tabs and back. `.closed`
-        // also fires after unrelated face-unlock scan cycles; re-running a
-        // cheap, side-effect-free status read then is harmless.
         .onChange(of: NotchOverlayController.shared.phase) { _, newPhase in
             guard newPhase == .closed else { return }
             pocController.refreshCredentialStatus()
@@ -83,6 +93,19 @@ struct PasswordSettingsPage: View {
             buttonTitle: "Set password",
             caption: statusMessage,
             action: { OnboardingController.startPasswordOnly() }
+        )
+    }
+
+    // MARK: - Orphaned key (can't unlock — no Touch ID prompt path)
+
+    private var orphanedKeyState: some View {
+        SettingsEmptyStateView(
+            icon: "exclamationmark.triangle.fill",
+            message: "Session key missing",
+            buttonTitle: "Clear and start fresh",
+            caption: sessionError
+                ?? "Encrypted data is still on disk but the Touch ID key is gone (common after switching builds). Clear password + faces, then set up again. No Mac login password is asked here.",
+            action: clearOrphanedCredentials
         )
     }
 
@@ -176,6 +199,31 @@ struct PasswordSettingsPage: View {
             statusMessage = "Password and face enrollment removed."
         } catch {
             statusMessage = "Couldn't remove: \(error.localizedDescription)"
+        }
+    }
+
+    /// Wipe without unlocking — used when the session key item is gone and
+    /// Touch ID can never unwrap it.
+    private func clearOrphanedCredentials() {
+        sessionError = "Clearing…"
+        FaceEnrollmentStore.shared.deleteAll()
+        SecureFaceStore.deleteAll()
+        try? KeychainManager.delete(account: "encryptedPassword")
+        try? KeychainManager.delete(account: "sessionKey")
+        try? SecureCredentialManager.deletePassword()
+        SecureCredentialManager.lockSession()
+        pocController.refreshCredentialStatus()
+        pocController.sessionError = nil
+
+        let stillStuck = SecureCredentialManager.hasSessionEncryptedData
+            || pocController.hasStoredPassword
+        if stillStuck {
+            sessionError = "Still couldn’t clear Keychain items. Quit Glance and run: security delete-generic-password -s com.jonathan.glance"
+            didClearOrphan = false
+        } else {
+            didClearOrphan = true
+            sessionError = nil
+            statusMessage = "Cleared. Tap Set password to start fresh."
         }
     }
 }
