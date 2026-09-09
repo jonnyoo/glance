@@ -6,7 +6,7 @@
   <br>
 </h1>
 
-<h3 align="center">FaceID for your Mac</h3>
+<h3 align="center">Face unlock for your Mac</h3>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-black.svg" alt="MIT License"></a>
@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/Swift-SwiftUI-black.svg" alt="Swift">
 </p>
 
-Glance brings the FaceID experience of your iPhone to a Mac near you. Unlock your Mac with a glance — no typing, no reaching for the Touch ID key. Everything runs on-device using Apple's Vision
+Glance brings the FaceID-like experience of your iPhone to a Mac near you. Unlock your Mac with a glance — no typing, no reaching for the Touch ID key. Everything runs on-device using Apple's Vision
 and Core ML frameworks, so your face data and your Mac password never touch the internet. The UI is built into your Macbook's notch with fluid dynamic island like animations.
 
 
@@ -70,7 +70,7 @@ Open the `.dmg` file and drag Glance to `/Applications`, then open it.
 > [!WARNING]
 > ## Glance is never as secure as Touch ID
 > 
-> MacBooks don't come equipped with the depth sensors that make iPhone Face ID trustworthy. An
+> MacBooks don't come equipped with the depth sensors that make iPhone FaceID trustworthy. An
 > iPhone builds a 3D map of your face; a MacBook webcam sees a flat 2D image. That means:
 > 
 > - Glance defeats a **printed photo**, and with reasonable confidence a **photo on a phone screen**.
