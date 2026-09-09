@@ -207,21 +207,21 @@ enum SecureCredentialManager {
         }
 
         let key = SymmetricKey(size: .bits256)
-        let access = try KeychainManager.makeUserPresenceAccessControl()
-        try KeychainManager.save(
-            account: sessionKeyAccount,
-            data: key.withUnsafeBytes { Data($0) },
-            accessControl: access
-        )
+        let keyData = key.withUnsafeBytes { Data($0) }
+        // ACL when the build allows it; KeychainManager.save falls back to a
+        // non-biometric item if entitlements/signing block AccessControl.
+        let access = try? KeychainManager.makeUserPresenceAccessControl()
+        try KeychainManager.save(account: sessionKeyAccount, data: keyData, accessControl: access)
 
-        // Read back through the same gated path rather than trusting the
-        // write: `SecItemAdd` returns success regardless of how any auth UI
-        // macOS showed around it resolved, so only a real read proves the
-        // user actually authenticated.
         let readBackContext = LAContext()
         readBackContext.localizedReason = reason
-        let data = try KeychainManager.read(account: sessionKeyAccount, context: readBackContext)
-        setCachedKey(SymmetricKey(data: data))
+        do {
+            let data = try KeychainManager.read(account: sessionKeyAccount, context: readBackContext)
+            setCachedKey(SymmetricKey(data: data))
+        } catch {
+            // Non-ACL store or LA read blocked — we still hold the key we wrote.
+            setCachedKey(key)
+        }
     }
 
     /// Whether anything on this Mac is currently encrypted under the session

@@ -22,6 +22,8 @@ final class AppEnvironment {
     /// timer — letting it deallocate would silently stop enforcing the
     /// auto-lock interval.
     let sessionAutoLocker: SessionAutoLocker
+    /// Face-for-sudo socket server + PAM install orchestration.
+    let sudoAuthController = SudoAuthController()
     /// Sparkle auto-update controller — see `Updater/UpdaterController.swift`
     /// and RELEASING.md. Constructed here (not started) so the About page
     /// and `AppDelegate` share the exact same instance; `AppDelegate.

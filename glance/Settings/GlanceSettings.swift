@@ -128,6 +128,7 @@ final class GlanceSettings {
         static let externalDisplayCameraID = "GlanceSettings.externalDisplayCameraID"
         static let hasCompletedOnboarding = "GlanceSettings.hasCompletedOnboarding"
         static let onboardingResumeStep = "GlanceSettings.onboardingResumeStep"
+        static let isSudoFaceEnabled = "GlanceSettings.isSudoFaceEnabled"
     }
 
     @ObservationIgnored private let defaults = UserDefaults.standard
@@ -297,6 +298,12 @@ final class GlanceSettings {
     var onboardingResumeStep: OnboardingStep? {
         didSet { defaults.set(onboardingResumeStep?.rawValue, forKey: Key.onboardingResumeStep) }
     }
+    /// Opt-in Face auth for Terminal `sudo` (PAM). Requires a built
+    /// `pam_glance.so`, an unlocked Glance session, and install into
+    /// `/etc/pam.d/sudo_local`. Off by default.
+    var isSudoFaceEnabled: Bool {
+        didSet { defaults.set(isSudoFaceEnabled, forKey: Key.isSudoFaceEnabled) }
+    }
 
     private init() {
         // Enabled out of the box — a fresh install has just finished
@@ -318,7 +325,7 @@ final class GlanceSettings {
             .flatMap(LivenessMode.init(rawValue:)) ?? .light
         // Matches `DetectionDistanceLevel.standard` ("Default" on the
         // Recognition page) — see RecognitionSettingsPage.swift.
-        minimumFaceWidth = defaults.object(forKey: Key.minimumFaceWidth) as? Float ?? 0.21
+        minimumFaceWidth = defaults.object(forKey: Key.minimumFaceWidth) as? Float ?? 0.18
 
         // Resolve the stored style first, `.none` included, then split it
         // into the pick + the on/off flag the UI now works in.
@@ -376,6 +383,7 @@ final class GlanceSettings {
         hasCompletedOnboarding = defaults.object(forKey: Key.hasCompletedOnboarding) as? Bool ?? false
         onboardingResumeStep = defaults.string(forKey: Key.onboardingResumeStep)
             .flatMap(OnboardingStep.init(rawValue:))
+        isSudoFaceEnabled = defaults.object(forKey: Key.isSudoFaceEnabled) as? Bool ?? false
 
         // Push the persisted value into the nonisolated mirror immediately —
         // otherwise FaceRecognitionPipeline would keep using its own 0.18

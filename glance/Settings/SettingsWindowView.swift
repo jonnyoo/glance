@@ -221,7 +221,10 @@ struct SettingsWindowView: View {
         VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
             switch selection {
             case .general:
-                GeneralSettingsPage(coordinator: environment.faceUnlockCoordinator)
+                GeneralSettingsPage(
+                    coordinator: environment.faceUnlockCoordinator,
+                    sudoAuth: environment.sudoAuthController
+                )
             case .yourFace:
                 YourFaceSettingsPage(environment: environment)
             case .password:

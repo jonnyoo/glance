@@ -195,9 +195,12 @@ private enum DetectionDistanceLevel: Int, CaseIterable {
 
     var minimumFaceWidth: Float {
         switch self {
+        // Normalized face width in the frame. Smaller = works farther away.
+        // Roughly: ~0.24 ≈ 20–25cm, ~0.18 ≈ 30–35cm, ~0.09 ≈ 50–60cm
+        // on a typical MacBook webcam.
         case .close: return 0.24
-        case .standard: return 0.2
-        case .far: return 0.17
+        case .standard: return 0.18
+        case .far: return 0.09
         }
     }
 

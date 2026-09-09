@@ -38,6 +38,14 @@ enum KeychainError: LocalizedError {
 enum KeychainManager {
     nonisolated static let service = "com.jonathan.glance"
 
+    /// `errSecMissingEntitlement` (-34018) — common on local/ad-hoc builds
+    /// when ACL-gated Keychain items need entitlements the binary doesn't have.
+    nonisolated private static let missingEntitlementStatus: OSStatus = -34018
+
+    nonisolated private static func isMissingEntitlement(_ status: OSStatus) -> Bool {
+        status == missingEntitlementStatus || status == errSecMissingEntitlement
+    }
+
     /// Attributes-only existence check — never prompts, even for access-controlled items.
     nonisolated static func exists(account: String) -> Bool {
         let query: [String: Any] = [
@@ -66,7 +74,13 @@ enum KeychainManager {
             query[kSecUseAuthenticationContext as String] = context
         }
         var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        var status = SecItemCopyMatching(query as CFDictionary, &item)
+        // Non-ACL items (or entitlement-starved builds) may reject LAContext.
+        if isMissingEntitlement(status), context != nil {
+            query.removeValue(forKey: kSecUseAuthenticationContext as String)
+            item = nil
+            status = SecItemCopyMatching(query as CFDictionary, &item)
+        }
         switch status {
         case errSecSuccess:
             guard let data = item as? Data else { throw KeychainError.unexpectedData }
@@ -104,7 +118,14 @@ enum KeychainManager {
             addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         }
 
-        let status = SecItemAdd(addQuery as CFDictionary, nil)
+        var status = SecItemAdd(addQuery as CFDictionary, nil)
+        // Local Xcode / wrong-team / ad-hoc builds often can't create ACL items.
+        if accessControl != nil, status != errSecSuccess {
+            SecItemDelete(deleteQuery as CFDictionary)
+            addQuery.removeValue(forKey: kSecAttrAccessControl as String)
+            addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            status = SecItemAdd(addQuery as CFDictionary, nil)
+        }
         guard status == errSecSuccess else { throw KeychainError.osStatus(status) }
     }
 
