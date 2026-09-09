@@ -2,13 +2,8 @@
 //  EnrollmentRingView.swift
 //  glance
 //
-//  The tick ring around the camera preview during guided enrollment. 80
-//  ticks (10 per 45deg sector) tile the full circle; a sector's ticks grow
-//  longer and turn accent-blue once that direction has been captured.
-//  Center has no sector of its own — capturing it pulses every tick
-//  briefly instead (see `centerPulseTick` on OnboardingController).
-//  When enrollment finishes, the ticks merge into a solid accent loop
-//  while the checkmark draws.
+//  80 ticks tile the circle in 45deg sectors that light up once captured; center has no
+//  sector of its own and pulses every tick instead (see `centerPulseTick`).
 //
 
 import SwiftUI
@@ -28,8 +23,7 @@ struct EnrollmentRingView: View {
                 Capsule()
                     .fill(color(for: index))
                     .frame(width: width(for: index), height: length(for: index))
-                    // Inner tip anchored at the ring radius; growing `length`
-                    // extends the outer tip further out, not inward.
+                    // Inner tip anchored at the ring radius; growing `length` extends outward, not inward.
                     .offset(y: -(radius + length(for: index) / 2))
                     .rotationEffect(.degrees(angle(for: index)))
                     .opacity(isComplete ? 0 : 1)
@@ -44,11 +38,8 @@ struct EnrollmentRingView: View {
                     )
             }
 
-            // Frame diameter is solved to put the ring's outer edge at
-            // `diameter/2 + tickLengthLit - completionRingRadiusInset` —
-            // just inside where the lit ticks' outer tips sit, rather than
-            // exactly on top of them, so the ring reads as a hair smaller
-            // once the ticks vanish and it's left on its own.
+            // Sized to sit just inside the lit ticks' outer tips, so the ring reads a hair
+            // smaller once the ticks vanish and it's left on its own.
             Circle()
                 .stroke(GlanceTheme.accent, lineWidth: OnboardingMetrics.completionRingWidth)
                 .frame(

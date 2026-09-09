@@ -2,15 +2,8 @@
 //  FaceAligner.swift
 //  glance
 //
-//  ArcFace (like most modern face-embedding models) is trained on faces
-//  warped into a canonical pose: eyes level, fixed inter-eye distance, nose
-//  and mouth in fixed positions. Feeding it a loose bounding-box crop (what
-//  FaceDetector.crop produces) throws away a large chunk of its accuracy —
-//  this is not optional polish, it's part of the model's contract.
-//
-//  This solves the 2D similarity transform (rotation + uniform scale +
-//  translation) that maps 5 detected landmark points onto the standard
-//  ArcFace 112x112 template, then warps the source image through it.
+//  ArcFace requires faces warped into a canonical pose (eyes level, fixed positions) — a loose crop tanks its accuracy.
+//  Solves the 2D similarity transform mapping 5 detected landmarks onto the standard ArcFace template, then warps.
 //
 
 import Vision
@@ -30,12 +23,8 @@ enum AlignmentTier: String {
 nonisolated enum FaceAligner {
     static let outputSize = 112
 
-    /// Standard ArcFace/InsightFace 112x112 template landmark positions —
-    /// left eye, right eye, nose, left mouth corner, right mouth corner —
-    /// in top-left-origin pixel coordinates of the *output* image. "Left"/
-    /// "right" here mean on-screen left/right (as the image reads), not the
-    /// subject's anatomical left/right — see the ordering fix in
-    /// `fivePoints(from:imageSize:)` below.
+    /// Standard ArcFace 112x112 template: left eye, right eye, nose, left mouth, right mouth. "Left"/"right" are
+    /// on-screen, not anatomical — see the ordering fix in `fivePoints(from:imageSize:)`.
     private static let referencePoints: [CGPoint] = [
         CGPoint(x: 38.2946, y: 51.6963),
         CGPoint(x: 73.5318, y: 51.5014),
@@ -45,10 +34,7 @@ nonisolated enum FaceAligner {
     ]
     private static let eyeReferencePoints = Array(referencePoints[0...1])
 
-    /// Best-effort alignment: 5-point landmarks, falling back to 2-point
-    /// (eyes only), falling back to the existing padded bounding-box crop
-    /// resized to 112x112. Returns nil only if there's no usable face
-    /// geometry at all (crop failed against image bounds).
+    /// Best-effort: 5-point landmarks, falling back to 2-point (eyes only), falling back to a padded crop.
     static func align(_ face: DetectedFace, from image: CGImage) -> AlignedFace? {
         let imageSize = CGSize(width: image.width, height: image.height)
 
@@ -71,9 +57,7 @@ nonisolated enum FaceAligner {
 
     // MARK: - Landmark extraction
     //
-    // The point/centroid/eye-center/transform math this needs lives in
-    // `LandmarkGeometry` — shared with the liveness analyzer, which does
-    // the same cross-frame Procrustes fit for a different purpose.
+    // Point/centroid/eye-center/transform math lives in `LandmarkGeometry`, shared with the liveness analyzer.
 
     private static func fivePoints(from landmarks: VNFaceLandmarks2D, imageSize: CGSize) -> [CGPoint]? {
         guard let eyeA = LandmarkGeometry.eyeCenter(pupil: landmarks.leftPupil, eye: landmarks.leftEye, imageSize: imageSize),
@@ -81,11 +65,7 @@ nonisolated enum FaceAligner {
               let nose = landmarks.nose, let noseCenter = LandmarkGeometry.centroid(of: nose, imageSize: imageSize),
               let outerLips = landmarks.outerLips else { return nil }
 
-        // The reference template orders points on-screen-left-to-right, but
-        // Vision's `leftEye`/`rightEye` name the subject's *anatomical*
-        // eyes — which face the camera, so the subject's right eye is the
-        // one that appears on-screen-left. Sorting by x-coordinate instead
-        // of trusting either label sidesteps that mismatch entirely.
+        // Vision's leftEye/rightEye are anatomical, not on-screen — sort by x instead of trusting either label.
         let imageLeftEye = eyeA.x <= eyeB.x ? eyeA : eyeB
         let imageRightEye = eyeA.x <= eyeB.x ? eyeB : eyeA
 
@@ -104,13 +84,8 @@ nonisolated enum FaceAligner {
 
     // MARK: - Warp
 
-    /// Renders `image` through the similarity transform solved above into a
-    /// fresh 112x112 canvas. Both point sets are given (and the transform is
-    /// solved) in top-left/y-down pixel space; CGContext natively works in
-    /// bottom-left/y-up space, so points are flipped into that space before
-    /// solving — `CGContext.draw(_:in:)` already handles a CGImage's
-    /// top-down row order correctly on its own, so the image itself needs
-    /// no separate flip.
+    /// Points are given in top-left/y-down space but flipped before solving since CGContext is bottom-left/y-up;
+    /// the image itself needs no flip since `CGContext.draw(_:in:)` already handles a CGImage's row order.
     private static func warp(_ image: CGImage, sourcePoints: [CGPoint], destinationPoints: [CGPoint]) -> CGImage? {
         let imageHeight = CGFloat(image.height)
         let sourceFlipped = sourcePoints.map { CGPoint(x: $0.x, y: imageHeight - $0.y) }

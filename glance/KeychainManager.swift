@@ -2,9 +2,7 @@
 //  KeychainManager.swift
 //  glance
 //
-//  Thin, password-agnostic wrapper around Keychain Services. Knows nothing
-//  about sessions or encryption — just save/read/delete/exists by account,
-//  plus a helper for building a Touch-ID access control.
+//  Thin, password-agnostic wrapper around Keychain Services — save/read/delete/exists by account, plus a Touch-ID access control helper.
 //
 
 import Foundation
@@ -51,9 +49,7 @@ enum KeychainManager {
         return status != errSecItemNotFound
     }
 
-    /// Reads the raw data stored for `account`. If the item has an access
-    /// control (e.g. Touch ID), pass an `LAContext` to authorize the read —
-    /// the OS presents the prompt during this call.
+    /// Pass an `LAContext` to authorize a read on an access-controlled item — the OS presents the prompt during this call.
     nonisolated static func read(account: String, context: LAContext? = nil) throws -> Data {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -80,10 +76,7 @@ enum KeychainManager {
         }
     }
 
-    /// Saves `data` for `account`, replacing any existing item. Pass
-    /// `accessControl` (see `makeUserPresenceAccessControl()`) to gate future
-    /// reads behind Touch ID; pass `nil` for an item that's still
-    /// device-local and only readable while unlocked, but has no biometric gate.
+    /// Replaces any existing item. Pass `accessControl` to gate future reads behind Touch ID; `nil` for device-local, unlock-only.
     nonisolated static func save(account: String, data: Data, accessControl: SecAccessControl? = nil) throws {
         let deleteQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -120,8 +113,7 @@ enum KeychainManager {
         }
     }
 
-    /// Access control requiring Touch ID or device password at read time.
-    /// `.userPresence` covers both, with no separate no-hardware handling needed.
+    /// `.userPresence` requires Touch ID or device password, with no separate no-hardware handling needed.
     nonisolated static func makeUserPresenceAccessControl() throws -> SecAccessControl {
         var accessError: Unmanaged<CFError>?
         guard let access = SecAccessControlCreateWithFlags(

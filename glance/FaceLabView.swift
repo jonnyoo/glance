@@ -11,10 +11,7 @@ import SwiftUI
 import Charts
 
 struct FaceLabView: View {
-    /// Injected from AppEnvironment rather than created here, so the
-    /// Recognition settings page's "use Face Lab's suggested threshold"
-    /// button reads calibration data from this same instance instead of a
-    /// second, independently-empty FaceLabController.
+    /// Injected from AppEnvironment so Recognition settings reads calibration data from this same instance.
     @Bindable var controller: FaceLabController
 
     var body: some View {
@@ -62,27 +59,18 @@ struct FaceLabView: View {
             }
             .padding(20)
         }
-        // No minWidth/minHeight: those sized the old standalone debug
-        // window. This view is now hosted inside the Settings window's
-        // narrower content pane, where a 560pt floor just clipped the right
-        // edge instead of letting the content reflow.
         .onDisappear {
             controller.stop()
         }
-        // Guided enrollment runs in the notch, entirely outside this
-        // window's view hierarchy, so nothing else would prompt a re-read
-        // once it closes — and its Touch ID prompt is often what unlocks
-        // the session in the first place. Same trick YourFaceSettingsPage
-        // uses for exactly this reason.
+        // Guided enrollment runs in the notch, outside this view hierarchy, so nothing else prompts a re-read once
+        // it closes. Same trick YourFaceSettingsPage uses.
         .onChange(of: NotchOverlayController.shared.phase) { _, newPhase in
             guard newPhase == .closed else { return }
             controller.store.reloadIfUnlocked()
         }
     }
 
-    /// True while the notch is already hosting an onboarding flow. It's a
-    /// single shared panel, so starting a second one would swap the content
-    /// out from under the first mid-capture.
+    /// True while the notch (a single shared panel) is already hosting an onboarding flow.
     private var enrollmentFlowIsRunning: Bool {
         NotchOverlayController.shared.phase == .onboarding
     }
@@ -126,7 +114,7 @@ struct FaceLabView: View {
         }
     }
 
-    // MARK: - Milestone A: preview
+    // MARK: - Preview
 
     private var previewSection: some View {
         GroupBox("Camera Preview") {
@@ -161,7 +149,7 @@ struct FaceLabView: View {
         }
     }
 
-    // MARK: - Milestones B/C/D: detection + alignment + embedding
+    // MARK: - Detection + alignment + embedding
 
     private var detectionSection: some View {
         GroupBox("Detection") {
@@ -181,10 +169,7 @@ struct FaceLabView: View {
                         Text("Embedding: \(result.embedding.count) numbers")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        // Calibration aid for onboarding's pose gating — turn/tilt
-                        // your head and watch these to confirm which sign means
-                        // which direction before trusting OnboardingController's
-                        // yaw/pitch bands (see its poseMatches comment).
+                        // Calibration aid for onboarding's pose gating (see OnboardingController's poseMatches).
                         Text("Yaw: \(yawPitchString(result.face.yaw))  Pitch: \(yawPitchString(result.face.pitch))")
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
@@ -215,12 +200,7 @@ struct FaceLabView: View {
 
     // MARK: - Liveness
 
-    /// One section for all five cues, split by role rather than by which
-    /// checker they used to live in. The old two-section layout (motion &
-    /// geometry vs. spoof artifacts) is gone along with the signals that
-    /// justified it — what matters now is only whether a cue argues for a
-    /// spoof or for a real face, since either one firing decides the scan
-    /// on its own.
+    /// All five cues, split by role (deny vs. confirm) rather than which checker they live in.
     private var livenessSection: some View {
         GroupBox("Liveness") {
             VStack(alignment: .leading, spacing: 12) {
@@ -303,10 +283,7 @@ struct FaceLabView: View {
         }
     }
 
-    /// Level bar plus a fire counter. The counter is the part that matters
-    /// now: a cue's instantaneous level is only interesting insofar as it
-    /// crosses the fire threshold on enough frames, so both are shown side
-    /// by side rather than the level alone.
+    /// Level bar plus fire counter — the level only matters insofar as it crosses the fire threshold enough frames.
     private func cueRow(_ cue: LivenessCue) -> some View {
         let state = controller.currentLiveness.state(for: cue)
         let isEnabled = controller.isLivenessCueEnabled(cue)
@@ -359,8 +336,7 @@ struct FaceLabView: View {
         .opacity(isEnabled ? 1 : 0.45)
     }
 
-    /// The actual measurements each cue level is derived from — how to tell
-    /// "the threshold is wrong" from "the underlying number isn't moving."
+    /// The actual measurements each cue level is derived from.
     private var rawMeasurementsBlock: some View {
         VStack(alignment: .leading, spacing: 2) {
             if let frame = controller.lastLivenessFrame {
@@ -413,7 +389,7 @@ struct FaceLabView: View {
         return String(format: "%.0f%%", value * 100)
     }
 
-    // MARK: - Milestone E: enrollment
+    // MARK: - Enrollment
 
     private var enrollSection: some View {
         GroupBox("Enroll") {
@@ -459,12 +435,6 @@ struct FaceLabView: View {
     }
 
     // MARK: - Multi-identity enrollment
-    //
-    // A prototype of what the "Your Face" settings tab will show once it
-    // stops reading `identities.first`. Everything below the UI already
-    // supported several people: the store keeps an array, and `bestMatch`
-    // scores every enrolled identity independently — including several
-    // profiles for the same person under different appearances.
 
     private var identitiesSection: some View {
         GroupBox("Identities") {
@@ -503,7 +473,7 @@ struct FaceLabView: View {
         }
     }
 
-    // MARK: - Milestone F: recognition
+    // MARK: - Recognition
 
     private var recognizeSection: some View {
         GroupBox("Recognize") {
@@ -647,9 +617,7 @@ struct FaceLabView: View {
     }
 }
 
-/// One enrolled person: a summary line, the actions that apply to them, and
-/// a disclosure listing every stored sample with the capture quality that
-/// used to be shown live and then thrown away.
+/// One enrolled person: a summary line, actions, and a disclosure listing every stored sample's capture quality.
 private struct IdentityRow: View {
     let identity: FaceIdentity
     let isStale: Bool

@@ -2,14 +2,8 @@
 //  EnrollmentSweepWindowController.swift
 //  glance
 //
-//  Owns the full-screen, click-through sweep overlay shown during guided
-//  enrollment. Deliberately separate from NotchOverlay — the notch panel
-//  keeps the camera and tick ring, while directional guidance lives on a
-//  window that covers the preferred screen.
-//
-//  One borderless panel on `NotchGeometry.preferredScreen()` only, layered
-//  just below NotchWindow (`.mainMenu + 3`) so the camera panel always
-//  composites on top of the light.
+//  Owns the full-screen, click-through sweep overlay shown during guided enrollment;
+//  kept separate from NotchOverlay so the notch panel always composites on top of it.
 //
 
 import AppKit
@@ -52,15 +46,8 @@ final class EnrollmentSweepWindowController {
         self.window = window
     }
 
-    /// One-shot variant for the intro screen's single top-to-bottom
-    /// flourish — unlike `present(for:)`, this isn't pose-driven or
-    /// continuous (no `Host`, nothing tracking `currentPose`/`guideVisible`):
-    /// it shows exactly one direction once, then tears itself down on a
-    /// timer sized to the sweep's own animation length, with no external
-    /// `dismiss()` call needed. Still the same full-screen panel as guided
-    /// enrollment, not confined to the small notch content — that's the
-    /// whole point of using this window controller instead of a plain
-    /// SwiftUI overlay inside the step view.
+    /// One-shot variant for the intro's single flourish: shows exactly one direction once,
+    /// then tears itself down on a timer — no external `dismiss()` needed.
     func presentOnce(direction: EnrollmentSweepDirection) {
         dismissTask?.cancel()
         dismissTask = nil
@@ -84,12 +71,9 @@ final class EnrollmentSweepWindowController {
         }
     }
 
-    /// Shared panel setup between `present(for:)` and `presentOnce(direction:)`
-    /// — everything except what's actually hosted inside it. Both callers
-    /// set `sizingOptions = []` and an explicit `frame` on their hosting
-    /// view before calling this: empty/near-empty SwiftUI roots report a
-    /// zero intrinsic size, and a hosting view left to size to that
-    /// collapses the window, compositing the sweep into nothing.
+    /// Shared panel setup; callers must set `sizingOptions = []` and an explicit `frame`
+    /// on the hosting view first — near-empty SwiftUI roots report zero intrinsic size,
+    /// which collapses the window if left to size to it.
     private func makePanel(on screen: NSScreen, contentView: NSView) -> NSPanel {
         let window = NSPanel(
             contentRect: screen.frame,
@@ -104,8 +88,7 @@ final class EnrollmentSweepWindowController {
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false
         window.ignoresMouseEvents = true
-        // One below NotchWindow's `.mainMenu + 3` so the notch panel
-        // always reads on top of the sweep, with no masking needed.
+        // One below NotchWindow's `.mainMenu + 3` so the notch panel reads on top.
         window.level = .mainMenu + 2
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         window.contentView = contentView
@@ -143,8 +126,7 @@ private struct EnrollmentSweepOverlay: View {
     @State private var playTask: Task<Void, Never>?
 
     var body: some View {
-        // Read observable fields in `body` (not only via helpers) so the
-        // hosting view actually subscribes to pose / visibility changes.
+        // Read observable fields in `body` so the hosting view actually subscribes to changes.
         let pose = host.controller.currentPose
         let presented = host.isPresented
         let guiding = host.controller.guideVisible
@@ -155,8 +137,7 @@ private struct EnrollmentSweepOverlay: View {
         let isVisible = canPlay && playingDirection != nil
 
         ZStack {
-            // Gives the hosting view a real expanding child so layout fills
-            // the panel even while the first (center) pose has no sweep.
+            // Gives the hosting view a real expanding child even while the center pose has no sweep.
             Color.clear
             if isVisible, let playingDirection {
                 EnrollmentDirectionSweep(direction: playingDirection)

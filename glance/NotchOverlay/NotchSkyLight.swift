@@ -2,38 +2,22 @@
 //  NotchSkyLight.swift
 //  glance
 //
-//  Private, undocumented SkyLight window-server API — the only way found
-//  to make a window visible on the real macOS lock screen. Phase 0 of the
-//  notch overlay plan spiked plain NSWindow.level values (.mainMenu + 3,
-//  .screenSaver) and confirmed neither appears there.
+//  Private, undocumented SkyLight window-server API — the only way found to make
+//  a window visible on the real macOS lock screen. Adapted from Lakr233/SkyLightWindow
+//  (MIT) — https://github.com/Lakr233/SkyLightWindow.
 //
-//  Adapted from the real, verified implementation in Lakr233/SkyLightWindow
-//  (MIT license) — https://github.com/Lakr233/SkyLightWindow — which
-//  Boring Notch also depends on for this exact purpose. Fetched and read
-//  directly rather than reconstructed from memory, since guessing at
-//  private C symbol sequences is exactly the kind of thing worth getting
-//  from a verified source. The `undelegate` counterpart (the package only
-//  ships one-way delegation) mirrors Boring Notch's own addition of the
-//  matching `SLSRemoveWindowsFromSpaces` call.
+//  RISK: dlopen's a private Apple framework and calls undocumented C symbols. Apple
+//  can change or remove them in any macOS update, and their use would disqualify Mac
+//  App Store distribution. `shared` is nil if loading fails, so the app degrades to
+//  "no lock-screen visibility" instead of crashing.
 //
-//  RISK, stated plainly: this dlopen's a private Apple framework and calls
-//  undocumented C symbols. Apple can change or remove them in any macOS
-//  update with no warning, and their use would disqualify the app from Mac
-//  App Store distribution. Isolated to this one file with `shared` as an
-//  Optional (nil if dlopen/dlsym fail for any reason, including a future
-//  OS no longer exposing these symbols) so the rest of the app degrades to
-//  "no lock-screen visibility" instead of crashing if this ever breaks.
-//
-//  Toggle delegation ONLY while the screen is actually locked — see
-//  NotchWindowController. Never leave a window delegated during normal use.
+//  Toggle delegation ONLY while the screen is actually locked — see NotchWindowController.
 //
 
 import AppKit
 
-/// Absolute privilege levels for the private CGS/SkyLight space system.
-/// `notificationCenterAtScreenLock` is what Notification Center itself
-/// renders at while the screen is locked — higher than the plain
-/// `screenLock` level, which is why that one is used here.
+/// What Notification Center itself renders at while the screen is locked — higher
+/// than the plain `screenLock` level, which is why that one is used here.
 private enum SkyLightSpaceLevel: Int32 {
     case notificationCenterAtScreenLock = 400
 }
@@ -80,9 +64,7 @@ final class NotchSkyLight {
         removeWindowsFromSpaces = unsafeBitCast(removeSym, to: F_SLSRemoveWindowsFromSpaces.self)
 
         connection = mainConnectionID()
-        // The `1` flag here is load-bearing, per Boring Notch's own
-        // comment on this exact call: any other value causes Finder to
-        // draw desktop icons into this space.
+        // The `1` flag is load-bearing: any other value causes Finder to draw desktop icons into this space.
         space = spaceCreate(connection, 1, 0)
         _ = setAbsoluteLevel(connection, space, SkyLightSpaceLevel.notificationCenterAtScreenLock.rawValue)
         _ = showSpaces(connection, [space] as CFArray)

@@ -37,10 +37,8 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    /// `.yourFace` uses a custom mark (`Assets.xcassets/YourFaceIcon`) —
-    /// SF Symbols has no equivalent of it. Every other tab is a built-in
-    /// symbol; see `SettingsTabIcon` for how `SettingsTabIconBadge` renders
-    /// either kind identically otherwise.
+    /// `.yourFace` uses a custom mark — SF Symbols has no equivalent.
+    /// Every other tab is a built-in symbol; see `SettingsTabIcon`.
     var icon: SettingsTabIcon {
         switch self {
         case .general: return .system("gearshape.fill")
@@ -54,26 +52,8 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
     }
 
     /// Top-to-bottom gradient stops for this tab's icon badge
-    /// (`SettingsTabIconBadge`, drawn behind the glyph in both the sidebar
-    /// row and the page header) — the small colored squircle System
-    /// Settings gives each category, several of which (General's gear,
-    /// among others) are themselves a subtle vertical gradient rather than
-    /// a flat fill.
-    ///
-    /// Two colors, read top-first: `SettingsTabIconBadge` always renders a
-    /// `LinearGradient(colors:, startPoint: .top, endPoint: .bottom)`, so a
-    /// flat tile (most tabs, for now) is just the same color listed twice —
-    /// there's no separate "flat" case to keep in sync.
-    ///
-    /// To give a tab its own gradient later — e.g. one picked in Figma —
-    /// change just its line below. Figma's own "Copy as CSS" on a gradient
-    /// fill hands you a `linear-gradient(...)` string with each stop's hex
-    /// already in order; for a straight-down (180deg) gradient that order
-    /// matches this array directly (top stop first). If a gradient has more
-    /// than two stops, or stops that aren't evenly spaced, swap this
-    /// property's return type for `[Gradient.Stop]` and pass
-    /// `Gradient(stops:)` into `SettingsTabIconBadge` instead — see its doc
-    /// comment.
+    /// (`SettingsTabIconBadge`). Two colors, read top-first; a flat tile is
+    /// just the same color listed twice.
     var badgeGradientColors: [Color] {
         switch self {
         case .general: return GlanceTheme.badgeGeneral
@@ -86,8 +66,8 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    /// Section this tab is grouped under. `nil` renders with no header,
-    /// matching the Figma design's ungrouped "General" row at the top.
+    /// Section this tab is grouped under. `nil` renders with no header —
+    /// the ungrouped "General" row at the top.
     var section: SettingsSection? {
         switch self {
         case .general: return nil

@@ -2,13 +2,8 @@
 //  LoopingVideoView.swift
 //  glance
 //
-//  Plays a bundled video on loop, holding on its last frame for
-//  `pauseBetweenLoops` before restarting from the top. Used by the
-//  onboarding intro (logo) and pre-setup (idle glyph) screens.
-//
-//  Distinct from ScanAnimationView: that one plays once and holds forever
-//  on a resolved success/failure state; this one loops indefinitely with a
-//  timed gap between plays.
+//  Plays a bundled video on loop, holding its last frame for `pauseBetweenLoops`
+//  before restarting. Distinct from ScanAnimationView, which plays once and holds.
 //
 
 import SwiftUI

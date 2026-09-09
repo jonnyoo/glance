@@ -2,19 +2,16 @@
 //  GlanceTheme.swift
 //  glance
 //
-//  Color and type tokens for the notch-native onboarding redesign, lifted
-//  directly from the Figma file. Nothing in the rest of the app reads this
-//  today — it exists to keep OnboardingStepViews/OnboardingControls from
-//  repeating the same hex literals everywhere.
+//  Color and type tokens, kept here so OnboardingStepViews/OnboardingControls don't
+//  repeat the same hex literals everywhere.
 //
 
 import SwiftUI
 
 enum GlanceTheme {
     static let accent = Color(red: 0x34 / 255, green: 0x99 / 255, blue: 0xFF / 255)
-    /// Accent-derived shades used by the enrollment sweep. Same hue family,
-    /// shifted lightness/saturation so layered streaks read as one body of
-    /// light rather than several flat blue shapes.
+    /// Accent-derived shades for the enrollment sweep, shifted so layered streaks read
+    /// as one body of light rather than several flat shapes.
     static let accentPale   = Color(red: 0xCF / 255, green: 0xE7 / 255, blue: 0xFF / 255)
     static let accentBright = Color(red: 0x7F / 255, green: 0xC2 / 255, blue: 0xFF / 255)
     static let accentDeep   = Color(red: 0x1F / 255, green: 0x6B / 255, blue: 0xD1 / 255)
@@ -41,8 +38,7 @@ enum GlanceTheme {
                                     Color(red: 0x55 / 255, green: 0x3F / 255, blue: 0xB5 / 255)] // bottom: purple
 
     enum Font {
-        /// Scaled up from a literal Figma-frame halving so content reads
-        /// clearly at the wider `OnboardingMetrics.panelWidth`.
+        /// Scaled up so content reads clearly at the wider `OnboardingMetrics.panelWidth`.
         static let title = SwiftUI.Font.system(size: 26, weight: .bold)
         static let button = SwiftUI.Font.system(size: 13, weight: .medium)
         static let rowTitle = SwiftUI.Font.system(size: 13, weight: .medium)

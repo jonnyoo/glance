@@ -2,9 +2,7 @@
 //  AnimatedCheckmark.swift
 //  glance
 //
-//  A checkmark that draws itself on with a trim animation, used by both the
-//  camera-complete step (large, accent blue) and the final "You're all set"
-//  step (small, white). Scales to whatever frame the caller gives it.
+//  Draws itself on with a trim animation; scales to whatever frame the caller gives it.
 //
 
 import SwiftUI

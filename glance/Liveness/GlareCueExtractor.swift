@@ -2,37 +2,22 @@
 //  GlareCueExtractor.swift
 //  glance
 //
-//  The pixel-facing half of the gloss/glare cue: turns one
-//  native-resolution face crop into a `GlareSample` (`GlareCue.swift`,
-//  which has no CoreImage dependency) — the same split as
-//  `LivenessFeatures.swift` / `LivenessScoring.swift`, and for the same
-//  reason: keep the pure decision logic (`LivenessCues.swift`) compiling
-//  standalone in `tools/liveness_selftest.swift`.
-//
-//  One decode-and-scan pass over the crop's pixels, no frequency-domain
-//  work — cheap enough to run on every liveness frame, same budget class as
-//  `DeviceBezelDetector`.
+//  Turns a native-resolution face crop into a `GlareSample`. One decode-and-scan
+//  pass, no frequency-domain work — cheap enough to run on every liveness frame.
 //
 
 import CoreGraphics
 
 nonisolated enum GlareCueExtractor {
-    /// Near-white, near-gray pixel — the signature of a direct specular
-    /// highlight (a light source reflecting straight off glass or skin)
-    /// rather than a bright but still-colored surface.
+    /// Near-white, near-gray pixel — signature of a direct specular highlight vs. a bright colored surface.
     private static let specularLumaFloor: Float = 235
     private static let specularChromaTolerance: Float = 10
 
-    /// Grid resolution for the clustering measure. Coarse on purpose: the
-    /// question is "is the glare one blob or many scattered points", which
-    /// a fine grid would answer no better and a 2x2 would answer for free
-    /// no matter what the glare looks like.
+    /// Coarse on purpose — just distinguishes "one blob" from "many scattered points".
     private static let clusterGridSize = 8
 
-    /// Returns `nil` only if the crop couldn't be rasterized at all. A crop
-    /// too small to be informative still yields a sample — `LivenessCues
-    /// .glossGlare` discounts it via `cropPixelWidth`, rather than this
-    /// silently dropping the frame.
+    /// Returns `nil` only if the crop couldn't be rasterized; a too-small crop still
+    /// yields a sample, discounted elsewhere via `cropPixelWidth`.
     static func extract(faceCrop: CGImage) -> GlareSample? {
         let width = faceCrop.width
         let height = faceCrop.height

@@ -2,11 +2,7 @@
 //  CameraDeviceCatalog.swift
 //  glance
 //
-//  Enumerates available video capture devices and resolves the app's
-//  camera preference (a flat default, or a pair split by whether the
-//  active display is the Mac's built-in panel or an external one) into
-//  the concrete device to open. Previously CameraManager hardcoded the
-//  built-in wide-angle camera with no way to pick anything else.
+//  Resolves the app's camera preference (flat default, or split by built-in vs. external display) into the device to open.
 //
 
 import AVFoundation
@@ -37,10 +33,7 @@ enum CameraDeviceCatalog {
         return CGDisplayIsBuiltin(screenNumber) != 0
     }
 
-    /// Resolves the device to actually open: the display-specific override
-    /// first, falling back to the flat default, falling back to the system
-    /// default camera if nothing is configured or the configured device is
-    /// no longer connected.
+    /// Display-specific override, then flat default, then the system default camera.
     static func resolvedDevice() -> AVCaptureDevice? {
         let settings = GlanceSettings.shared
         let preferredID = isUsingBuiltInDisplay()

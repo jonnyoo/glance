@@ -2,15 +2,9 @@
 //  YourFaceSettingsPage.swift
 //  glance
 //
-//  The multi-identity Your Face page (Figma node 121:3). Every enrolled
-//  person gets a card: their name, a switch that takes them in or out of
-//  face unlock, a strip of per-sample capture-quality ticks, and Recapture /
-//  Delete. The card chrome deliberately reuses `SettingsGroup` and the
-//  `SettingsMetrics` row tokens rather than the Figma frame's raw hexes, so
-//  this page stays in step with General/Password/Camera in both appearances.
-//
-//  The locked and not-enrolled states are unchanged — the redesign only
-//  replaces what the page shows once identities are actually readable.
+//  The multi-identity Your Face page. Every enrolled person gets a card:
+//  name, an enable switch, per-sample capture-quality ticks, and
+//  Recapture/Delete.
 //
 
 import SwiftUI
@@ -23,18 +17,13 @@ struct YourFaceSettingsPage: View {
     @State private var isUnlocking = false
     @State private var identityPendingDeletion: FaceIdentity?
     /// Surfaced when an encrypted write fails (realistically: the session
-    /// lapsed between rendering and tapping). The store rolls its in-memory
-    /// state back on failure, so the control snaps back on its own — this
-    /// just explains why.
+    /// lapsed between rendering and tapping). The store rolls back on
+    /// failure, so the control snaps back on its own — this explains why.
     @State private var writeError: String?
 
-    /// Locked takes priority over enrollment status for a reason specific to
-    /// this store, not just copied from Password's page: `FaceIdentity` data
-    /// is encrypted under the session key (see `FaceEnrollmentStore
-    /// .reloadIfUnlocked`), so whether anyone is enrolled is simply *unknown*
-    /// until the session is unlocked — unlike a stored password, whose
-    /// existence is a plain Keychain check needing no decryption at all.
-    /// There is no way to show "not enrolled" before that.
+    /// Locked takes priority over enrollment status: `FaceIdentity` data is
+    /// encrypted under the session key, so whether anyone is enrolled is
+    /// unknown until the session is unlocked.
     private enum PageStateKind: Equatable {
         case locked
         case unreadable
@@ -44,9 +33,8 @@ struct YourFaceSettingsPage: View {
 
     private var stateKind: PageStateKind {
         if store.isLocked { return .locked }
-        // Ahead of `.notEnrolled`: a store that failed to decrypt looks
-        // identical to an empty one from here, and offering "Set up FaceID"
-        // over data we simply couldn't read is how it would get destroyed.
+        // Ahead of `.notEnrolled` — a failed decrypt looks like an empty
+        // store, and offering "Set up FaceID" there would destroy the data.
         if store.loadFailure != nil { return .unreadable }
         return store.identities.isEmpty ? .notEnrolled : .enrolled
     }
@@ -81,12 +69,8 @@ struct YourFaceSettingsPage: View {
         }
         .animation(SettingsMetrics.stateTransitionAnimation, value: stateKind)
         .onAppear { store.reloadIfUnlocked() }
-        // The enrollment flow runs in the notch, entirely outside this
-        // window's view hierarchy — this view never disappears while it's
-        // open, so nothing else would prompt a re-check once it closes.
-        // Without this, finishing "Set up FaceID" (or a recapture) would
-        // leave this page on its old state until the user happened to
-        // switch tabs and back.
+        // The enrollment flow runs in the notch, outside this view's
+        // hierarchy, so nothing else prompts a re-check once it closes.
         .onChange(of: NotchOverlayController.shared.phase) { _, newPhase in
             guard newPhase == .closed else { return }
             store.reloadIfUnlocked()
@@ -122,10 +106,9 @@ struct YourFaceSettingsPage: View {
 
     // MARK: - Unreadable
 
-    /// The session is open but the encrypted store didn't decrypt — almost
-    /// always a session key that no longer matches the data. Deliberately
-    /// offers no enroll or delete action: every write from here would
-    /// replace faces that are still on disk.
+    /// Session open but the encrypted store didn't decrypt. Deliberately
+    /// offers no enroll or delete action, since a write here would replace
+    /// faces still on disk.
     private var unreadableState: some View {
         VStack(spacing: SettingsMetrics.emptyStateSpacing) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -176,9 +159,7 @@ struct YourFaceSettingsPage: View {
                 )
             }
 
-            // Every switch off is a legitimate state to be in, but it makes
-            // face unlock silently match nobody — worth saying out loud
-            // rather than leaving the user to wonder why it stopped.
+            // Worth saying out loud that face unlock now matches nobody.
             if !store.identities.isEmpty && store.activeIdentities.isEmpty {
                 SettingsCaption(text: "No identities are enabled — face unlock won't recognize anyone until you switch one back on.")
             }
@@ -189,9 +170,8 @@ struct YourFaceSettingsPage: View {
         }
     }
 
-    /// Mirrors the Password page's "Password encrypted" row — same
-    /// `lock.fill` glyph, same weight — since both are saying the same thing
-    /// about the same session key.
+    /// Mirrors the Password page's "Password encrypted" row — both refer to
+    /// the same session key.
     private var faceEncryptedCard: some View {
         SettingsGroup {
             VStack(alignment: .leading, spacing: 6) {
@@ -240,9 +220,8 @@ struct YourFaceSettingsPage: View {
 
     // MARK: - Actions
 
-    /// Reads through to the store rather than capturing the row's snapshot,
-    /// so the switch reflects a rolled-back write instead of the value the
-    /// user just tapped.
+    /// Reads through to the store so the switch reflects a rolled-back
+    /// write instead of the value the user just tapped.
     private func enabledBinding(for identity: FaceIdentity) -> Binding<Bool> {
         Binding(
             get: { store.identities.first { $0.id == identity.id }?.isEnabled ?? true },
@@ -286,10 +265,9 @@ struct YourFaceSettingsPage: View {
 
 // MARK: - Identity card
 
-/// One enrolled person. Laid out as the Figma frame has it — name pill and
-/// switch on the first line, the quality read-out and its actions on the
-/// second — but built from `SettingsGroup` and the shared row tokens so the
-/// fills, radii, and hairline borders match every other settings page.
+/// One enrolled person: name pill and switch on the first line, quality
+/// read-out and actions on the second. Built from `SettingsGroup` and the
+/// shared row tokens so it matches every other settings page.
 private struct IdentityCard: View {
     let identity: FaceIdentity
     let isStale: Bool
@@ -306,10 +284,9 @@ private struct IdentityCard: View {
         identity.samples.filter { $0.qualityTier != .unrated }.count
     }
 
-    /// "3/18 low" counts only the red band, matching the tick colors right
-    /// beneath it. An enrollment saved before per-sample quality existed has
-    /// nothing to report — saying "0/18 low" there would read as a clean
-    /// bill of health for samples that were never measured.
+    /// "3/18 low" counts only the red band. An enrollment saved before
+    /// per-sample quality existed reports "not recorded" rather than a
+    /// misleading "0/18 low".
     private var qualityCaption: String {
         if identity.samples.isEmpty { return "No samples captured" }
         if ratedCount == 0 { return "Capture quality • not recorded" }
@@ -377,7 +354,7 @@ private struct IdentityCard: View {
 
 /// One tick per stored sample, colored by its band. Reads left-to-right in
 /// capture order (not sorted by score) so a run of red points at the pose
-/// that actually went badly, which is the thing a recapture would fix.
+/// that actually went badly.
 private struct QualityTickStrip: View {
     let samples: [FaceSample]
 
@@ -386,9 +363,8 @@ private struct QualityTickStrip: View {
             ForEach(Array(samples.enumerated()), id: \.offset) { _, sample in
                 Capsule()
                     .fill(color(for: sample.qualityTier))
-                    // A max (not a fixed) width so an identity with far more
-                    // samples than a guided enrollment's 18 compresses its
-                    // ticks instead of overflowing the card.
+                    // maxWidth, not fixed, so more samples than a guided
+                    // enrollment's 18 compress instead of overflowing.
                     .frame(maxWidth: SettingsMetrics.qualityTickWidth)
             }
         }
@@ -399,8 +375,7 @@ private struct QualityTickStrip: View {
 
     /// Fixed rather than flexible: this strip shares a row with a `Spacer`
     /// and two buttons, and a `maxWidth` frame would negotiate against them
-    /// for the slack instead of just sizing to its ticks. Past the cap the
-    /// width stops growing and the ticks compress inside it.
+    /// for the slack instead of just sizing to its ticks.
     private var stripWidth: CGFloat {
         let tick = SettingsMetrics.qualityTickWidth
         let gap = SettingsMetrics.qualityTickSpacing
@@ -418,9 +393,9 @@ private struct QualityTickStrip: View {
     }
 }
 
-/// Neutral capsule button matching the card's inner pills — the Figma
-/// "Recapture" control. Deliberately not `SettingsPrimaryButton`: this sits
-/// next to a destructive action and shouldn't read as the accent CTA.
+/// Neutral capsule button matching the card's inner pills. Deliberately not
+/// `SettingsPrimaryButton`: this sits next to a destructive action and
+/// shouldn't read as the accent CTA.
 private struct PillActionButton: View {
     let title: String
     let action: () -> Void

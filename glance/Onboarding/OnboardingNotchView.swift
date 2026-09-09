@@ -2,14 +2,8 @@
 //  OnboardingNotchView.swift
 //  glance
 //
-//  Root of the onboarding flow, hosted inside the notch panel by
-//  NotchOverlayView. Routes `controller.step` to its screen and applies the
-//  scroll-with-blur transition between them.
-//
-//  On Next, both the outgoing and incoming screens travel upward — the
-//  current content scrolls up and away while the next one scrolls up into
-//  place from below. Back is the mirror: everything travels downward, the
-//  previous screen arriving from above.
+//  Routes `controller.step` to its screen and applies the scroll-with-blur transition
+//  between them: Next travels upward, Back is the mirror, travelling downward.
 //
 
 import SwiftUI
@@ -58,9 +52,8 @@ struct OnboardingNotchView: View {
     }
 }
 
-/// Backing modifier for the scroll+blur transition — offsets vertically,
-/// blurs, and fades all at once so entering/exiting content reads as
-/// scrolling past with a dissolve rather than a hard cut.
+/// Backing modifier for the scroll+blur transition — offsets, blurs, and fades at once
+/// so content reads as scrolling past with a dissolve rather than a hard cut.
 private struct OffsetBlurOpacity: ViewModifier {
     let offset: CGFloat
     let blur: CGFloat

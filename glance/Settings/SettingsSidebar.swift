@@ -3,8 +3,7 @@
 //  glance
 //
 //  A fixed, non-collapsible sidebar — plain VStack of buttons rather than
-//  NavigationSplitView, deliberately: NavigationSplitView's sidebar can be
-//  collapsed by the user, which the design explicitly doesn't want.
+//  NavigationSplitView, whose sidebar can be collapsed by the user.
 //
 
 import SwiftUI
@@ -12,26 +11,22 @@ import SwiftUI
 struct SettingsSidebar: View {
     @Binding var selection: SettingsTab
     @Bindable var pocController: POCController
-    /// Whether the Debug/Face Lab section should render at all — see
-    /// `AppEnvironment.isDebugSectionRevealed`. Hidden by default; this view
-    /// has no way to reveal it itself, only to reflect what's already true.
+    /// Whether the Debug/Face Lab section should render — see
+    /// `AppEnvironment.isDebugSectionRevealed`. This view only reflects it.
     let isDebugSectionRevealed: Bool
 
     @State private var isUnlocking = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Empty reserved band, not a view: the traffic lights here are
-            // the window's real ones, drawn by AppKit in the titlebar area
-            // that our content extends underneath (see
-            // WindowConfiguringView). Nothing of ours may sit in this strip
-            // or it would render on top of them.
+            // Empty reserved band — the window's real traffic lights are
+            // drawn here by AppKit (see WindowConfiguringView); nothing of
+            // ours may sit in this strip.
             Color.clear
                 .frame(height: SettingsMetrics.trafficLightBandHeight)
 
-            // Plain VStack, not a ScrollView — the design wants a fixed,
-            // non-scrolling sidebar, and the full tab list comfortably fits
-            // the window height without one.
+            // Plain VStack, not a ScrollView — the full tab list comfortably
+            // fits the window height without scrolling.
             VStack(alignment: .leading, spacing: SettingsMetrics.sidebarSectionSpacing) {
                 ForEach(SettingsTab.sectionOrder(includingDebug: isDebugSectionRevealed), id: \.self) { section in
                     sectionGroup(section)
@@ -49,22 +44,18 @@ struct SettingsSidebar: View {
         }
         .frame(width: SettingsMetrics.sidebarWidth)
         .onAppear { pocController.refreshCredentialStatus() }
-        // Some unlock paths (Face Lab's debug "Unlock" button, the
-        // onboarding flows) call SecureCredentialManager directly rather
-        // than through this pocController, so this doesn't just update
-        // reactively on its own the way a page reading the same
-        // @Observable instance would. Same refresh every gated page already
-        // does after the notch closes, so this box stays correct regardless
-        // of which page happens to be selected when that happens.
+        // Some unlock paths call SecureCredentialManager directly rather
+        // than through this pocController, so this doesn't update
+        // reactively on its own — refresh after the notch closes, same as
+        // every gated page.
         .onChange(of: NotchOverlayController.shared.phase) { _, newPhase in
             guard newPhase == .closed else { return }
             pocController.refreshCredentialStatus()
         }
     }
 
-    /// Docked to the sidebar's bottom edge, outside the scrolling tab list —
-    /// always visible regardless of selection. Doubles as the session's
-    /// on/off switch: unlocks while locked, locks while unlocked.
+    /// Docked to the sidebar's bottom edge, always visible. Doubles as the
+    /// session's on/off switch: unlocks while locked, locks while unlocked.
     private var sessionLockIndicator: some View {
         Button(action: toggleSession) {
             HStack(spacing: 8) {
@@ -72,11 +63,8 @@ struct SettingsSidebar: View {
                     .font(.system(size: 12))
                     .foregroundStyle(SettingsMetrics.textPrimary)
                     .frame(width: 16)
-                    // Apple's own textbook case for `.replace` — a padlock
-                    // shackle popping open — so this animates the icon
-                    // itself rather than a plain crossfade wherever the
-                    // system supports it; SwiftUI falls back to a crossfade
-                    // on its own if it can't.
+                    // `.replace` animates the padlock shackle popping open
+                    // where supported; SwiftUI falls back to a crossfade.
                     .contentTransition(.symbolEffect(.replace))
                     // .padding(.leading, 3)
 
@@ -98,9 +86,8 @@ struct SettingsSidebar: View {
             .contentShape(RoundedRectangle(cornerRadius: SettingsMetrics.rowRadius))
         }
         .buttonStyle(.plain)
-        // Only disabled mid-authentication — a tap then would either double
-        // up the Touch ID prompt or race the lock it hasn't resolved yet.
-        // Otherwise always tappable in both directions.
+        // Only disabled mid-authentication — a tap then would double up the
+        // Touch ID prompt or race the unresolved lock.
         .disabled(isUnlocking)
         .animation(SettingsMetrics.stateTransitionAnimation, value: pocController.isSessionUnlocked)
         .animation(SettingsMetrics.stateTransitionAnimation, value: isUnlocking)
@@ -166,10 +153,8 @@ struct SettingsSidebar: View {
                 RoundedRectangle(cornerRadius: SettingsMetrics.selectedPillRadius)
                     .fill(selection == tab ? SettingsMetrics.selectedPillColor : .clear)
             )
-            // Without this, the button's hit-testable area shrinks to just
-            // the rendered icon+text — not the full row, including the
-            // Spacer-filled trailing space — so only tapping directly on
-            // the text registered.
+            // Without this, the hit-testable area shrinks to the rendered
+            // icon+text rather than the full row.
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -2,17 +2,8 @@
 //  EnrollmentDirectionSweep.swift
 //  glance
 //
-//  A reusable full-screen "sweep of light" — several layered, blurred
-//  accent-colored ribbons that accelerate across the view toward a given
-//  enrollment direction. Intentionally not an arrow: the motion itself is
-//  the cue. The camera preview stays visually dominant; this is atmospheric
-//  guidance, not a HUD.
-//
-//  Curved trajectories are driven by an `Animatable` modifier whose
-//  `animatableData` is sweep progress. Animating `.offset` directly would
-//  interpolate the resolved offset and flatten any arc back into a straight
-//  line; interpolating progress and evaluating a quadratic Bézier each
-//  frame is what keeps the path curved.
+//  Layered blurred ribbons that sweep toward an enrollment direction; intentionally
+//  not an arrow — the motion itself is the cue.
 //
 
 import SwiftUI
@@ -20,9 +11,8 @@ import SwiftUI
 enum EnrollmentSweepDirection: CaseIterable, Hashable {
     case left, right, up, down, topLeft, topRight, bottomLeft, bottomRight
 
-    /// Unit travel vector in SwiftUI screen space (x right, y down). The
-    /// sweep originates on the opposite side and exits in this direction —
-    /// `.left` travels right → left, `.up` travels bottom → top.
+    /// Unit travel vector in screen space (x right, y down); sweep originates on the
+    /// opposite side, e.g. `.left` travels right → left.
     var travel: CGVector {
         let d = CGFloat(1 / sqrt(2.0))
         switch self {
@@ -97,22 +87,18 @@ private struct StreakSpec: Identifiable {
     let peakOpacity: Double
     let duration: Double
     let delay: Double
-    /// Perpendicular offset across the travel band, as a fraction of the
-    /// shorter canvas edge. Signed so streaks fan out rather than stacking.
+    /// Perpendicular offset (fraction of the shorter canvas edge); signed so streaks fan out.
     let lateral: CGFloat
-    /// Quadratic Bézier curvature, as a fraction of the shorter canvas
-    /// edge. Opposite signs arc opposite ways so the trail feels organic.
+    /// Bézier curvature (fraction of the shorter canvas edge); opposite signs arc opposite ways.
     let bow: CGFloat
-    /// Progress at which opacity reaches zero. Values below 1 die mid-
-    /// screen; 1.0 runs fully off the far edge.
+    /// Progress at which opacity reaches zero; below 1 dies mid-screen, 1.0 runs off the far edge.
     let fadeOutAt: Double
     let hasHighlight: Bool
     let isVivid: Bool
 }
 
 extension EnrollmentDirectionSweep {
-    /// ~42 ribbons fanned across the same perpendicular span as before —
-    /// denser packing, not a wider field.
+    /// 42 ribbons fanned across a fixed perpendicular span — denser packing, not a wider field.
     fileprivate static let specs: [StreakSpec] = makeSpecs()
 
     private static func makeSpecs() -> [StreakSpec] {
@@ -163,17 +149,14 @@ private struct SweepGeometry {
         let travel = direction.travel
         let perp = CGVector(dx: -travel.dy, dy: travel.dx)
         let shortEdge = min(canvasSize.width, canvasSize.height)
-        // Enter a bit early. The far end stops short of a full off-screen
-        // exit so the ease-out is still on-camera.
+        // Far end stops short of a full off-screen exit so the ease-out is still on-camera.
         let diagonal = hypot(canvasSize.width, canvasSize.height)
         let startSpan = diagonal * 0.58
         let endSpan = diagonal * 0.50
         length = max(shortEdge * spec.lengthFactor * 0.55, 180)
         let cx = canvasSize.width / 2
         let cy = canvasSize.height / 2
-        // Spread along the true perpendicular screen axis (height for a
-        // horizontal sweep, width for a vertical one) so ribbons fan across
-        // most of the display instead of a narrow center band.
+        // Spread along the true perpendicular screen axis so ribbons fan across the display.
         let perpExtent = abs(perp.dx) * canvasSize.width + abs(perp.dy) * canvasSize.height
         let lateral = spec.lateral * perpExtent * 0.46
         start = CGPoint(
@@ -207,8 +190,7 @@ private struct SweepGeometry {
 
     func opacity(at t: Double, peak: Double, fadeOutAt: Double) -> Double {
         let fadeInEnd = 0.07
-        // Hold full opacity through the fast middle, then dissolve during
-        // the ease-out so the slowdown is still visible.
+        // Dissolve during the ease-out so the slowdown is still visible.
         let fadeOutStart = 0.7
         if t <= 0 || t >= fadeOutAt { return 0 }
         if t < fadeInEnd {
@@ -227,11 +209,8 @@ private struct SweepGeometry {
 
 // MARK: - Motion
 
-/// Position, rotation and opacity all derive from one animated `progress`,
-/// so a single ease-in timing curve governs the whole streak. This is a
-/// `View` rather than a `ViewModifier` so SwiftUI interpolates
-/// `animatableData` on the view itself — the reliable path for evaluating
-/// a Bézier each frame instead of sliding between endpoints.
+/// A `View` (not a `ViewModifier`) so SwiftUI interpolates `animatableData` on the view
+/// itself — the reliable path for evaluating a Bézier each frame instead of sliding between endpoints.
 private struct SweepMovingContainer<Content: View>: View, Animatable {
     var progress: Double
     let geometry: SweepGeometry
@@ -249,10 +228,8 @@ private struct SweepMovingContainer<Content: View>: View, Animatable {
         let point = geometry.point(at: t)
         let cx = geometry.canvasSize.width / 2
         let cy = geometry.canvasSize.height / 2
-        // Rotate first, then translate. Offset does not change the view's
-        // layout center, so rotating *after* offset spins the translation
-        // around the screen center and sends most directions the wrong way
-        // (left↔right flip, up/down sliding sideways).
+        // Rotate first, then translate — rotating after offset would spin the translation
+        // around the screen center and send most directions the wrong way.
         content
             .rotationEffect(.radians(geometry.heading(at: t) + geometry.rotationDrift * t))
             .offset(x: point.x - cx, y: point.y - cy)

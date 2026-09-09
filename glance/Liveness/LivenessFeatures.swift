@@ -2,35 +2,18 @@
 //  LivenessFeatures.swift
 //  glance
 //
-//  The Vision-facing half of liveness: turns one `FaceRecognitionResult`
-//  (plus the camera frames it came from) into a `LivenessFrame` (defined in
-//  LivenessScoring.swift, which has no Vision dependency) — plain points and
-//  scalars, no Vision types — which is all the cue functions ever see.
-//  Keeping the Vision-facing extraction isolated to this one file, separate
-//  from `LivenessFrame`'s own declaration, is what lets the decision logic
-//  compile and run standalone (see `tools/liveness_selftest.swift`) with no
-//  `FaceRecognitionPipeline`/CoreML dependency chain to drag in.
+//  Vision-facing half of liveness: turns a `FaceRecognitionResult` into a plain,
+//  Vision-free `LivenessFrame` — keeps the decision logic compilable standalone.
 //
 
 import Vision
 import CoreGraphics
 
 nonisolated enum LivenessFeatureExtractor {
-    /// Extracts a `LivenessFrame` from one recognition result. Never fails —
-    /// a face with no landmarks still yields a frame (with `landmarks: []`),
-    /// since pose and device-overlap data alone is still worth having in the
-    /// window; cues that need landmarks just abstain on it.
+    /// Never fails — a face with no landmarks still yields a frame; cues that need landmarks abstain.
     ///
-    /// - Parameter frame: the full camera frame `result` was recognized
-    ///   from — not `result.alignedImage`, which is a tightly-cropped,
-    ///   pose-normalized 112x112 warp with no room around the face to see
-    ///   a device edge in. Needed for `DeviceBezelDetector`, which has to
-    ///   look *around* the face, not just at it.
-    /// - Parameter faceCrop: a native-resolution crop around the face (see
-    ///   `CameraManager.renderCrop`), used for the gloss/glare cue. `nil`
-    ///   when no native-resolution frame was available — that cue simply
-    ///   abstains in that case, same as landmark-dependent cues do when
-    ///   `face.landmarks` is `nil` below.
+    /// - Parameter frame: the full camera frame, not `result.alignedImage` (a tightly-cropped
+    ///   112x112 warp with no room around the face for `DeviceBezelDetector` to see a device edge).
     static func extract(
         from result: FaceRecognitionResult, frame: CGImage, faceCrop: CGImage? = nil, timestamp: Date = Date()
     ) -> LivenessFrame {

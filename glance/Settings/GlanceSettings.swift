@@ -2,20 +2,14 @@
 //  GlanceSettings.swift
 //  glance
 //
-//  Single source of truth for persisted user preferences. Backed directly by
-//  `UserDefaults.standard` — each property's `didSet` writes through
-//  immediately, so there's no explicit "save" step. This is the first
-//  preference-persistence layer in the app; before this, `isEnabled` /
-//  `matchThreshold` silently reset on every launch.
+//  Backed directly by `UserDefaults.standard` — each property's `didSet`
+//  writes through immediately, so there's no explicit "save" step.
 //
 
 import Foundation
 import Observation
 
-/// How long the Touch-ID-unlocked session may sit idle before it re-locks
-/// and Touch ID is required again. Backed by the raw day count so the
-/// persisted value stays readable and the four options can be reordered or
-/// extended without invalidating what's already stored.
+/// How long the Touch-ID-unlocked session may sit idle before it re-locks.
 enum AutoLockInterval: Int, CaseIterable, Identifiable {
     case oneDay = 1
     case sevenDays = 7
@@ -55,30 +49,20 @@ enum UnlockAnimationStyle: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The styles the picker actually offers. `.none` is still a valid
-    /// *stored* value — the overlay's resolve path keys off it — but it's no
-    /// longer chosen by picking a tile; the "Show animation" toggle
-    /// (`GlanceSettings.showUnlockAnimation`) produces it instead.
+    /// The styles the picker offers; `.none` is still a valid stored value but is now produced by the "Show animation" toggle, not a tile.
     static let selectableCases: [UnlockAnimationStyle] = [.minimal, .original]
 }
 
-/// What can prompt Face Unlock. Multi-select — any combination may be armed,
-/// and at least one is always kept selected (a Mac with none selected would
-/// never show the notch, leaving nothing to hover and no way back in).
+/// What can prompt Face Unlock. Multi-select; at least one is always kept
+/// selected, since a Mac with none armed would never show the notch.
 enum UnlockTrigger: String, CaseIterable, Identifiable {
-    /// The display turned back on — from real system sleep, from
-    /// display-only sleep, or from the screensaver stopping at an
-    /// already-locked screen. See `LockEventKind.wake` for why this used to
-    /// be two separate options ("On wake" / "On activity") and no longer is:
-    /// the split was unreliable and effectively made "On wake" alone never
-    /// fire in the common case.
+    /// The display turned back on (see `LockEventKind.wake`).
     case onWake
     /// The screen just became locked, no wake involved.
     case onLock
-    /// Pressing space on the lock screen starts a scan. The lock screen runs
-    /// under Secure Event Input, which suppresses event taps and `NSEvent`
-    /// monitors, so this is detected via IOKit HID below that boundary (see
-    /// `SpaceKeyMonitor`) — which requires the Input Monitoring permission.
+    /// Pressing space on the lock screen starts a scan. The lock screen's
+    /// Secure Event Input blocks normal event taps, so this is detected via
+    /// IOKit HID instead (see `SpaceKeyMonitor`), requiring Input Monitoring.
     case onSpace
 
     var id: String { rawValue }
@@ -139,13 +123,7 @@ final class GlanceSettings {
         didSet { defaults.set(matchThreshold, forKey: Key.matchThreshold) }
     }
     /// Master switch for liveness checking. Off means face recognition
-    /// alone decides an unlock — convenient, and strictly less safe: a
-    /// photo of the enrolled user on a phone screen would be accepted.
-    ///
-    /// Read directly from `FaceUnlockCoordinator`'s scan loop, which runs on
-    /// the main actor — unlike `minimumFaceWidth` below, these need no
-    /// `nonisolated(unsafe)` mirror, since nothing reads them from a
-    /// background task.
+    /// alone decides an unlock — a photo of the enrolled user would pass.
     var livenessChecksEnabled: Bool {
         didSet { defaults.set(livenessChecksEnabled, forKey: Key.livenessChecksEnabled) }
     }
@@ -154,21 +132,17 @@ final class GlanceSettings {
     var livenessMode: LivenessMode {
         didSet { defaults.set(livenessMode.rawValue, forKey: Key.livenessMode) }
     }
-    /// Mirrored into `FaceRecognitionPipeline.minimumProminentFaceWidth`
-    /// (a `nonisolated(unsafe) static var`) on every change, since that
-    /// value is read from a background-thread `nonisolated` context that
-    /// can't synchronously touch this MainActor-isolated class.
+    /// Mirrored into `FaceRecognitionPipeline.minimumProminentFaceWidth` on
+    /// every change, since that's read from a background `nonisolated` context.
     var minimumFaceWidth: Float {
         didSet {
             defaults.set(minimumFaceWidth, forKey: Key.minimumFaceWidth)
             FaceRecognitionPipeline.minimumProminentFaceWidth = minimumFaceWidth
         }
     }
-    /// The *remembered* choice — only ever `.minimal` or `.original`.
-    /// Whether an animation plays at all is `showUnlockAnimation`, kept
-    /// separate so toggling off and back on restores the previous pick
-    /// instead of resetting it. Read `effectiveUnlockAnimationStyle`, not
-    /// this, to decide what to actually show.
+    /// The remembered choice (`.minimal`/`.original` only); `showUnlockAnimation`
+    /// tracks on/off separately so toggling back on restores the prior pick.
+    /// Read `effectiveUnlockAnimationStyle`, not this, to decide what to show.
     var unlockAnimationStyle: UnlockAnimationStyle {
         didSet { defaults.set(unlockAnimationStyle.rawValue, forKey: Key.unlockAnimationStyle) }
     }
@@ -182,20 +156,13 @@ final class GlanceSettings {
         showUnlockAnimation ? unlockAnimationStyle : .none
     }
 
-    /// Which signals arm Face Unlock. Persisted as a `[String]` of raw
-    /// values — the first multi-select preference in the app, but string
-    /// arrays are natively `UserDefaults`-representable so it stays close to
-    /// the single-select `rawValue` convention used everywhere else here.
-    /// The setter refuses to store an empty set (see `UnlockTrigger`).
+    /// Which signals arm Face Unlock. Persisted as raw-value strings; the
+    /// setter refuses to store an empty set (see `UnlockTrigger`).
     var unlockTriggers: Set<UnlockTrigger> {
         didSet {
-            // Belt-and-braces behind the picker's own min-one rule.
-            // Assigning here *does* re-enter `didSet` (self-reassignment
-            // inside a didSet always does — see `faceDetectionSeconds` for
-            // what happens when that reentry isn't guarded), but it
-            // terminates after one extra pass: the corrected value is never
-            // itself empty, so the second call's `isEmpty` check is false
-            // and it falls straight through to `defaults.set` below.
+            // Belt-and-braces behind the picker's own min-one rule. This
+            // reassignment re-enters didSet once, then terminates since the
+            // corrected value is never itself empty.
             if unlockTriggers.isEmpty {
                 unlockTriggers = oldValue.isEmpty ? Set(UnlockTrigger.allCases) : oldValue
             }
@@ -205,19 +172,14 @@ final class GlanceSettings {
     var retryOnHover: Bool {
         didSet { defaults.set(retryOnHover, forKey: Key.retryOnHover) }
     }
-    /// How long each scan cycle looks for a face before giving up. Drives
-    /// both the recognition loop's deadline and the overlay's own collapse
-    /// timer — see `FaceUnlockCoordinator.scanWindowDuration` and
-    /// `NotchOverlayController.scanTimeoutDuration`, which must stay equal.
+    /// How long each scan cycle looks for a face before giving up. Must stay
+    /// equal to `FaceUnlockCoordinator.scanWindowDuration` and
+    /// `NotchOverlayController.scanTimeoutDuration`.
     var faceDetectionSeconds: Int {
         didSet {
-            // Reassigning unconditionally here would retrigger `didSet` on
-            // every single set — including already-in-range ones, which is
-            // all the slider ever produces — for infinite recursion that
-            // hangs the (MainActor-isolated) app the instant the slider
-            // moves. Only reassign when clamping actually changes the
-            // value, so the recursive call it causes is guaranteed to see
-            // `clamped == faceDetectionSeconds` and stop there.
+            // Only reassign when clamping actually changes the value —
+            // unconditional reassignment would recurse infinitely, since the
+            // slider only ever produces already-in-range values.
             let clamped = min(max(faceDetectionSeconds, Self.faceDetectionRange.lowerBound),
                                Self.faceDetectionRange.upperBound)
             guard clamped == faceDetectionSeconds else {
@@ -230,30 +192,22 @@ final class GlanceSettings {
     var autoRetryOnce: Bool {
         didSet { defaults.set(autoRetryOnce, forKey: Key.autoRetryOnce) }
     }
-    /// Trackpad haptic on hovering the notch/pill, and on a successful
-    /// unlock. See `NotchOverlayView`'s hover handler and
-    /// `.onChange(of: controller.phase)` for where these actually fire.
+    /// Trackpad haptic on hovering the notch/pill and on a successful unlock —
+    /// see `NotchOverlayView`'s hover handler and `.onChange(of: controller.phase)`.
     var hapticFeedbackEnabled: Bool {
         didSet { defaults.set(hapticFeedbackEnabled, forKey: Key.hapticFeedbackEnabled) }
     }
 
     static let faceDetectionRange = 3...10
 
-    /// Which display Face Unlock is allowed to show on. `nil` means "Main
-    /// display" — `NotchGeometry.preferredScreen()`'s existing behavior
-    /// (the notched display if any is connected, else the system's primary
-    /// display), re-evaluated live. A non-nil value pins the overlay to one
-    /// specific screen, identified by `NSScreen.stableDisplayID` — and
-    /// deliberately has NO fallback: if that display isn't connected right
-    /// now, Face Unlock doesn't arm on any other display either (gated in
-    /// `FaceUnlockCoordinator.evaluateTrigger()`).
+    /// Which display Face Unlock shows on. `nil` means `NotchGeometry.preferredScreen()`'s
+    /// default, re-evaluated live; a pinned display has deliberately no
+    /// fallback if disconnected (see `FaceUnlockCoordinator.evaluateTrigger()`).
     var preferredDisplayID: String? {
         didSet { defaults.set(preferredDisplayID, forKey: Key.preferredDisplayID) }
     }
-    /// The chosen display's name at the time it was picked — cosmetic only,
-    /// so the settings row can still show something recognizable
-    /// ("LG UltraFine (disconnected)") when that display isn't currently
-    /// connected, rather than falling back to a bare ID.
+    /// The chosen display's name at pick time — cosmetic only, so the row can
+    /// show something recognizable when that display is disconnected.
     var preferredDisplayName: String? {
         didSet { defaults.set(preferredDisplayName, forKey: Key.preferredDisplayName) }
     }
@@ -274,50 +228,33 @@ final class GlanceSettings {
         didSet { defaults.set(externalDisplayCameraID, forKey: Key.externalDisplayCameraID) }
     }
 
-    /// Gates first-run onboarding — `AppDelegate` presents the guided flow
-    /// instead of the Settings window until this is `true`. Set exactly
-    /// once, by `OnboardingController` itself when the true first-run flow
-    /// (not a settings-triggered re-enrollment/password-change flow) reaches
-    /// `.complete`. Never reset by anything in the app — plain
-    /// `UserDefaults`, so `defaults delete com.jonathan.glance` (along with
-    /// clearing the Keychain items and `~/Library/Application Support/glance`)
-    /// is how to force onboarding to run again during development.
+    /// Gates first-run onboarding — `AppDelegate` shows it instead of the
+    /// Settings window until this is `true`. Set once, by `OnboardingController`
+    /// on the true first-run flow reaching `.complete`.
     var hasCompletedOnboarding: Bool {
         didSet { defaults.set(hasCompletedOnboarding, forKey: Key.hasCompletedOnboarding) }
     }
-    /// Where to resume first-run onboarding if the app quit mid-flow —
-    /// `nil` once onboarding is complete, or if it hasn't been started yet
-    /// this install (both cases resolve to starting fresh at `.intro`).
-    /// Written by `OnboardingController.step`'s `didSet`, which also
-    /// collapses `.enroll`/`.name`/`.password` down to `.preSetup` before
-    /// storing — those three depend on in-memory capture state
-    /// (`collectedSamples`) that doesn't survive a relaunch, so resuming
-    /// directly into any of them would either show a broken step or, worse,
-    /// silently skip enrollment. See `OnboardingStep.resumeTarget`.
+    /// Where to resume first-run onboarding if the app quit mid-flow; `nil`
+    /// starts fresh at `.intro`. Steps depending on in-memory capture state
+    /// collapse to `.preSetup` before storing, since that state doesn't
+    /// survive a relaunch — see `OnboardingStep.resumeTarget`.
     var onboardingResumeStep: OnboardingStep? {
         didSet { defaults.set(onboardingResumeStep?.rawValue, forKey: Key.onboardingResumeStep) }
     }
 
     private init() {
-        // Enabled out of the box — a fresh install has just finished
-        // enrolling a face and setting a password via onboarding
-        // specifically to use Face Unlock, so requiring an extra opt-in
-        // toggle afterward would be a dead end, not a safety rail.
+        // Enabled by default — onboarding already enrolled a face and set a
+        // password specifically to use Face Unlock.
         isFaceUnlockEnabled = defaults.object(forKey: Key.isFaceUnlockEnabled) as? Bool ?? true
-        // Matches `MatchConfidenceLevel.standard` ("Default" on the
-        // Recognition page) — see RecognitionSettingsPage.swift.
+        // Matches `MatchConfidenceLevel.standard` — see RecognitionSettingsPage.swift.
         matchThreshold = defaults.object(forKey: Key.matchThreshold) as? Float ?? 0.66
         livenessChecksEnabled = defaults.object(forKey: Key.livenessChecksEnabled) as? Bool ?? true
-        // Light by default, deliberately. Heavy requires one of flat-vs-3D,
-        // depth/pose, or a blink to actually fire before it will unlock —
-        // and a real user who holds still and doesn't blink produces none
-        // of them, which would leave them unable to unlock at all. Light
-        // still rejects the attack this app most needs to catch (a face on
-        // a phone screen) without ever blocking a legitimate scan.
+        // Light by default — Heavy requires a blink/pose/depth signal a
+        // still, non-blinking user may never produce, while Light still
+        // catches the main attack (a photo on a phone screen).
         livenessMode = defaults.string(forKey: Key.livenessMode)
             .flatMap(LivenessMode.init(rawValue:)) ?? .light
-        // Matches `DetectionDistanceLevel.standard` ("Default" on the
-        // Recognition page) — see RecognitionSettingsPage.swift.
+        // Matches `DetectionDistanceLevel.standard` — see RecognitionSettingsPage.swift.
         minimumFaceWidth = defaults.object(forKey: Key.minimumFaceWidth) as? Float ?? 0.21
 
         // Resolve the stored style first, `.none` included, then split it
@@ -332,24 +269,17 @@ final class GlanceSettings {
         } else {
             storedStyle = .original
         }
-        // A stored `.none` becomes "animations off, remembering .original",
-        // so switching them back on has something to restore. An explicit
-        // flag written by a newer build always wins over that inference.
+        // A stored `.none` becomes "off, remembering .original" so
+        // switching back on has something to restore.
         unlockAnimationStyle = storedStyle == .none ? .original : storedStyle
         showUnlockAnimation = defaults.object(forKey: Key.showUnlockAnimation) as? Bool
             ?? (storedStyle != .none)
 
-        // On wake and on lock, not on space, by default. `.onSpace` needs
-        // the Input Monitoring permission (see `UnlockTrigger.onSpace`'s
-        // doc comment) — a fresh install shouldn't be asking for an extra
-        // TCC grant it hasn't earned yet, when the other two triggers
-        // already cover the normal "walk up to a locked Mac" case.
+        // On wake/lock by default, not on space — `.onSpace` needs Input
+        // Monitoring, which a fresh install shouldn't request unprompted.
         let storedTriggers = (defaults.array(forKey: Key.unlockTriggers) as? [String])?
             .compactMap { raw -> UnlockTrigger? in
-                // "onActivity" was merged into "onWake" — an install that
-                // had it selected (quite possibly the *only* trigger that
-                // actually worked, given why the merge happened) should keep
-                // working the same way rather than silently losing it.
+                // "onActivity" was merged into "onWake"; keep old installs working.
                 if raw == "onActivity" { return .onWake }
                 return UnlockTrigger(rawValue: raw)
             }
@@ -364,9 +294,8 @@ final class GlanceSettings {
         preferredDisplayID = defaults.string(forKey: Key.preferredDisplayID)
         preferredDisplayName = defaults.string(forKey: Key.preferredDisplayName)
 
-        // Defaults to 7 days: long enough not to nag someone who uses face
-        // unlock daily, short enough that an abandoned Mac doesn't keep a
-        // usable session key in memory indefinitely.
+        // Defaults to 7 days — long enough not to nag daily users, short
+        // enough not to leave an abandoned session live indefinitely.
         autoLockInterval = (defaults.object(forKey: Key.autoLockIntervalDays) as? Int)
             .flatMap(AutoLockInterval.init(rawValue:)) ?? .sevenDays
         defaultCameraID = defaults.string(forKey: Key.defaultCameraID)
@@ -377,9 +306,8 @@ final class GlanceSettings {
         onboardingResumeStep = defaults.string(forKey: Key.onboardingResumeStep)
             .flatMap(OnboardingStep.init(rawValue:))
 
-        // Push the persisted value into the nonisolated mirror immediately —
-        // otherwise FaceRecognitionPipeline would keep using its own 0.18
-        // default until the user first touches the Recognition page's slider.
+        // Push into the nonisolated mirror immediately, or FaceRecognitionPipeline
+        // would keep its own default until the slider is first touched.
         FaceRecognitionPipeline.minimumProminentFaceWidth = minimumFaceWidth
     }
 }

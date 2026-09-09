@@ -11,10 +11,8 @@ struct AboutSettingsPage: View {
     let environment: AppEnvironment
 
     /// Secret-tap state for revealing the Debug/Face Lab sidebar section —
-    /// see `AppEnvironment.isDebugSectionRevealed`. `lastTapDate` is what
-    /// makes this "5 times *consecutively*" rather than "5 times ever": a
-    /// pause of more than a second resets the count, so absent-minded
-    /// clicking around the About page over time can't accidentally trip it.
+    /// see `AppEnvironment.isDebugSectionRevealed`. A pause over a second
+    /// resets the count, so this requires 5 *consecutive* taps.
     @State private var iconTapCount = 0
     @State private var lastTapDate: Date?
     private let requiredTapCount = 5
@@ -29,11 +27,8 @@ struct AboutSettingsPage: View {
 
     var body: some View {
         VStack(spacing: 2) {
-            // Plain imageset (Assets.xcassets/appicon), not an app-icon
-            // catalog entry — those live in a restricted namespace
-            // `Image(_:)` can't resolve, which is what made the previous
-            // two approaches here (Image("GlanceIcon"), then
-            // NSApp.applicationIconImage) both show a blank placeholder.
+            // Plain imageset, not an app-icon catalog entry — those live in
+            // a restricted namespace `Image(_:)` can't resolve.
             Image("appicon")
                 .resizable()
                 .frame(width: 80, height: 80)

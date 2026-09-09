@@ -2,10 +2,8 @@
 //  OnboardingControls.swift
 //  glance
 //
-//  Shared pill-shaped primitives used across the onboarding step views —
-//  lifted directly from the repeated shapes in the Figma frames (buttons,
-//  permission rows, the password field) so each step view stays a plain
-//  layout description instead of re-deriving this chrome per screen.
+//  Shared pill-shaped primitives (buttons, permission rows, the password field) so each
+//  step view stays a plain layout description instead of re-deriving this chrome.
 //
 
 import SwiftUI
@@ -97,8 +95,7 @@ struct PermissionRow: View {
     }
 }
 
-/// The password entry field — a pill-shaped `SecureField` matching the
-/// Figma "Enter password..." control.
+/// The password entry field — a pill-shaped `SecureField`.
 struct PillSecureField: View {
     let placeholder: String
     @Binding var text: String
@@ -147,12 +144,8 @@ struct PillTextField: View {
     }
 }
 
-/// Makes a notch-hosted field first responder after the step spring
-/// finishes. SwiftUI's `.focused` alone is ignored while the panel is
-/// still becoming key (and during the step transition), which is why
-/// these fields previously required a click. Walking to the real
-/// `NSTextField` and calling `makeFirstResponder` is what actually
-/// puts the caret in the box.
+/// Makes a notch-hosted field first responder after the step spring finishes. SwiftUI's
+/// `.focused` alone is ignored while the panel is still becoming key.
 private struct OnboardingFieldFirstResponder: NSViewRepresentable {
     let enabled: Bool
     let onReady: () -> Void

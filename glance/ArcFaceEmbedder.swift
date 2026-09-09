@@ -2,14 +2,7 @@
 //  ArcFaceEmbedder.swift
 //  glance
 //
-//  Real face-discriminative embedder: InsightFace's w600k_mbf weights
-//  (MobileFaceNet backbone, trained with ArcFace loss), converted to Core ML
-//  by tools/convert_arcface.py. Requires a canonically-aligned 112x112 input
-//  (see FaceAligner) — unlike VisionFeaturePrintEmbedder, this model was
-//  never trained on loose crops and its accuracy depends on alignment.
-//
-//  Runs entirely on-device via Core ML, preferring the Neural Engine on
-//  Apple Silicon (`computeUnits = .all`).
+//  Requires a canonically-aligned 112x112 input (see FaceAligner) — unlike VisionFeaturePrintEmbedder, accuracy depends on alignment.
 //
 
 import CoreML
@@ -49,15 +42,11 @@ nonisolated final class ArcFaceEmbedder: FaceEmbedder, @unchecked Sendable {
     private static let inputName = "input_image"
     private static let outputName = "embedding"
 
-    // Loaded once at construction and reused — model load dominates a
-    // single inference, so paying that cost per-call would be wasteful.
+    // Loaded once and reused — model load dominates a single inference.
     private let model: MLModel
     private let pixelBufferPool: CVPixelBufferPool
 
-    /// Throws immediately if the model isn't in the bundle, rather than
-    /// failing lazily on first use — callers (see `FaceRecognitionPipeline`)
-    /// treat construction failure as "ArcFace isn't available yet" and fall
-    /// back to `VisionFeaturePrintEmbedder`.
+    /// Throws immediately if the model isn't bundled, so callers can fall back to `VisionFeaturePrintEmbedder`.
     init() throws {
         guard let modelURL = Self.locateModel() else {
             throw ArcFaceEmbedderError.modelNotFound
@@ -78,9 +67,7 @@ nonisolated final class ArcFaceEmbedder: FaceEmbedder, @unchecked Sendable {
         pixelBufferPool = pool
     }
 
-    /// Compiled models (`.mlmodelc`) are what actually ship in the app
-    /// bundle — Xcode compiles a committed `.mlpackage` at build time. Both
-    /// names are checked in case the file was added under a different name.
+    /// Both names are checked in case the file was added under a different name.
     private static func locateModel() -> URL? {
         for name in ["ArcFace", "w600k_mbf"] {
             if let url = Bundle.main.url(forResource: name, withExtension: "mlmodelc") {
@@ -102,9 +89,7 @@ nonisolated final class ArcFaceEmbedder: FaceEmbedder, @unchecked Sendable {
         return pool
     }
 
-    /// `MLModel.prediction(from:)` is synchronous/blocking — callers already
-    /// run embedders off the main actor (see `FaceRecognitionPipeline`),
-    /// matching the rest of this protocol's contract.
+    /// `MLModel.prediction(from:)` is synchronous/blocking — callers run embedders off the main actor.
     nonisolated func embedding(for face: CGImage) throws -> [Float] {
         guard face.width == Self.inputSize, face.height == Self.inputSize else {
             throw ArcFaceEmbedderError.unexpectedInputSize(got: (face.width, face.height), expected: Self.inputSize)
@@ -149,9 +134,7 @@ nonisolated final class ArcFaceEmbedder: FaceEmbedder, @unchecked Sendable {
         context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
     }
 
-    /// `MLMultiArray` storage isn't guaranteed to be a flat, stride-1
-    /// buffer, so this indexes through the array's own subscript rather
-    /// than assuming a particular memory layout.
+    /// `MLMultiArray` storage isn't guaranteed to be a flat, stride-1 buffer, so this indexes via the array's own subscript.
     private static func floatVector(from array: MLMultiArray) -> [Float] {
         var result = [Float](repeating: 0, count: array.count)
         for i in 0..<array.count {

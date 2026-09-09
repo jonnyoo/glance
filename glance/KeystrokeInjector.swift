@@ -2,8 +2,7 @@
 //  KeystrokeInjector.swift
 //  glance
 //
-//  Synthesizes keystrokes via CGEvent, posted at the HID tap so they reach
-//  the lock screen's secure text field.
+//  Synthesizes keystrokes via CGEvent, posted at the HID tap so they reach the lock screen's secure text field.
 //
 
 import Foundation
@@ -38,14 +37,8 @@ enum KeystrokeInjector {
         return AXIsProcessTrustedWithOptions(options)
     }
 
-    /// Types the UTF-8 bytes into whatever has keyboard focus, then presses Return.
-    ///
-    /// Accepts `Data` (bytes) instead of `String` so the caller can hold the plaintext
-    /// as a zero-able buffer. Internally we still briefly decode to `String` (Core
-    /// Graphics needs Unicode code units), but that `String` exists only within
-    /// this function's scope — dropped as soon as we return.
-    ///
-    /// Blocking; invoke from a background thread/task.
+    /// Types the UTF-8 bytes into whatever has keyboard focus, then presses Return. Takes `Data` rather than `String` so the
+    /// caller can hold the plaintext as a zero-able buffer; the brief internal `String` decode is scoped to this call. Blocking.
     nonisolated static func typeAndReturn(_ passwordBytes: Data) throws {
         guard isAccessibilityTrusted() else {
             throw KeystrokeError.accessibilityNotGranted

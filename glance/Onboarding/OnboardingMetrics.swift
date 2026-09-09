@@ -2,42 +2,29 @@
 //  OnboardingMetrics.swift
 //  glance
 //
-//  Every layout number the redesign needs. Centralized so panel-fit tuning
-//  happens in one place instead of being scattered across the step views.
+//  Onboarding's layout numbers, centralized so panel-fit tuning happens in
+//  one place instead of being scattered across the step views.
 //
 
 import SwiftUI
 
 enum OnboardingMetrics {
-    /// Shared spring for both the notch panel's resize (NotchOverlayView)
-    /// and the step content's scroll+blur transition (OnboardingNotchView)
-    /// — driven explicitly via `withAnimation` at every step-changing call
-    /// site in OnboardingController, so the two always move together
-    /// regardless of how the state mutation was triggered (a button tap vs.
-    /// an async completion handler).
+    /// Shared spring for both the notch panel's resize and the step content's
+    /// scroll+blur transition, so the two always move together.
     static let stepAnimation = Animation.spring(response: 0.42, dampingFraction: 0.8)
-    /// Wait for `stepAnimation` to settle before focusing a text field.
-    /// Focusing during the spring is a no-op — the field isn't in a key
-    /// window yet — which is why name/password required a click first.
+    /// Wait for `stepAnimation` to settle before focusing a text field — focusing during
+    /// the spring is a no-op since the field isn't in a key window yet.
     static let fieldAutofocusDelay: Double = 0.48
 
     // MARK: - Panel size — EDIT HERE
     //
-    // `panelWidth` is shared by every onboarding step *except* `.enroll`
-    // (the camera step), which keeps its own independent width in
-    // `enrollPanelWidth` below — widths are NOT split per style (only
-    // heights are). Height, though, is fully independent per step *and* per
-    // style: 12 numbers total, edit any one without affecting any other —
-    // the panel animates to the new height the moment that step becomes
-    // active on whichever style is currently showing.
+    // `panelWidth` is shared by every step except `.enroll`; widths are not split per
+    // style, but height is fully independent per step and per style.
 
-    /// Width used by every step except `.enroll`. Increase/decrease this
-    /// one number to make the whole flow (minus the camera step) wider or
-    /// narrower, in both styles.
+    /// Width used by every step except `.enroll`.
     static let panelWidth: CGFloat = 380
 
-    /// The camera/enrollment step's width — deliberately independent of
-    /// `panelWidth` (kept at its original, pre-redesign-tweak footprint).
+    /// The camera/enrollment step's width — deliberately independent of `panelWidth`.
     static let enrollPanelWidth: CGFloat = 320
 
     static let notchIntroHeight: CGFloat = 175
@@ -86,10 +73,8 @@ enum OnboardingMetrics {
         }
     }
 
-    /// The envelope the fixed notch window itself must be sized to fit —
-    /// see `NotchGeometry.windowSize(for:)`, which combines this with the
-    /// pre-existing scan-mode footprint. Width isn't split per style, so
-    /// stays a single value; height is, so it's a per-style max.
+    /// The envelope the fixed notch window itself must be sized to fit — see
+    /// `NotchGeometry.windowSize(for:)`.
     static let maxPanelWidth: CGFloat = max(panelWidth, enrollPanelWidth)
 
     static func maxPanelHeight(for style: NotchPanelStyle) -> CGFloat {
@@ -109,11 +94,8 @@ enum OnboardingMetrics {
 
     // MARK: - Content insets, per style — EDIT HERE
     //
-    // Independent top/left/right/bottom insets for onboarding step content
-    // — notch and pill can be tuned entirely separately, and neither
-    // touches the other. This does NOT apply to the scan/unlock content
-    // (see `NotchGeometry.notchContentPadding*`/`pillContentPadding*` for
-    // that instead) — onboarding only.
+    // Independent top/left/right/bottom insets for onboarding step content — does NOT
+    // apply to scan/unlock content (see `NotchGeometry.notchContentPadding*` for that).
 
     /// Deliberately generous in notch style: the physical notch's camera
     /// housing overlaps the very top of the panel, so title/text content
@@ -173,19 +155,11 @@ enum OnboardingMetrics {
     static let tickLengthUnlit: CGFloat = 12
     static let tickLengthLit: CGFloat = 20
     static let tickWidth: CGFloat = 2.4
-    /// Stroke width of the solid ring the ticks merge into on completion.
-    /// Deliberately its own constant rather than reusing `tickLengthLit`
-    /// (the original approach) — that coupled the ring's thickness to the
-    /// individual tick length, so thinning the ring meant either shrinking
-    /// every lit tick too or fighting the frame math. `EnrollmentRingView`
-    /// keeps the ring's outer edge exactly where the lit ticks' outer tips
-    /// were (`diameter/2 + tickLengthLit`) regardless of this value, so it
-    /// can be tuned on its own.
+    /// Stroke width of the solid ring the ticks merge into on completion. Its own
+    /// constant rather than reusing `tickLengthLit`, so it can be tuned independently.
     static let completionRingWidth: CGFloat = 14
-    /// How far inside the lit ticks' outer tips the completion ring's own
-    /// outer edge sits — without this it sits exactly on top of them
-    /// (`diameter/2 + tickLengthLit`), which reads as slightly too large
-    /// once the ticks vanish and only the ring is left.
+    /// How far inside the lit ticks' outer tips the completion ring's outer edge sits —
+    /// without this it reads as slightly too large once the ticks vanish.
     static let completionRingRadiusInset: CGFloat = 8
     /// Width ticks expand to when they merge into the completion ring.
     static var tickWidthComplete: CGFloat {
@@ -244,21 +218,15 @@ enum OnboardingMetrics {
     /// Beat of stillness after a pose change before the next sweep plays.
     static let sweepPoseDelay: Double = 0.36
 
-    /// How long `EnrollmentSweepWindowController.presentOnce(direction:)`
-    /// waits before tearing its window down. Sized to the slowest streak in
-    /// `EnrollmentDirectionSweep.makeSpecs()` (duration + delay, worst case
-    /// ~1.34s) plus a small buffer — long enough that no streak is cut off
-    /// mid-fade, short enough that the window doesn't linger once nothing
-    /// is left visible on screen.
+    /// How long `presentOnce(direction:)` waits before tearing its window down — sized to
+    /// the slowest streak in `EnrollmentDirectionSweep.makeSpecs()` plus a small buffer.
     static let introSweepAutoDismissDelay: Double = 1.6
 }
 
 extension View {
-    /// All four content-edge insets for a step view — leading, trailing,
-    /// top, and bottom — sized to whichever silhouette the panel is
-    /// currently wearing (see `NotchPanelStyle`). Reads the style from the
-    /// environment rather than taking a parameter so every step view stays a
-    /// plain `(controller) -> View`.
+    /// All four content-edge insets for a step view, sized to whichever silhouette the
+    /// panel is currently wearing. Reads style from the environment so every step view
+    /// stays a plain `(controller) -> View`.
     func onboardingContentPadding() -> some View {
         modifier(OnboardingContentPadding())
     }

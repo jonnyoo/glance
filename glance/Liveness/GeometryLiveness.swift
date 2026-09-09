@@ -2,47 +2,24 @@
 //  GeometryLiveness.swift
 //  glance
 //
-//  Planar-vs-3D liveness — the `flatVs3D` confirm cue: does landmark
-//  motion across the window look like a flat photograph (fully explained
-//  by a homography) or like a real head with depth (held-out nose points
-//  systematically miss the plane fit)? Deliberately free of `import
-//  Vision` so it compiles into `tools/liveness_selftest.swift` alongside
-//  LivenessScoring.
-//
-//  Higher `planarResidualScore` means "more like a live face."
-//
-//  This file also carried a projective-invariance signal (triangle-area
-//  cross ratios of a 5-point constellation, with jacobian-propagated noise
-//  estimates). It was removed along with the rest of the retired signals:
-//  real-device testing never saw it separate a phone from a face — it sat
-//  near zero on both — and it was the most expensive thing here per frame.
+//  Planar-vs-3D liveness (the `flatVs3D` cue). No `import Vision`, so this
+//  compiles into `tools/liveness_selftest.swift`. Higher `planarResidualScore` = more like a live face.
 //
 
 import Foundation
 import CoreGraphics
 
 struct GeometryTuning {
-    /// Excess (`probeResidual / fitResidual`) at which the planar signal
-    /// starts ramping off 0. ~1 means the held-out points are no noisier
-    /// than the fit set — a plane.
+    /// Excess (`probeResidual / fitResidual`) at which the planar signal starts ramping off 0; ~1 means a plane.
     var excessFloor: CGFloat = 1.15
     /// Excess at which the planar signal saturates at 1.
     var excessCeiling: CGFloat = 2.0
-    /// `|mean residual| / mean(|residual|)` below this is treated as
-    /// unstructured landmark noise rather than 3D parallax.
+    /// `|mean residual| / mean(|residual|)` below this reads as landmark noise, not 3D parallax.
     var coherenceFloor: CGFloat = 0.35
-    /// Minimum mean fit-set displacement, in units of interocular
-    /// distance, before the geometry signal is willing to vote. Below
-    /// this a real still face has no parallax either, so we abstain.
+    /// Minimum mean fit-set displacement (in interocular-distance units) before geometry votes at all.
     var motionGate: CGFloat = 0.008
-    /// Minimum yaw range (degrees) across the window before geometry is
-    /// willing to vote at all. Nose parallax at yaw `θ` is roughly
-    /// `0.18·IOD·sin(θ)`; at the 640px working resolution (IOD ≈ 60px for
-    /// a typical face) that's under a pixel — below Vision's own landmark
-    /// jitter — for any yaw under this gate. `motionGate` alone doesn't
-    /// catch this: pure head translation (no rotation) can clear it while
-    /// producing zero real parallax, which is exactly the "smooth phone
-    /// wobble" failure mode this gate closes.
+    /// Minimum yaw range (degrees) before geometry votes — closes the "smooth phone wobble" case where
+    /// pure translation (no rotation) clears `motionGate` with zero real parallax.
     var minYawRangeDegrees: CGFloat = 12
 
     nonisolated static let `default` = GeometryTuning()
@@ -141,9 +118,7 @@ nonisolated enum GeometryLiveness {
         let coherence = weightedMedian(coherences, weights: weights)
         let motion = motions.isEmpty ? nil : (motions.reduce(0, +) / CGFloat(motions.count))
 
-        // Abstention is (level 0, confidence 0): `LivenessEvaluator` only
-        // counts a frame when confidence > 0, so the level is never read
-        // in that case — but 0 rather than 0.5 keeps Face Lab's bar honest.
+        // Abstention is (level 0, confidence 0); level is never read when confidence is 0.
         var planarScore: Float = 0
         var planarConf: Float = 0
         if yawGateOK, let excess, let coherence, pairsAnalyzed >= 2 {
@@ -153,9 +128,7 @@ nonisolated enum GeometryLiveness {
             planarScore = excessScore * (0.35 + 0.65 * coherenceFactor)
             planarConf = Float(clamp(Double(pairsAnalyzed) / 6.0, 0, 1)) * (0.5 + 0.5 * coherenceFactor)
         } else if !yawGateOK {
-            // Not enough real head rotation this window to tell "flat" from
-            // "3D" apart — see `minYawRangeDegrees`. Abstain rather than
-            // score what would just be landmark noise.
+            // Not enough head rotation to tell flat from 3D — see `minYawRangeDegrees`.
             planarScore = 0
             planarConf = 0
         } else if skippedForMotion > 0, pairsAnalyzed == 0 {
@@ -179,8 +152,7 @@ nonisolated enum GeometryLiveness {
         )
     }
 
-    /// Yaw range (degrees) across every frame in the window that reports
-    /// one — `nil` if too few frames have a yaw estimate to say anything.
+    /// Yaw range (degrees) across frames that report one; `nil` if too few do.
     private static func yawRangeDegrees(_ window: [LivenessFrame]) -> CGFloat? {
         let yawsDegrees = window.compactMap { $0.yaw }.map { CGFloat($0) * 180 / .pi }
         guard yawsDegrees.count >= 3, let lo = yawsDegrees.min(), let hi = yawsDegrees.max() else { return nil }
@@ -213,9 +185,7 @@ nonisolated enum GeometryLiveness {
             return ((dst.x - predicted.x) / iod, (dst.y - predicted.y) / iod)
         }
         let probeMags = probeVecs.map { hypot($0.0, $0.1) }
-        // Eyes are the rigid anchors; mouth/brow expression in the fit
-        // set must not set the noise scale or a talking face looks planar
-        // and a still photo's leftover expression-scale noise looks 3D.
+        // Eyes are the rigid anchors — expression in the fit set must not set the noise scale.
         let noiseMags: [CGFloat]
         if eyeMags.count >= 2 {
             noiseMags = eyeMags
@@ -244,11 +214,7 @@ nonisolated enum GeometryLiveness {
         )
     }
 
-    /// Points present, with matching per-region counts, in both frames —
-    /// the guard cross-frame comparison requires: a region can be entirely
-    /// absent on either frame, and comparing mismatched arrays would
-    /// silently pair up unrelated points. Returns matched arrays grouped by
-    /// region, in stable per-region order.
+    /// Points present, with matching per-region counts, in both frames — avoids silently pairing unrelated points.
     private static func correspondingPoints(
         _ a: [LandmarkPoint], _ b: [LandmarkPoint]
     ) -> [LandmarkRegion: (source: [CGPoint], destination: [CGPoint])] {

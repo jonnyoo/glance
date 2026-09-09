@@ -12,28 +12,20 @@ struct GeneralSettingsPage: View {
 
     @State private var launchAtLoginEnabled = LaunchAtLogin.isEnabled
     @State private var launchAtLoginError: String?
-    /// Refreshed on `didChangeScreenParametersNotification` (attached below)
-    /// so the picker's menu reflects a display being connected/disconnected
-    /// while Settings is open, rather than only whatever was plugged in
-    /// when the page first appeared.
+    /// Refreshed on `didChangeScreenParametersNotification` so the picker
+    /// reflects displays connecting/disconnecting while Settings is open.
     @State private var screens: [NSScreen] = NSScreen.screens
-    /// Whether "On space" can actually fire — refreshed when the app
-    /// regains focus, so granting the permission in System Settings and
-    /// switching back clears the prompt below without a relaunch.
+    /// Refreshed when the app regains focus, so granting the permission in
+    /// System Settings clears the prompt below without a relaunch.
     @State private var inputMonitoring = SpaceKeyMonitor.inputMonitoringAccess
 
-    /// True once the user has picked "On space" but glance can't read the
-    /// keyboard — the trigger is selected and persisted but can't fire yet.
-    /// Normally false, since Accessibility (which glance needs regardless)
-    /// already satisfies the check — see `SpaceKeyMonitor`'s file header.
+    /// True once "On space" is selected but glance can't read the keyboard yet.
     private var needsInputMonitoring: Bool {
         settings.unlockTriggers.contains(.onSpace) && inputMonitoring != .granted
     }
 
-    /// Dev-only: under Xcode the reading above is Xcode's permission rather
-    /// than glance's, so neither the notice nor its absence means anything.
-    /// Self-gating — a normally launched build is never in this state. See
-    /// `SpaceKeyMonitor.isLaunchedByXcode`.
+    /// Dev-only: under Xcode the reading above is Xcode's permission, not
+    /// glance's, so it's meaningless. See `SpaceKeyMonitor.isLaunchedByXcode`.
     private var hasInheritedXcodePermission: Bool {
         settings.unlockTriggers.contains(.onSpace) && SpaceKeyMonitor.isLaunchedByXcode
     }
@@ -71,16 +63,12 @@ struct GeneralSettingsPage: View {
             inputMonitoring = SpaceKeyMonitor.inputMonitoringAccess
         }
         .onChange(of: settings.unlockTriggers) { oldValue, newValue in
-            // Just switched "On space" on and can't fire yet → fire the
-            // system prompt. Only on the transition into selection, so
-            // toggling the other tiles never re-prompts.
+            // Only prompt on the transition into selecting "On space".
             SpaceKeyMonitor.log.info("unlockTriggers changed: old=\(String(describing: oldValue), privacy: .public) new=\(String(describing: newValue), privacy: .public) state=\(String(describing: inputMonitoring), privacy: .public)")
             if newValue.contains(.onSpace), !oldValue.contains(.onSpace), inputMonitoring != .granted {
                 SpaceKeyMonitor.requestInputMonitoringAccess()
-                // Requesting writes a record (initially "off"), which flips
-                // the state from `notDetermined` to `denied` — but tccd does
-                // that just after the call returns, so re-read on the next
-                // beat rather than inline.
+                // tccd flips notDetermined -> denied just after the call
+                // returns, so re-read on the next beat rather than inline.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                     inputMonitoring = SpaceKeyMonitor.inputMonitoringAccess
                 }
@@ -137,18 +125,12 @@ struct GeneralSettingsPage: View {
         }
     }
 
-    /// Shown while "On space" is selected but Input Monitoring isn't
-    /// granted. The wording splits on the actual TCC state, because the two
-    /// cases need different things from the user: `notDetermined` can still
-    /// be prompted, `denied` cannot — no API can re-prompt once a decision
-    /// is on record, so that one is a System Settings trip.
+    /// Shown while "On space" is selected but Input Monitoring isn't granted.
     private func inputMonitoringNotice() -> some View {
         VStack(alignment: .leading, spacing: 6) {
             SettingsCaption(text: "“On space” reads the keyboard directly to see the space key on the lock screen, which needs Accessibility — the same permission glance uses to type your password. Switch glance on under Privacy & Security → Accessibility, then quit and reopen glance.")
             Button("Open Accessibility settings") {
-                // Requesting HID access first covers the rare install that has
-                // no Accessibility grant at all; where Accessibility is the
-                // real gate, the deep link is what matters.
+                // Covers the rare install with no Accessibility grant at all.
                 SpaceKeyMonitor.requestInputMonitoringAccess()
                 openSystemSettings(pane: "Privacy_Accessibility")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
@@ -166,11 +148,7 @@ struct GeneralSettingsPage: View {
         NSWorkspace.shared.open(url)
     }
 
-    /// Same Menu-in-a-capsule pattern as `CameraSettingsPage.cameraPicker` —
-    /// "Main display" (nil) plus one entry per currently connected screen.
-    /// Picking a specific screen also stashes its name
-    /// (`GlanceSettings.preferredDisplayName`), purely so the row can still
-    /// show something recognizable if that display later disconnects.
+    /// Same Menu-in-a-capsule pattern as `CameraSettingsPage.cameraPicker`.
     private func displayPicker() -> some View {
         SettingsRowContent(title: "Display on") {
             ZStack {
@@ -220,8 +198,6 @@ struct GeneralSettingsPage: View {
 
     /// A connected screen with its stable ID already unwrapped, so the
     /// picker's `ForEach` doesn't need to filter/force-unwrap inline.
-    /// `stableDisplayID` only fails for a screen AppKit can't report an
-    /// `NSScreenNumber` for, which doesn't happen in practice.
     private struct NamedScreen {
         let id: String
         let name: String
@@ -238,10 +214,8 @@ struct GeneralSettingsPage: View {
         if let connected = screens.first(where: { $0.stableDisplayID == targetID }) {
             return connected.localizedName
         }
-        // Picked, but not currently connected — Face Unlock is correctly
-        // not running anywhere right now (see
-        // `FaceUnlockCoordinator.evaluateTrigger()`); say so rather than
-        // showing a bare ID or silently falling back to another display's name.
+        // Picked, but not currently connected — say so rather than showing
+        // a bare ID or falling back to another display's name.
         guard let name = settings.preferredDisplayName else { return "Selected display (disconnected)" }
         return "\(name) (disconnected)"
     }

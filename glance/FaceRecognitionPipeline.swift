@@ -2,10 +2,7 @@
 //  FaceRecognitionPipeline.swift
 //  glance
 //
-//  Single composition point for detect -> align -> embed. Swapping which
-//  embedder is active (Vision feature-print vs ArcFace) is a one-line change
-//  here — nothing else in the app should construct a FaceEmbedder directly,
-//  so every consumer (Face Lab, onboarding, eventually unlock) stays in sync.
+//  Only place that should construct a FaceEmbedder — keeps all consumers in sync.
 //
 
 import Foundation
@@ -14,8 +11,7 @@ import Observation
 
 nonisolated struct FaceRecognitionResult {
     let embedding: [Float]
-    /// Exactly what was fed to the embedder — useful for debug UIs to show
-    /// what alignment actually produced, not just the raw detection crop.
+    /// What was actually fed to the embedder, for debug UIs to inspect.
     let alignedImage: CGImage
     let alignmentTier: AlignmentTier
     let quality: Float?
@@ -34,18 +30,13 @@ nonisolated enum FaceRecognitionPipelineError: LocalizedError {
     }
 }
 
-/// `@Observable` so the debug UI can surface which embedder is active and
-/// whether ArcFace loaded successfully, without a separate notification path.
+/// `@Observable` so the debug UI can surface which embedder is active.
 @Observable
 @MainActor
 final class FaceRecognitionPipeline {
     nonisolated let embedder: FaceEmbedder
 
-    /// Set when ArcFace failed to load (most commonly: the model hasn't
-    /// been converted yet — see tools/convert_arcface.py) and the pipeline
-    /// fell back to the much weaker Vision feature-print embedder. Surfaced
-    /// in the UI rather than failing silently, since recognition quality
-    /// degrades substantially in this fallback mode.
+    /// Set when ArcFace failed to load (see tools/convert_arcface.py) and the weaker Vision feature-print embedder is in use instead.
     private(set) var usingFallbackEmbedder: Bool
     private(set) var fallbackReason: String?
 
@@ -61,19 +52,8 @@ final class FaceRecognitionPipeline {
         }
     }
 
-    /// Runs the full frame -> detect -> align -> embed sequence for the
-    /// single dominant face in `frame` (see `selectDominantFace`).
-    /// Detection, alignment, and embedding are all synchronous/CPU-bound;
-    /// this method is `nonisolated` so callers can run it from a background
-    /// task (`Task.detached`) rather than blocking the main actor.
-    ///
-    /// - Parameter previousBoundingBox: the normalized bounding box selected
-    ///   on the previous frame of the same scan, if any — passing this lets
-    ///   a caller scanning continuously (FaceUnlockCoordinator) keep
-    ///   selection "stuck" to the same person across frames instead of
-    ///   re-picking independently every frame. Callers that only ever
-    ///   recognize a single isolated frame (Face Lab, onboarding) can omit
-    ///   it entirely.
+    /// `nonisolated` so callers can run detect/align/embed from a background task instead of blocking the main actor.
+    /// - Parameter previousBoundingBox: previous frame's selected box, if any — lets a continuous scanner keep selection "stuck" to the same person instead of re-picking every frame.
     nonisolated func recognize(in frame: CGImage, preferNear previousBoundingBox: CGRect? = nil) throws -> FaceRecognitionResult {
         let faces = try FaceDetector.detectFaces(in: frame)
         guard let face = Self.selectDominantFace(in: faces, preferNear: previousBoundingBox) else {
@@ -82,10 +62,7 @@ final class FaceRecognitionPipeline {
         return try recognize(face, in: frame)
     }
 
-    /// Aligns and embeds an already-chosen face. Enrollment uses this after
-    /// picking the largest face *without* the prominence filter, so a
-    /// too-small face can be flagged as "move closer" instead of looking
-    /// like nobody is there.
+    /// Aligns and embeds an already-chosen face; enrollment uses this to bypass the prominence filter so a too-small face reads as "move closer" rather than "nobody there".
     nonisolated func recognize(_ face: DetectedFace, in frame: CGImage) throws -> FaceRecognitionResult {
         let inputImage: CGImage
         let tier: AlignmentTier
@@ -107,59 +84,18 @@ final class FaceRecognitionPipeline {
         return FaceRecognitionResult(embedding: embedding, alignedImage: inputImage, alignmentTier: tier, quality: face.quality, face: face)
     }
 
-    /// Largest face by area, with no prominence cutoff. Enrollment needs
-    /// this to tell "too far" apart from "no face" — `selectDominantFace`
-    /// drops small faces entirely, which is correct for unlock but would
-    /// make the closer-up prompt unreachable.
+    /// Largest face by area with no prominence cutoff — unlike `selectDominantFace`, so enrollment can tell "too far" apart from "no face".
     nonisolated static func largestFace(in faces: [DetectedFace]) -> DetectedFace? {
         faces.max { $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height }
     }
 
-    /// Below this fraction of frame width, a detected face is treated as a
-    /// bystander or background person rather than a candidate to recognize
-    /// — shared with the "move closer" prompt onboarding shows during
-    /// enrollment (`OnboardingController.isTooFar`), so both agree on what
-    /// counts as close enough to matter.
-    ///
-    /// User-tunable from the Recognition settings page (`GlanceSettings
-    /// .minimumFaceWidth`), which writes through to this on every change and
-    /// seeds it from the persisted value at launch. `nonisolated(unsafe) var`
-    /// rather than routing through GlanceSettings directly, because this is
-    /// read from `selectDominantFace` — a `nonisolated static func` called
-    /// from a background `Task.detached` — which can't synchronously touch
-    /// GlanceSettings' MainActor-isolated storage. Acceptable here since it's
-    /// a UI-tunable heuristic float, not security-sensitive state.
+    /// Below this fraction of frame width, a face is treated as a bystander, not a candidate — shared with onboarding's "move closer" prompt. `nonisolated(unsafe)` because it's read from a background-task static func that can't touch GlanceSettings' MainActor-isolated storage.
     nonisolated(unsafe) static var minimumProminentFaceWidth: Float = 0.18
 
-    /// How far (in normalized 0...1 frame coordinates) a face's center may
-    /// drift from the previously-selected face and still count as "the same
-    /// person" between consecutive scan frames.
+    /// Max normalized-coordinate drift between frames still counted as "the same person".
     nonisolated private static let continuityDistanceTolerance: CGFloat = 0.3
 
-    /// Picks the single "dominant" face to recognize from `faces` — the
-    /// person actually in front of the camera trying to unlock, not a
-    /// bystander or someone in the background. Two things keep this stable
-    /// when more than one face is in frame:
-    ///
-    ///   1. A minimum-prominence filter excludes faces smaller than
-    ///      `minimumProminentFaceWidth` outright — someone standing well
-    ///      behind the primary user is never even a candidate, regardless
-    ///      of what else is happening in the frame.
-    ///   2. Among the remaining candidates, if `previousBoundingBox` is
-    ///      given (the box selected on the previous frame), the closest
-    ///      match to it wins over the raw largest-by-area. Without this,
-    ///      two similarly-sized faces can flip which one reads as "largest"
-    ///      from frame to frame — which starves both the liveness streak
-    ///      and the wrong-face streak of consecutive agreement, since each
-    ///      requires several frames in a row to agree on the same person.
-    ///      With two people in frame, selection could flip-flop between
-    ///      them fast enough that neither streak ever completed, so a scan
-    ///      would run out its timeout with no match *and* no confident
-    ///      rejection — it just silently gave up.
-    ///
-    /// Falls back to largest-by-area when there's no previous face to
-    /// anchor to (first frame of a scan) or nothing left is close enough to
-    /// it anymore (that face left the frame).
+    /// Picks the person actually at the camera, not a bystander: filters out faces below `minimumProminentFaceWidth`, then prefers continuity with `previousBoundingBox` over raw largest-by-area so two similarly-sized faces can't flip-flop the selection frame to frame and starve the liveness/wrong-face streaks of agreement.
     nonisolated static func selectDominantFace(in faces: [DetectedFace], preferNear previousBoundingBox: CGRect? = nil) -> DetectedFace? {
         let candidates = faces.filter { $0.normalizedBoundingBox.width >= CGFloat(minimumProminentFaceWidth) }
         guard !candidates.isEmpty else { return nil }
@@ -192,11 +128,7 @@ nonisolated struct ScoredIdentity {
 }
 
 extension FaceRecognitionPipeline {
-    /// Compares `embedding` against every enrolled identity, sorted by
-    /// centroid similarity descending. Includes stale identities (samples
-    /// from a different embedder) — callers decide how to surface that;
-    /// `bestMatch(in:threshold:)` below excludes them from actually
-    /// matching.
+    /// Sorted by centroid similarity descending; includes stale identities (different embedder) since `bestMatch` is what excludes them from actually matching.
     nonisolated func score(_ embedding: [Float], against identities: [FaceIdentity]) -> [ScoredIdentity] {
         identities.compactMap { identity in
             guard let template = identity.template, !identity.samples.isEmpty else { return nil }
@@ -208,28 +140,7 @@ extension FaceRecognitionPipeline {
         }.sorted { $0.centroidSimilarity > $1.centroidSimilarity }
     }
 
-    /// The shared match decision, applied to an already-sorted `score(...)`
-    /// result: not stale, and both centroid and max-sample similarity clear
-    /// `threshold`. Both the Face Lab debug UI and `FaceUnlockCoordinator`
-    /// call this same function rather than each having their own copy of
-    /// the logic — tuning one without the other would be a real risk for a
-    /// security-sensitive comparison.
-    ///
-    /// Deliberately no runner-up margin check: an earlier version required
-    /// the top score to beat the second-closest identity by 0.05, to guard
-    /// against two different enrolled people scoring close enough that
-    /// picking the higher one was a coin flip. Dropped because "identity"
-    /// here isn't necessarily "one distinct person" — the same person is
-    /// meant to be enrollable multiple times under different appearances
-    /// (glasses, lighting, hairstyle), and two such profiles legitimately
-    /// score close to each other on every future capture of that same
-    /// face. A margin built to catch ambiguity between different people
-    /// can't tell that apart from "these two profiles agree," and rejected
-    /// the second case unconditionally, forever — not a tunable threshold
-    /// problem. If cross-person ambiguity ever needs catching again, it
-    /// has to be identity-aware (e.g. only compare across different
-    /// `FaceIdentity.id`s that aren't themselves same-person aliases), not
-    /// a flat score gap.
+    /// Shared by Face Lab and FaceUnlockCoordinator so tuning stays consistent. No runner-up margin check: the same person can be enrolled multiple times under different appearances, so two of their own profiles legitimately score close together — a margin check can't tell that apart from two different people colliding.
     nonisolated func bestMatch(in scored: [ScoredIdentity], threshold: Float) -> ScoredIdentity? {
         guard let first = scored.first, !first.identity.isStale(comparedTo: embedder) else { return nil }
         guard first.centroidSimilarity >= threshold, first.maxSampleSimilarity >= threshold else { return nil }

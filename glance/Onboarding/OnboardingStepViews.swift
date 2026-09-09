@@ -2,11 +2,8 @@
 //  OnboardingStepViews.swift
 //  glance
 //
-//  The screens of the notch-hosted onboarding flow (Figma frames 1, 2,
-//  3, 4-6 combined, 7, 8, plus the naming step added for multi-identity
-//  enrollment, which has no Figma frame). Each fills whatever panel size
-//  OnboardingController reports for its step — sizing itself is the notch
-//  window's job (see NotchOverlayView), not these views'.
+//  The screens of the notch-hosted onboarding flow. Each fills whatever panel size
+//  OnboardingController reports for its step — sizing itself is the notch window's job.
 //
 
 import SwiftUI
@@ -43,9 +40,6 @@ struct IntroStepView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(GlanceTheme.panel)
         .onAppear {
-            // Full-screen, like the enrollment step's guidance sweep — not
-            // confined to this small notch panel. See
-            // `EnrollmentSweepWindowController.presentOnce(direction:)`.
             controller.playIntroSweepIfNeeded()
         }
     }
@@ -53,9 +47,7 @@ struct IntroStepView: View {
 
 private struct GlanceLogoView: View {
     var body: some View {
-        // The video already bakes in its own white rounded-card background
-        // (same solid-background convention as the scan animations), so no
-        // extra chrome is added here.
+        // Video already bakes in its own white rounded-card background — no extra chrome needed.
         LoopingVideoView(resourceName: "logoanimation")
     }
 }
@@ -280,9 +272,8 @@ private struct EnrollmentTooFarChevron: View {
 
 // MARK: - 7. Name
 
-/// Asks who was just captured. Reached from every flow that captures poses
-/// — first-run setup, "add another face", and a recapture (where the field
-/// arrives pre-filled with the existing name, so this doubles as rename).
+/// Asks who was just captured — for a recapture, pre-filled with the existing name so
+/// this doubles as rename.
 struct NameStepView: View {
     @Bindable var controller: OnboardingController
 

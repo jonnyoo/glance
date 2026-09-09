@@ -2,34 +2,22 @@
 //  NotchGeometry.swift
 //  glance
 //
-//  Pure geometry — no AppKit window knowledge. Computes where the panel sits
-//  on a given screen (on the physical notch, or as a detached pill where
-//  there isn't one) and how big the overlay window should be, so
-//  NotchWindowController just asks "where" and "how big" without knowing how
-//  those numbers were derived.
+//  Pure geometry — no AppKit window knowledge.
 //
 
 import AppKit
 import CoreGraphics
 
 struct NotchGeometry {
-    /// Size of the closed (collapsed) silhouette, in the screen's own point
-    /// space — the physical notch's own dimensions, or `pillClosedSize`.
+    /// Physical notch's own dimensions, or `pillClosedSize`.
     let closedSize: CGSize
-    /// True if this screen has a real physical notch (vs. the pill fallback
-    /// drawn for external/non-notched displays).
+    /// True if this screen has a real physical notch (vs. the pill fallback).
     let isPhysicalNotch: Bool
 
-    /// Which silhouette this screen's panel wears. Screens with real hardware
-    /// to sit on get the notch; everything else gets the detached pill.
     var style: NotchPanelStyle { isPhysicalNotch ? .notch : .pill }
 
-    /// Fixed footprint the scan-mode overlay content (armed lock-screen
-    /// flow, Face Lab previews) animates within when expanded, in notch
-    /// style. Sized for the square (432x432) scan animation plus breathing
-    /// room — onboarding does not use this; see OnboardingMetrics for its
-    /// per-step sizes. Pill style has its own `pillOpenSize` below — the two
-    /// are independent so editing one never touches the other.
+    /// Fixed footprint of expanded scan-mode content in notch style. Sized for the
+    /// square (432x432) scan animation plus breathing room. Pill has its own `pillOpenSize`.
     static let notchOpenSize = CGSize(width: 220, height: 200)
 
     /// Corner radii for the notch silhouette. The top radius doubles as the
@@ -37,14 +25,10 @@ struct NotchGeometry {
     static let closedTopRadius: CGFloat = 8
     static let closedBottomRadius: CGFloat = 12
     static let openTopRadius: CGFloat = 16
-    /// Deliberately generous — the expanded panel should read as strongly
-    /// rounded at the bottom.
     static let openBottomRadius: CGFloat = 60
 
-    /// Horizontal padding the flare consumes on each side. A shape drawn in
-    /// a rect of width `w` has a visible body of `w - 2 * topRadius`, so
-    /// callers add this to a desired body width to get the frame width.
-    /// Zero in pill style — that shape has no flare, its body *is* the rect.
+    /// A shape drawn in a rect of width `w` has a visible body of `w - 2 * topRadius`;
+    /// zero in pill style, which has no flare.
     static func flareAllowance(topRadius: CGFloat, style: NotchPanelStyle) -> CGFloat {
         style == .notch ? topRadius * 2 : 0
     }
@@ -55,44 +39,26 @@ struct NotchGeometry {
     // floating rounded rectangle sized by `pillOpenSize` in scan mode, or
     // whatever step onboarding is on.
 
-    /// Resting/entering pill footprint. Deliberately narrower than every
-    /// expanded footprint (the smallest is scan mode's `pillOpenSize`) so
-    /// the growth is visible rather than a barely-perceptible nudge.
+    /// Deliberately narrower than every expanded footprint so growth reads as visible.
     static let pillClosedSize = CGSize(width: 80, height: 24)
 
-    /// Scan-mode (armed lock-screen flow, Face Lab previews) footprint in
-    /// pill style — the pill's equivalent of `notchOpenSize` above, sized
-    /// independently so it can be tuned without touching the notch. Larger
-    /// than the notch's by default since the pill has no camera housing
-    /// eating into its usable content area.
+    /// Independent of `notchOpenSize`; larger by default since the pill has no camera housing.
     static let pillOpenSize = CGSize(width: 180, height: 180)
 
-    /// How far below the top of the screen the pill and the expanded panel
-    /// sit — the whole point of the pill is that it's *detached* from the
-    /// edge, so this should never be zero.
+    /// Never zero — the whole point of the pill is that it's detached from the edge.
     static let pillTopGap: CGFloat = 3
 
-    /// Corner radius of the expanded rounded rectangle. Uniform on all four
-    /// corners, unlike the notch (whose heavy bottom radius exists to
-    /// balance the flare at the top) — matches `openBottomRadius` so the two
-    /// styles' expanded panels read as equally rounded.
+    /// Uniform on all four corners (unlike the notch); matches `openBottomRadius`.
     static let pillOpenCornerRadius: CGFloat = 48
 
-    /// Blur applied to the whole panel — pill body included — while it's
-    /// off-screen, resolving to zero as it slides into place.
+    /// Blur applied to the whole panel while off-screen, resolving to zero as it slides into place.
     static let pillEnterBlur: CGFloat = 0
 
-    /// Extra distance past the top of the screen the pill parks at while
-    /// hidden. Comfortably more than `pillEnterBlur` on purpose: a Gaussian
-    /// blur spreads well past its nominal radius, and without the margin the
-    /// parked pill smears a faint dark band across the top of the screen.
+    /// Comfortably more than `pillEnterBlur` — a Gaussian blur spreads past its nominal
+    /// radius, and without this margin the parked pill smears a faint band at the screen top.
     static let pillOffscreenSlack: CGFloat = 20
 
-    /// Black padding between the pill's edge and the scan-mode video/image
-    /// content inside it — the pill's equivalent of `notchContentPadding*`
-    /// above, independent so it can be tuned without touching the notch.
-    /// Top is larger than the notch's by default since the notch's is tuned
-    /// tight to clear the camera housing, which the pill doesn't have.
+    /// Pill's equivalent of `notchContentPadding*` below, independent so it can be tuned separately.
     static let pillContentPaddingTop: CGFloat = 32
     static let pillContentPaddingLeading: CGFloat = 32
     static let pillContentPaddingTrailing: CGFloat = 32
@@ -100,10 +66,7 @@ struct NotchGeometry {
 
     // MARK: - Panel open/close springs — EDIT HERE
     //
-    // Shared by both styles for the size/radius motion (the pill's slide has
-    // its own timing below). Opening overshoots slightly; closing is
-    // critically damped — the feel established while studying Boring Notch's
-    // animation.
+    // Shared by both styles. Opening overshoots slightly; closing is critically damped.
     static let openSpringResponse: Double = 0.45
     static let openSpringDamping: Double = 0.7
     static let closeSpringResponse: Double = 0.45
@@ -111,120 +74,64 @@ struct NotchGeometry {
 
     // MARK: - Pill enter/exit choreography — EDIT HERE
     //
-    // Style `.pill` only — the physical notch is drawn on hardware that's
-    // already there, so it never slides. The pill's slide (vertical
-    // position) and its expansion (size + corner radius) deliberately run on
-    // two independent timelines rather than moving in lockstep:
-    //
-    //   Enter: slide leads — starts immediately, finishes first.
-    //          Expansion trails — starts after `pillEnterExpansionDelay`,
-    //          finishes last. The pill drops into position, then grows.
-    //   Exit:  shrink leads — starts immediately, finishes first (it reuses
-    //          the close spring above, undelayed).
-    //          Slide trails — starts after `pillExitSlideDelay`, finishes
-    //          last. The pill shrinks back down, then slides away.
+    // Style `.pill` only. Slide and expansion run on independent timelines:
+    // enter slides first then grows; exit shrinks first then slides away.
 
-    /// Duration of the slide motion, both directions. Ease-out (fast start,
-    /// gentle settle) rather than a spring — this is a straight-line
-    /// off-screen/on-screen move, not a bouncy resize.
+    /// Ease-out rather than a spring — a straight-line move, not a bouncy resize.
     static let pillSlideDuration: Double = 0.25
-    /// Delay before the expansion starts on enter, after the slide is
-    /// already underway. Larger than this plus the slide duration and the
-    /// expansion would start before the slide even finishes.
+    /// Expansion starts this long after the slide begins.
     static let pillEnterExpansionDelay: Double = 0.16
-    /// Delay before the slide starts on exit, after the shrink is already
-    /// underway.
+    /// Slide starts this long after the shrink begins.
     static let pillExitSlideDelay: Double = 0.18
 
     // MARK: - Minimal unlock style — EDIT HERE
     //
-    // `UnlockAnimationStyle.minimal` never does the full-panel expansion.
-    // Instead the silhouette *widens only*, revealing a lock icon on the
-    // left and the unlock video on the right:
-    //
-    //   [ lock ][ · · · gap · · · ][ video ]
-    //
-    // In notch style the "gap" is the physical notch cutout itself, which
-    // has no display behind it — so the two content regions must live in
-    // the black flanks this widening creates on either side of it. In pill
-    // style there's no cutout, so the same layout just reads as a lock and
-    // a video at opposite ends. One layout, both styles; see
-    // MinimalUnlockView.
+    // `UnlockAnimationStyle.minimal`: the silhouette widens only, revealing a lock
+    // icon on one side and the unlock video on the other. See MinimalUnlockView.
 
-    /// Black width added on *each* side of the physical notch cutout, which
-    /// is what creates the visible flanks the content sits in. Total notch
-    /// body width is `geometry.closedSize.width + 2 * this`. Ceiling: the
-    /// fixed window is ~434pt wide (see `windowSize(for:)`), and a notch
-    /// measures ~200-220pt, so much past 100 will start to clip.
+    /// Total notch body width is `geometry.closedSize.width + 2 * this`. Window is
+    /// ~434pt wide (see `windowSize(for:)`), so much past 100 will start to clip.
     static let minimalNotchFlankWidth: CGFloat = 42
 
-    /// The pill's minimal footprint. Taller than `pillClosedSize.height` so
-    /// the icon and video are legible — the corner radius stays
-    /// `height / 2` at both ends, so it remains a true capsule while it
-    /// stretches.
+    /// Taller than `pillClosedSize.height` for legibility; radius stays `height / 2`
+    /// so it remains a true capsule while stretching.
     static let minimalPillOpenWidth: CGFloat = 150
     static let minimalPillOpenHeight: CGFloat = 40
 
-    /// Extra height added *only* in notch style once expanded for minimal
-    /// unlock. The physical notch's own height can't change (that's the
-    /// cutout), so this appears as extra black below it — the panel is
-    /// top-aligned and always grows downward (see `NotchOverlayView`'s
-    /// `verticalOffset` header comment), so the bump is real, visible
-    /// display, not more cutout. Pill style is untouched by this entire
-    /// section; its minimal footprint is `minimalPillOpenWidth/Height` only.
+    /// Extra height added only in notch style — the physical notch's height can't
+    /// change, so this appears as real, visible black below it.
     static let minimalNotchHeightBump: CGFloat = 12
 
-    /// Radii for the widened notch — noticeably more rounded than the
-    /// resting silhouette's `closedTopRadius`/`closedBottomRadius` (8/12),
-    /// the bottom more so than the top, same ratio the full-expand style
-    /// uses (`openTopRadius`/`openBottomRadius`, 16/60).
+    /// More rounded than the resting silhouette's radii (8/12), same ratio the
+    /// full-expand style uses (16/60).
     static let minimalNotchTopRadius: CGFloat = 12
     static let minimalNotchBottomRadius: CGFloat = 22
 
-    /// Inset from the silhouette's left/right edges to the content. In
-    /// notch style the flare occupies `topRadius` of that margin already,
-    /// so this is added on top of it.
+    /// In notch style the flare already occupies `topRadius` of this margin.
     static let minimalContentEdgeInset: CGFloat = 4
 
     /// Point size of the lock glyph, pill style (and the shared fallback).
     static let minimalLockIconSize: CGFloat = 14
-    /// Width of each content region — the lock on one end, the video on the
-    /// other. The video is square and aspect-fit, so its rendered size is
-    /// really `min(this, panelHeight - 2 * minimalMediaVerticalInset)`.
-    /// Pill style (and the shared fallback).
+    /// The video is square and aspect-fit, so its rendered size is really
+    /// `min(this, panelHeight - 2 * minimalMediaVerticalInset)`.
     static let minimalMediaWidth: CGFloat = 34
-    /// Breathing room above and below the video, pill style. Without it
-    /// the square aspect-fits to the *full* panel height and touches both
-    /// edges, which reads as cramped.
+    /// Without this the square aspect-fits to the full panel height and touches both edges.
     static let minimalMediaVerticalInset: CGFloat = 8
 
-    /// Notch-style counterparts of the three above — bumped up to match
-    /// `minimalNotchHeightBump`, so the icon and video actually fill the
-    /// taller panel rather than just sitting in more empty space around
-    /// them. The vertical inset is larger than the pill's so the video
-    /// doesn't sit flush against the extra black below the cutout.
+    /// Notch-style counterparts of the three above, bumped up to match `minimalNotchHeightBump`.
     static let minimalNotchLockIconSize: CGFloat = 16
     static let minimalNotchMediaWidth: CGFloat = 40
     static let minimalNotchMediaVerticalInset: CGFloat = 11
 
-    /// Delay between the unlock landing and the lock glyph flipping open,
-    /// so it can be nudged to land with the video's own resolve beat
-    /// instead of firing on the same frame.
+    /// So the lock glyph can be nudged to land with the video's own resolve beat.
     static let minimalLockUnlockDelay: Double = 0
-    /// Duration of the lock → unlock symbol transition. A raw number rather
-    /// than an `Animation`, matching the springs above — this file stays
-    /// SwiftUI-free and the view builds the curve.
     static let minimalLockAnimationDuration: Double = 0.4
 
     // MARK: - Scan "breathing" pulse — EDIT HERE
     //
-    // While `.scanning` (the camera actively looking for a face), the whole
-    // unlock content slowly ping-pongs between full size/opacity and
-    // `scanPulseScale`/`scanPulseOpacity`, so the panel reads as *searching*
-    // rather than frozen. The moment the scan resolves — success or failure,
-    // either way — the pulse stops and returns to full, animating from
-    // wherever it happens to be at that instant rather than snapping. Shared
-    // by both styles. See `NotchOverlayView.startScanPulse()`.
+    // While `.scanning`, content ping-pongs between full size/opacity and
+    // `scanPulseScale`/`scanPulseOpacity` so the panel reads as searching, not frozen.
+    // See `NotchOverlayView.startScanPulse()`.
 
     /// Scale at the dimmed end of the ping-pong. 1.0 disables the size part.
     static let scanPulseScale: CGFloat = 0.97
@@ -232,56 +139,34 @@ struct NotchGeometry {
     static let scanPulseOpacity: Double = 0.65
     /// One half-cycle — full → dimmed, or dimmed → full.
     static let scanPulseHalfCycleDuration: Double = 0.4
-    /// Pause at each end of the ping-pong before reversing. 0 makes it a
-    /// continuous breathe with no rest at the extremes.
+    /// Pause at each end before reversing. 0 makes it a continuous breathe.
     static let scanPulseHoldDuration: Double = 0.05
-    /// How long the return-to-full takes when the scan resolves mid-pulse.
-    /// Deliberately quicker than a half-cycle so the content is back at full
-    /// while the success/failure animation is still early in its playback.
+    /// Deliberately quicker than a half-cycle so content is back at full while the
+    /// success/failure animation is still early in its playback.
     static let scanPulseSettleDuration: Double = 0.2
 
-    /// Extra wait, once `.scanning` begins, before the first pulse cycle
-    /// starts — so the content only starts breathing once the panel has
-    /// actually finished expanding, not while it's still mid-grow. In pill
-    /// style this is added on top of `pillEnterExpansionDelay` (the
-    /// expansion itself doesn't even *start* until that elapses); in notch
-    /// style there's no such delay, so this is the only wait. There's no
-    /// exact "expansion finished" signal to hook (springs don't have a hard
-    /// end time), so this is a hand-tuned approximation — bump it up if the
-    /// pulse still visibly starts before the panel looks settled.
+    /// Wait before the first pulse cycle so breathing starts only once the panel has
+    /// finished expanding. Hand-tuned approximation — springs have no hard end time.
     static let scanPulseStartDelay: Double = 0.6
 
-    /// Black padding between the notch shape's edge and the scan-mode
-    /// video/image content inside it, in notch style — edit these four to
-    /// adjust how much breathing room the media has on each side. Used in
-    /// `NotchOverlayView`. Pill style has its own independent set below.
+    /// Notch-style padding around scan-mode content. Pill has its own independent set below.
     static let notchContentPaddingTop: CGFloat = 26
     static let notchContentPaddingLeading: CGFloat = 40
     static let notchContentPaddingTrailing: CGFloat = 40
     static let notchContentPaddingBottom: CGFloat = 30
 
-    /// Cosmetic size bump applied on hover in NotchOverlayView — shared by
-    /// both styles. Included here so the fixed window has margin for it at
-    /// the largest content size instead of clipping.
+    /// Cosmetic size bump applied on hover in NotchOverlayView. Included here so the
+    /// fixed window has margin for it instead of clipping.
     static let hoverBump: CGFloat = 6
 
     // MARK: - Window size, per style — EDIT HERE
     //
-    // The window is created once (at whichever style is active for the
-    // current display at creation time) and never resized afterward — only
-    // `NotchOverlayView`'s content animates inside it (see NotchWindow.swift).
-    // Each style is floored to its OWN scan-mode footprint (`notchOpenSize`
-    // or `pillOpenSize`) and gets its own shadow margin, so pill and notch
-    // can be tuned entirely independently — changing one never changes the
-    // other's window size.
+    // Created once and never resized afterward (see NotchWindow.swift). Each style is
+    // floored to its own scan-mode footprint and gets its own shadow margin, tuned independently.
 
-    /// Extra margin baked into the notch window so SwiftUI's `.shadow()`
-    /// isn't clipped by the window bounds (the window itself has
-    /// `hasShadow = false` — the shadow is drawn in-content, same trick
-    /// Boring Notch uses).
+    /// Extra margin so SwiftUI's `.shadow()` isn't clipped (the window itself has
+    /// `hasShadow = false` — the shadow is drawn in-content).
     static let notchShadowPadding: CGFloat = 24
-    /// Same idea for the pill window. Separate from the notch's so the two
-    /// can be sized independently.
     static let pillShadowPadding: CGFloat = 24
 
     static func windowSize(for style: NotchPanelStyle) -> CGSize {
@@ -298,19 +183,14 @@ struct NotchGeometry {
             let contentHeight = max(pillOpenSize.height, OnboardingMetrics.maxPanelHeight(for: .pill))
             return CGSize(
                 width: contentWidth + pillShadowPadding * 2 + hoverBump,
-                // `pillTopGap` because the pill sits detached from the top
-                // edge, pushing its whole panel down by that much — without
-                // it the extra travel eats into the shadow margin at the
-                // bottom.
+                // `pillTopGap` since the detached pill's panel is pushed down by that much.
                 height: contentHeight + pillShadowPadding + hoverBump + pillTopGap
             )
         }
     }
 
-    /// Floor for a *physical* notch's measured width — the auxiliary-area
-    /// arithmetic below can come up implausibly small on odd display
-    /// configurations. Unrelated to `pillClosedSize`, which is a design
-    /// choice rather than a guard rail.
+    /// Floor for a physical notch's measured width — the auxiliary-area arithmetic
+    /// below can come up implausibly small on odd display configurations.
     private static let minimumNotchWidth: CGFloat = 200
 
     static func forMainScreen() -> NotchGeometry {
@@ -325,10 +205,8 @@ struct NotchGeometry {
             return NotchGeometry(closedSize: pillClosedSize, isPhysicalNotch: false)
         }
 
-        // Width derived from the menu-bar areas flanking the notch — the
-        // same technique Boring Notch uses. These are nil/empty on displays
-        // without a notch, hence the safeAreaInsets check above rather than
-        // relying on these being present.
+        // Width derived from the menu-bar areas flanking the notch — nil/empty on
+        // displays without one, hence the safeAreaInsets check above.
         let leftPadding = screen.auxiliaryTopLeftArea?.width ?? 0
         let rightPadding = screen.auxiliaryTopRightArea?.width ?? 0
         let width = max(screen.frame.width - leftPadding - rightPadding, minimumNotchWidth)
@@ -337,19 +215,9 @@ struct NotchGeometry {
         return NotchGeometry(closedSize: CGSize(width: width, height: height), isPhysicalNotch: true)
     }
 
-    /// Picks the screen the overlay should show on.
-    ///
-    /// If the user has pinned Face Unlock to a specific display
-    /// (`GlanceSettings.preferredDisplayID`), that display is used if (and
-    /// only if) it's currently connected — no fallback, since the whole
-    /// point of choosing a specific display is that the overlay shouldn't
-    /// show anywhere else. `FaceUnlockCoordinator.evaluateTrigger()` checks
-    /// this before ever arming, so the real lock-screen flow simply doesn't
-    /// run rather than showing up on the wrong screen.
-    ///
-    /// Otherwise ("Main display"): the physical notch if any connected
-    /// display has one, else the system's primary screen — unchanged from
-    /// before the display picker existed.
+    /// Picks the screen the overlay should show on. If a display is pinned
+    /// (`GlanceSettings.preferredDisplayID`), it's used only if still connected — no
+    /// fallback. Otherwise: the physical notch if any display has one, else the primary screen.
     @MainActor
     static func preferredScreen() -> NSScreen? {
         if let targetID = GlanceSettings.shared.preferredDisplayID {
@@ -360,11 +228,8 @@ struct NotchGeometry {
 }
 
 extension NSScreen {
-    /// A per-display identifier stable enough to persist a user's display
-    /// choice across launches — the same `CGDirectDisplayID` extraction
-    /// `CameraDeviceCatalog.isUsingBuiltInDisplay()` already uses elsewhere
-    /// in the app. Not guaranteed stable across every possible hardware
-    /// change, but it's the only per-display identity AppKit exposes.
+    /// Stable enough to persist a user's display choice across launches — the only
+    /// per-display identity AppKit exposes.
     var stableDisplayID: String? {
         guard let number = deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
             return nil

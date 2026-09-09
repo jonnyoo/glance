@@ -4,19 +4,9 @@
 //
 //  The only file other code should touch to show the notch overlay.
 //
-//  Two ways to drive it:
-//  - One-shot (`present()` / `finish(success:)`): used by OnboardingController
-//    and Face Lab's preview buttons. The window fully hides after resolving.
-//  - Armed (`arm(onActivate:)` / `disarm()`): used by FaceUnlockCoordinator
-//    for the real lock-screen flow. While armed, the window never actually
-//    hides — it stays on-screen and shrinks to the closed notch silhouette,
-//    which is what lets hovering the (visually closed) notch area wake it
-//    back up. `disarm()` is the only thing that truly orders it out.
-//
 //  Interaction is hover-driven, not click-driven: a non-activating panel
-//  needs a first click just to gain enough focus for a second click to
-//  register, which is exactly the "have to double-click" bug hovering
-//  avoids — hover events don't need the window to become key at all.
+//  otherwise needs a first click just to gain focus before a second click
+//  registers — hover avoids that "have to double-click" bug entirely.
 //
 
 import AppKit
@@ -26,15 +16,12 @@ import Observation
 @Observable
 @MainActor
 final class NotchOverlayController {
-    /// One overlay window for the whole app — the triggers (FaceUnlockCoordinator,
-    /// OnboardingController, Face Lab's preview buttons) never run concurrently
-    /// in practice, but sharing one instance makes that guaranteed rather than
-    /// incidental.
+    /// One overlay window for the whole app — sharing one instance guarantees
+    /// the triggers never run concurrently, rather than leaving that incidental.
     static let shared = NotchOverlayController()
 
     enum Phase: Equatable {
-        /// Closed silhouette. While armed, the window is still on-screen
-        /// here (hover-reactive); while not armed, the window is ordered out.
+        /// While armed, the window stays on-screen here (hover-reactive); otherwise ordered out.
         case closed
         /// Expanded, showing the idle still image — actively looking for a face.
         case scanning
@@ -44,16 +31,12 @@ final class NotchOverlayController {
         /// the user hovers first to retry.
         case failure
         case collapsing
-        /// Hosting the multi-step onboarding flow — expanded, resizing per
-        /// step, driven entirely by the hosted OnboardingController rather
-        /// than this controller's own resolve/timeout machinery.
+        /// Hosting the multi-step onboarding flow, driven by the hosted
+        /// OnboardingController rather than this controller's own machinery.
         case onboarding
     }
 
-    /// What the panel is showing. `.scan` is the pre-existing Face ID-style
-    /// video/still (armed lock-screen flow, Face Lab previews); `.onboarding`
-    /// hosts the redesigned notch-native onboarding flow. Kept as one enum
-    /// (rather than two independent optionals) so exactly one is ever active.
+    /// Kept as one enum (rather than two independent optionals) so exactly one is ever active.
     enum Content: Equatable {
         case scan(ScanMedia)
         case onboarding(OnboardingController)
@@ -80,22 +63,13 @@ final class NotchOverlayController {
     /// to the phase state machine itself.
     private(set) var isArmed = false
 
-    /// Pill style only (see NotchOverlayView): whether the pill is parked on
-    /// screen at rest, rather than off-screen above the top edge. True for
-    /// the duration of an armed lock-screen session, so a failed or timed-out
-    /// attempt shrinks back to a resting capsule; false everywhere else, so
-    /// the panel slides fully away when it's done. Deliberately separate from
-    /// `isArmed`: it lags it by a frame on the way in (that's what makes the
-    /// pill *slide* into the lock screen) and leads it on the way out.
+    /// Pill style only: whether the pill is parked on screen at rest vs. off-screen.
+    /// Deliberately separate from `isArmed` — it lags it by a frame on the way in
+    /// (making the pill slide into place) and leads it on the way out.
     private(set) var isPillDocked = false
 
-    /// The unlock-animation style the *current* scan cycle is running under,
-    /// snapshotted from `GlanceSettings` at each point a cycle begins rather
-    /// than read live. Two reasons: the panel's expanded size depends on it
-    /// (`.minimal` only widens, see NotchOverlayView), so reading it live
-    /// would let a settings change resize the panel mid-video; and
-    /// `finish(success:)` is guaranteed to resolve under the same style the
-    /// cycle started with.
+    /// Snapshotted from `GlanceSettings` when a cycle begins rather than read live,
+    /// so a settings change mid-attempt can't resize the panel or change how it resolves.
     private(set) var activeUnlockStyle: UnlockAnimationStyle = .original
 
     /// What a hover-driven activation should do — set by `arm()` (persists
@@ -106,37 +80,25 @@ final class NotchOverlayController {
     private var resolveTask: Task<Void, Never>?
     private var scanTimeoutTask: Task<Void, Never>?
 
-    /// True once the window has been shown and rendered at least once.
-    /// Guards `primeWindowIfNeeded` so the extra render pass only ever
-    /// happens on the very first show.
+    /// Guards `primeWindowIfNeeded` so the extra render pass only happens on the first show.
     private var hasPrimedWindow = false
 
-    /// Matches the success asset duration (~1.22s) plus a short ~0.5s beat
-    /// so the final frame is actually read before collapsing.
+    /// Matches the success asset duration (~1.22s) plus a short beat to read the final frame.
     private let successHoldDuration: Duration = .milliseconds(1_700)
-    /// How long a held failure frame waits for a hover-retry before quietly
-    /// collapsing on its own. Non-private so FaceUnlockCoordinator's
-    /// auto-retry can wait this out rather than duplicating the number.
+    /// Non-private so FaceUnlockCoordinator's auto-retry can wait this out too.
     let failureHoldDuration: Duration = .seconds(5)
-    /// How long `.scanning` waits with no resolution before quietly
-    /// collapsing — no failure animation, since nothing conclusive happened.
-    /// Reads the same setting as `FaceUnlockCoordinator.scanWindowDuration`;
-    /// the two are separate timers that must expire together, and sourcing
-    /// both from one setting is what guarantees it.
+    /// Reads the same setting as `FaceUnlockCoordinator.scanWindowDuration` so
+    /// the two separate timers expire together.
     private var scanTimeoutDuration: Duration {
         .seconds(GlanceSettings.shared.faceDetectionSeconds)
     }
-    /// Long enough for the closing spring to fully settle before the window
-    /// is ordered out (or, while armed, before it's just left at rest,
-    /// closed) — collapsing the *state* early is what made the window
-    /// visibly "pop" out of existence instead of shrinking away.
+    /// Long enough for the closing spring to fully settle before the window is
+    /// hidden/left closed — collapsing state too early made the window visibly pop away.
     let collapseAnimationDuration: Duration = .milliseconds(700)
 
     private init() {
         windowController.contentView = NSHostingView(rootView: NotchOverlayView(controller: self))
-        // Geometry is otherwise only sampled when a flow starts; a display
-        // being connected or disconnected mid-flow can flip the panel between
-        // notch and pill style, so keep it current.
+        // A display connecting/disconnecting mid-flow can flip notch vs. pill style.
         windowController.onScreenParametersChanged = { [weak self] in
             guard let self else { return }
             self.geometry = self.windowController.currentGeometry
@@ -145,10 +107,8 @@ final class NotchOverlayController {
 
     // MARK: - Armed mode (FaceUnlockCoordinator)
 
-    /// Arms the overlay for the lock-screen flow: shows the window and
-    /// keeps it up (closed or open) until `disarm()`. `onActivate` runs
-    /// whenever the user hovers the closed notch, or hovers a held failure
-    /// frame — in both cases, "start scanning again" is the right response.
+    /// Arms the overlay for the lock-screen flow: shows the window and keeps it
+    /// up until `disarm()`. `onActivate` restarts scanning on hover.
     func arm(onActivate: @escaping () -> Void) {
         isArmed = true
         self.onActivate = onActivate
@@ -161,15 +121,12 @@ final class NotchOverlayController {
         updateInteractivity()
 
         guard geometry.style == .pill else {
-            // The notch silhouette has nowhere to travel from — it's drawn on
-            // top of hardware that's already there.
+            // The notch silhouette has nowhere to travel from — it's on top of hardware already there.
             isPillDocked = true
             return
         }
-        // Same priming trick as `primeWindowIfNeeded`: render one real frame
-        // with the pill still parked off-screen, so flipping the flag next
-        // runloop animates it *down* into place instead of having it appear
-        // already docked.
+        // Render one real frame with the pill still off-screen, so flipping the
+        // flag next runloop animates it down instead of appearing already docked.
         windowController.displaySynchronously()
         DispatchQueue.main.async { [weak self] in
             guard let self, self.isArmed else { return }
@@ -177,25 +134,17 @@ final class NotchOverlayController {
         }
     }
 
-    /// Truly hides the window. Only call this once the lock-screen attempt
-    /// is completely done (unlocked, or the feature was turned off) —
-    /// while armed, resolving an attempt goes back to `.closed`, not this.
+    /// Truly hides the window. Only call once the lock-screen attempt is
+    /// completely done — while armed, resolving an attempt goes back to `.closed`, not this.
     ///
-    /// If a success/collapse sequence is already resolving — exactly what
-    /// happens the instant the real unlock lands, since that's what fires
-    /// this — let it finish naturally instead of yanking it away. Setting
-    /// `isArmed = false` here is still enough: the already-scheduled
-    /// `collapse()` (from `finish(success:)`) checks `isArmed` itself once
-    /// its hold expires, and will hide for real then. Cancelling that task
-    /// and hiding immediately is exactly what made the window vanish before
-    /// the unlock animation or the shrink had a chance to play.
+    /// If a success/collapse sequence is already resolving, let it finish
+    /// naturally: setting `isArmed = false` is enough, since the already-scheduled
+    /// `collapse()` checks `isArmed` once its hold expires and hides for real then.
     func disarm() {
         isArmed = false
         onActivate = nil
-        // Undocked *before* the guard below: when a success collapse is
-        // already in flight this is the only thing that runs, and it's what
-        // turns that collapse into a full slide-off-screen exit rather than a
-        // shrink back to a resting pill.
+        // Undocked before the guard: if a success collapse is already in flight, this
+        // turns it into a full slide-off-screen exit rather than a shrink to a resting pill.
         isPillDocked = false
         guard phase != .success, phase != .collapsing else { return }
         resolveTask?.cancel(); resolveTask = nil
@@ -208,12 +157,8 @@ final class NotchOverlayController {
             windowController.hide()
             return
         }
-        // The pill is visible at rest, so ordering the window out right now
-        // would blink it out of existence — which is exactly what happens
-        // when the user unlocks by typing their password instead. Give the
-        // slide-up time to play first. (`disarm()` also fires on every
-        // lock-state change with nothing on screen, hence the visibility
-        // check above — no point scheduling a teardown for a hidden window.)
+        // The pill is visible at rest, so hiding the window right now would blink it
+        // away instead of playing the slide-up (visibility check above skips hidden windows).
         Task { [weak self] in
             try? await Task.sleep(for: self?.collapseAnimationDuration ?? .milliseconds(700))
             guard let self, !self.isArmed, self.phase == .closed else { return }
@@ -221,10 +166,8 @@ final class NotchOverlayController {
         }
     }
 
-    /// Begins a scanning window: shows the idle still, and auto-collapses
-    /// back to closed after `scanTimeoutDuration` if nothing resolves it —
-    /// silently, no failure animation, since "no face seen" isn't a wrong
-    /// answer, just no answer.
+    /// Shows the idle still; auto-collapses silently (no failure animation) after
+    /// `scanTimeoutDuration` if nothing resolves it.
     func beginScanning() {
         resolveTask?.cancel(); resolveTask = nil
         scanTimeoutTask?.cancel()
@@ -243,21 +186,9 @@ final class NotchOverlayController {
 
     // MARK: - Window priming (first show only)
 
-    /// `present()` and `presentOnboarding()` both set an already-expanded
-    /// phase *before* calling `show()`. On the very first show ever, that
-    /// means the window is created and rendered for the first time already
-    /// in its expanded state — there's no previously-composited "closed"
-    /// frame for SwiftUI to animate away from, so the panel just appears
-    /// already-open instead of visibly growing into place. (`arm()` doesn't
-    /// have this problem: it already sets `.closed` before `show()`, and the
-    /// real expand happens later via `beginScanning()`, after an `await`
-    /// hop gives AppKit time to render the closed frame first.)
-    ///
-    /// This runs the window through one real closed-state show+render pass
-    /// before `completion` sets the caller's actual target phase — but only
-    /// on the first call ever; every later call already has a real prior
-    /// frame (even a closed one left over from a previous `hide()`) to
-    /// animate from, so `completion` runs synchronously as before.
+    /// On the very first show, `present()`/`presentOnboarding()` would otherwise render
+    /// already-expanded with no prior "closed" frame for SwiftUI to animate away from.
+    /// This runs one real closed-state show+render pass first, only on that first call.
     private func primeWindowIfNeeded(_ completion: @escaping () -> Void) {
         guard !hasPrimedWindow else {
             completion()
@@ -273,16 +204,11 @@ final class NotchOverlayController {
 
     // MARK: - One-shot mode (onboarding, Face Lab preview)
 
-    /// Shows the overlay in its scanning state. Safe to call again while
-    /// already visible. `onRetry` runs if the attempt fails and the user
-    /// hovers the overlay; pass nil to just collapse on hover instead.
+    /// Shows the overlay in its scanning state. Safe to call again while already visible.
+    /// `onRetry` runs on hover after a failed attempt; pass nil to just collapse on hover.
     ///
-    /// - Parameter styleOverride: forces a specific `.minimal`/`.original`
-    ///   rendering regardless of the user's actual saved preference — used
-    ///   by the Animation section's live preview (tapping "Original" shows
-    ///   the original layout even if "Minimal" is what's actually selected).
-    ///   `nil` (every other caller) keeps the normal behavior of reading
-    ///   `GlanceSettings.shared.effectiveUnlockAnimationStyle`.
+    /// - Parameter styleOverride: forces `.minimal`/`.original` regardless of the saved
+    ///   preference, for the Animation section's live preview.
     func present(styleOverride: UnlockAnimationStyle? = nil, onRetry: (() -> Void)? = nil) {
         isArmed = false
         onActivate = onRetry
@@ -301,10 +227,8 @@ final class NotchOverlayController {
 
     // MARK: - Onboarding mode (OnboardingController)
 
-    /// Hands the panel to the redesigned notch-native onboarding flow. Sizing
-    /// and content from here on are entirely driven by `controller` — this
-    /// object only owns the window's visibility and interactivity while
-    /// `.onboarding` is the active phase.
+    /// Hands the panel to the onboarding flow — this object only owns visibility and
+    /// interactivity while `.onboarding` is active; sizing/content is driven by `controller`.
     func presentOnboarding(_ controller: OnboardingController) {
         isArmed = false
         onActivate = nil
@@ -320,16 +244,12 @@ final class NotchOverlayController {
         }
     }
 
-    /// Gracefully shrinks the onboarding panel away and hides the window —
-    /// the same collapse feel as the scan flow's `collapse()`, but scoped to
-    /// onboarding so a scan cycle starting concurrently can't be interrupted
-    /// by it (guarded by re-checking `content` after the animation delay).
+    /// Gracefully shrinks the onboarding panel away and hides the window; guarded by
+    /// re-checking `content` so a concurrently-started scan cycle can't be interrupted.
     func dismissOnboarding() {
         guard case .onboarding = content else { return }
-        // Drop key/interactivity *now*, not inside the collapse Task:
-        // first-run completion opens Settings on this same turn, and if
-        // this overlay is still the key window Settings appears inactive
-        // and won't take focus from a click.
+        // Drop key/interactivity now, not inside the Task: first-run completion opens
+        // Settings this same turn, and a still-key overlay would leave it inactive.
         phase = .collapsing
         updateInteractivity()
         Task { [weak self] in
@@ -351,12 +271,8 @@ final class NotchOverlayController {
         resolveTask?.cancel()
         scanTimeoutTask?.cancel()
 
-        // Unlock Animation → None just skips the success/failure video
-        // — the phase (and hence the failure hover-to-retry behavior) is
-        // unaffected, only what's shown while resolving. Read off the
-        // cycle's captured style rather than live settings, so a change
-        // made mid-attempt can't resolve under different rules than the
-        // ones the panel opened with.
+        // Unlock Animation → None just skips the success/failure video; phase and
+        // retry behavior are unaffected. Reads the cycle's captured style, not live settings.
         let shouldAnimate = activeUnlockStyle != .none
         content = shouldAnimate ? .scan(success ? .success : .failure) : .scan(.idle)
         phase = success ? .success : .failure
@@ -371,14 +287,11 @@ final class NotchOverlayController {
         }
     }
 
-    /// Hover-driven activation: wakes from a closed/armed state, or retries
-    /// from a held failure frame. No-op during scanning/success/collapsing —
-    /// hovering then is just the visual bump, nothing to trigger.
+    /// Hover-driven activation: wakes from a closed/armed state, or retries from a held
+    /// failure frame. No-op during scanning/success/collapsing.
     func activate() {
-        // Gated here rather than in `updateInteractivity()` on purpose:
-        // leaving the window's hit-testing alone keeps the cosmetic hover
-        // bump and everything else that depends on interactivity unchanged,
-        // and only removes the retry itself.
+        // Gated here rather than in `updateInteractivity()` so the cosmetic hover bump
+        // stays unaffected — only the retry itself is removed.
         guard GlanceSettings.shared.retryOnHover else { return }
         switch phase {
         case .closed, .failure:
@@ -388,9 +301,8 @@ final class NotchOverlayController {
             }
             resolveTask?.cancel(); resolveTask = nil
             if !isArmed {
-                // Starts a fresh cycle right here, so it captures its own
-                // style. The armed path doesn't need to: `onActivate()`
-                // routes through `beginScanning()`, which captures.
+                // Captures its own style here; the armed path doesn't need to since
+                // `onActivate()` routes through `beginScanning()`, which captures.
                 activeUnlockStyle = GlanceSettings.shared.effectiveUnlockAnimationStyle
                 content = .scan(.idle)
                 phase = .scanning
@@ -422,11 +334,8 @@ final class NotchOverlayController {
         }
     }
 
-    /// Tears the overlay down without any resolve animation. Deliberately a
-    /// no-op while success/collapsing is already in flight — interrupting
-    /// that is exactly what once made the window vanish abruptly instead of
-    /// shrinking away (unlocking fires a cancel at the same moment the
-    /// success animation is finishing).
+    /// Tears the overlay down without any resolve animation. Deliberately a no-op while
+    /// success/collapsing is in flight — interrupting that made the window vanish abruptly.
     func dismissImmediately() {
         guard phase != .success, phase != .collapsing else { return }
         resolveTask?.cancel(); resolveTask = nil
@@ -439,12 +348,8 @@ final class NotchOverlayController {
     }
 
     private func updateInteractivity() {
-        // Hover must register whenever there's something for it to do:
-        // waking from closed-armed, or retrying a held failure. Otherwise
-        // click-through, so the overlay never intercepts anything it
-        // doesn't need to. Onboarding additionally needs the window to
-        // become *key* so the password step's text field can receive
-        // keystrokes.
+        // Click-through otherwise, so the overlay never intercepts anything it doesn't
+        // need to. Onboarding additionally needs key so its text field can receive keystrokes.
         windowController.setInteractive(isArmed || phase == .failure || phase == .onboarding, key: phase == .onboarding)
     }
 }

@@ -2,46 +2,23 @@
 //  FaceEmbedder.swift
 //  glance
 //
-//  Milestone D: turn a cropped face image into a fixed-length list of
-//  numbers (an "embedding"). Two embeddings of the same person's face end up
-//  close together; different people end up far apart — recognition is just
-//  measuring that distance.
-//
-//  Two implementations exist side by side:
-//  - `VisionFeaturePrintEmbedder`: Apple's built-in, on-device, general-
-//    purpose image descriptor. No downloaded model, works instantly, but
-//    (measured live) gives only a ~5-7% similarity gap between the owner
-//    and a different person — too thin to gate an unlock on.
-//  - `ArcFaceEmbedder` (ArcFaceEmbedder.swift): a real face-discriminative
-//    model, converted from InsightFace's `w600k_mbf` weights. Requires a
-//    canonically-aligned 112x112 input (see `FaceAligner`).
-//
-//  Swapping which one is active is a one-line change wherever `FaceEmbedder`
-//  is constructed — nothing else in the pipeline needs to change.
+//  Two implementations: `VisionFeaturePrintEmbedder` (Apple's built-in, but only ~5-7% similarity gap between people —
+//  too thin to gate unlock on) and `ArcFaceEmbedder` (real face-discriminative model).
 //
 
 import Vision
 import CoreGraphics
 
-/// Pure, synchronous, CPU-bound work — `nonisolated` so implementations can
-/// run on a background task despite the project's default main-actor
-/// isolation.
+/// `nonisolated` so implementations can run on a background task despite the project's default main-actor isolation.
 protocol FaceEmbedder: Sendable {
-    /// Name shown in the debug UI so it's obvious which embedder produced a
-    /// given saved sample.
+    /// Name shown in the debug UI so it's obvious which embedder produced a given saved sample.
     nonisolated var name: String { get }
-    /// Stable identifier persisted alongside every saved sample.
-    /// `SecureFaceStore` uses this to detect samples that came from a
-    /// different embedder and refuse to compare across them — comparing an
-    /// old Vision-feature-print vector against an ArcFace one wouldn't
-    /// error, it would just produce confident nonsense.
+    /// Persisted alongside every sample; `SecureFaceStore` uses it to refuse comparing across different embedders
+    /// (which wouldn't error, just produce confident nonsense).
     nonisolated var modelIdentifier: String { get }
-    /// Declared output length, used for cross-model mismatch detection
-    /// without needing to run an embedding first.
+    /// Declared output length, for cross-model mismatch detection without running an embedding first.
     nonisolated var embeddingDimension: Int { get }
-    /// Whether this embedder expects a canonically-aligned input (ArcFace)
-    /// as opposed to tolerating a loose bounding-box crop (Vision
-    /// feature-print).
+    /// Whether this embedder needs a canonically-aligned input (ArcFace) vs. tolerating a loose crop (Vision feature-print).
     nonisolated var requiresAlignment: Bool { get }
     nonisolated func embedding(for face: CGImage) throws -> [Float]
 }
@@ -63,11 +40,7 @@ enum FaceEmbedderError: LocalizedError {
 struct VisionFeaturePrintEmbedder: FaceEmbedder {
     nonisolated let name = "Vision Feature Print"
     nonisolated let modelIdentifier = "vision-feature-print-v1"
-    // Apple's documented default output size for the current
-    // VNGenerateImageFeaturePrintRequest revision. Only used as a nominal
-    // hint for mismatch detection — `modelIdentifier` is the real
-    // discriminator `SecureFaceStore` relies on, so an off-by-a-bit value
-    // here isn't safety-critical.
+    // Nominal hint only — `modelIdentifier` is the real discriminator `SecureFaceStore` relies on.
     nonisolated let embeddingDimension = 2048
     nonisolated let requiresAlignment = false
 
@@ -82,9 +55,7 @@ struct VisionFeaturePrintEmbedder: FaceEmbedder {
         return try Self.floatVector(from: observation)
     }
 
-    /// Vision only exposes the feature print as raw bytes + an element type;
-    /// this decodes it into `[Float]` so we can persist it as plain JSON and
-    /// average multiple samples together when enrolling.
+    /// Decodes Vision's raw bytes + element type into `[Float]` so it can persist as plain JSON and be averaged.
     nonisolated private static func floatVector(from observation: VNFeaturePrintObservation) throws -> [Float] {
         let count = observation.elementCount
         switch observation.elementType {
@@ -109,21 +80,14 @@ struct VisionFeaturePrintEmbedder: FaceEmbedder {
 }
 
 nonisolated enum FaceEmbedding {
-    /// Scales `vector` to unit length. ArcFace-style embeddings are meant to
-    /// be compared as unit vectors — cosine similarity is scale-invariant
-    /// for a single comparison, but normalization matters as soon as
-    /// vectors are combined (see `average` below).
+    /// Scales `vector` to unit length; matters once vectors are combined (see `average` below).
     static func l2Normalized(_ vector: [Float]) -> [Float] {
         let norm = sqrt(vector.reduce(Float(0)) { $0 + $1 * $1 })
         guard norm > 0 else { return vector }
         return vector.map { $0 / norm }
     }
 
-    /// Cosine similarity, range -1...1 (1 = identical direction). This is
-    /// what "how close are these two number-lists" actually means in
-    /// practice — it ignores overall magnitude and just compares shape.
-    /// This is the raw value ArcFace thresholds are conventionally quoted
-    /// in (typical verification cutoffs sit around 0.28-0.40).
+    /// Cosine similarity, range -1...1. The raw value ArcFace thresholds are quoted in (typical cutoffs ~0.28-0.40).
     static func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
         guard a.count == b.count, !a.isEmpty else { return 0 }
         var dot: Float = 0
@@ -138,21 +102,14 @@ nonisolated enum FaceEmbedding {
         return dot / (normA.squareRoot() * normB.squareRoot())
     }
 
-    /// Maps cosine similarity (-1...1) into a 0...100% for the legacy
-    /// Vision-feature-print UI. Do not use this to tune ArcFace thresholds —
-    /// it obscures the raw cosine value that published thresholds are
-    /// quoted in; use `cosineSimilarity` directly instead.
+    /// For the legacy Vision-feature-print UI only. Don't use to tune ArcFace thresholds — use `cosineSimilarity` directly.
     static func similarityPercent(_ a: [Float], _ b: [Float]) -> Double {
         let similarity = cosineSimilarity(a, b)
         return Double((similarity + 1) / 2) * 100
     }
 
-    /// Fuses several samples of one identity into a single template vector:
-    /// normalize each sample, average, then renormalize. A plain
-    /// element-wise mean (the previous implementation) is wrong once
-    /// embeddings are meant to be unit vectors — it doesn't preserve unit
-    /// length, and any sample with larger raw magnitude would silently
-    /// dominate the average.
+    /// Normalize each sample, average, then renormalize — a plain element-wise mean would let a larger-magnitude
+    /// sample silently dominate.
     static func average(_ vectors: [[Float]]) -> [Float]? {
         guard let first = vectors.first, !first.isEmpty else { return nil }
         let count = Float(vectors.count)

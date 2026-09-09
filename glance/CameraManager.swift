@@ -2,8 +2,7 @@
 //  CameraManager.swift
 //  glance
 //
-//  Milestone A: owns the AVCaptureSession and publishes the newest camera
-//  frame as a CGImage. Runs entirely on-device — no network involved.
+//  Owns the AVCaptureSession and publishes the newest camera frame as a CGImage. Runs entirely on-device.
 //
 
 @preconcurrency import AVFoundation
@@ -16,11 +15,7 @@ enum CameraPermission {
     case denied
 }
 
-/// The newest camera frame, in both the downscaled form Vision detection
-/// runs on and the native-resolution source it was derived from. `source`
-/// is a `CIImage` — Core Image's lazy recipe representation, not rendered
-/// pixels — so holding onto it costs nothing until something actually
-/// renders from it via `CameraManager.renderCrop`.
+/// `source` is a `CIImage` — a lazy recipe, not rendered pixels — so holding onto it costs nothing until `renderCrop` uses it.
 struct CameraFrame {
     let id: UInt64
     let image: CGImage
@@ -36,8 +31,7 @@ final class CameraManager: NSObject {
     private(set) var currentFrame: CameraFrame?
     private(set) var errorMessage: String?
 
-    /// Exposed read-only so `CameraPreviewView` can attach an
-    /// `AVCaptureVideoPreviewLayer` to the same session this manager drives.
+    /// Exposed read-only so `CameraPreviewView` can attach a preview layer to the same session.
     let session = AVCaptureSession()
     private let videoOutput = AVCaptureVideoDataOutput()
     private let sessionQueue = DispatchQueue(label: "com.jonathan.glance.camera.session")
@@ -110,16 +104,8 @@ final class CameraManager: NSObject {
         isConfigured = true
 
         session.beginConfiguration()
-        // `.high` is a relative "good enough for video" preset, not
-        // guaranteed to be the sensor's actual maximum — several
-        // webcams/Continuity Camera resolve it well below their real max.
-        // Unlike iOS, macOS's `AVCaptureSession` doesn't have an
-        // `.inputPriority` preset (it isn't available on this platform) and
-        // doesn't fight an explicitly-set `AVCaptureDevice.activeFormat`
-        // the way iOS's session-preset system does, so leaving this at
-        // `.high` and separately locking the device onto its highest-
-        // resolution format in `selectHighestResolutionFormat` below is
-        // sufficient here — no preset override needed.
+        // `.high` doesn't guarantee the sensor's max resolution; macOS (unlike iOS) doesn't fight an explicitly-set
+        // `activeFormat`, so leaving this at `.high` and locking the format separately below is sufficient.
         session.sessionPreset = .high
 
         videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
@@ -132,12 +118,7 @@ final class CameraManager: NSObject {
         session.commitConfiguration()
     }
 
-    /// Attaches whatever `CameraDeviceCatalog` currently resolves to,
-    /// replacing the existing input if the user's camera preference changed
-    /// in Settings since this session was last configured. Called on every
-    /// `start()` (not just the first), so switching the preferred camera
-    /// takes effect the next time a scan starts rather than needing an app
-    /// restart. A no-op if the resolved device hasn't changed.
+    /// Called on every `start()` so a camera preference change in Settings takes effect without an app restart.
     private func reconcileDeviceIfNeeded() {
         guard let device = CameraDeviceCatalog.resolvedDevice() else {
             errorMessage = "No camera device found."
@@ -160,15 +141,8 @@ final class CameraManager: NSObject {
         session.commitConfiguration()
     }
 
-    /// Locks the device onto its highest-resolution capture format,
-    /// regardless of frame rate — a lock-screen scan doesn't need high fps,
-    /// and the *working* frame Vision runs on is still downscaled to
-    /// `FramePublisher.maxLongEdge` (640px) right after capture, so this
-    /// only changes what `CameraFrame.source` (and therefore `renderCrop`)
-    /// actually has to work with. Only takes effect because
-    /// `configureSessionIfNeeded` sets `sessionPreset = .inputPriority` —
-    /// under any other preset, AVCaptureSession would silently override
-    /// this back down.
+    /// Highest resolution regardless of fps — Vision still works from the downscaled frame; this only affects
+    /// what `CameraFrame.source` (and therefore `renderCrop`) has to work with.
     private func selectHighestResolutionFormat(for device: AVCaptureDevice) {
         let best = device.formats.max { lhs, rhs in
             let l = CMVideoFormatDescriptionGetDimensions(lhs.formatDescription)
@@ -189,13 +163,8 @@ final class CameraManager: NSObject {
         currentFrame = frame
     }
 
-    /// Renders a native-resolution crop of `imageRect` (in `frame.image`'s
-    /// top-left/y-down pixel space — the same space as `DetectedFace
-    /// .boundingBox`) from the undownscaled `frame.source`. Used by spoof-cue
-    /// extraction, which needs pixel detail the 640px working frame throws
-    /// away (screen texture, moiré, gloss). `nonisolated` and `static` so it
-    /// can be called from the same background tasks that already do
-    /// Vision/recognition work, without hopping back to the main actor.
+    /// Renders a native-resolution crop of `imageRect` from `frame.source`, for spoof-cue extraction which
+    /// needs pixel detail (screen texture, moiré, gloss) the downscaled working frame throws away.
     nonisolated static func renderCrop(from frame: CameraFrame, imageRect: CGRect, maxEdge: CGFloat = 448) -> CGImage? {
         let workingWidth = CGFloat(frame.image.width)
         let workingHeight = CGFloat(frame.image.height)
@@ -203,14 +172,10 @@ final class CameraManager: NSObject {
         let scaleX = frame.sourceSize.width / workingWidth
         let scaleY = frame.sourceSize.height / workingHeight
 
-        // Expand ~1.3x for context around the face — device edges/bezels
-        // sit just outside a tight face box, and the extra margin gives the
-        // texture/moiré cues real surrounding pixels to sample.
+        // Expand ~1.3x so device edges/bezels are captured for texture/moiré cues.
         let expanded = imageRect.insetBy(dx: -imageRect.width * 0.15, dy: -imageRect.height * 0.15)
 
-        // `imageRect` is top-left/y-down (matching `DetectedFace
-        // .boundingBox`); Core Image's coordinate space is bottom-left/y-up.
-        // Same flip as `FaceDetector.convertToImageSpace`, applied in reverse.
+        // Flip from `imageRect`'s top-left/y-down space to Core Image's bottom-left/y-up (reverse of FaceDetector.convertToImageSpace).
         let nativeX = expanded.origin.x * scaleX
         let nativeWidth = expanded.width * scaleX
         let nativeHeight = expanded.height * scaleY
@@ -232,27 +197,16 @@ final class CameraManager: NSObject {
         return cropRenderContext.createCGImage(cropped, from: cropped.extent)
     }
 
-    /// Shared across calls — a `CIContext` is expensive to create and safe
-    /// to reuse concurrently (it's `Sendable`). `nonisolated`: a `static
-    /// let` on this `@MainActor` class is otherwise itself main-actor-
-    /// isolated by default, which `renderCrop` (deliberately `nonisolated`
-    /// so it can run from the background tasks that already do Vision/
-    /// recognition work) can't touch.
+    /// `CIContext` is expensive to create and safe to reuse concurrently. Explicitly `nonisolated` since a `static let`
+    /// on this `@MainActor` class would otherwise be main-actor-isolated, which the `nonisolated renderCrop` can't touch.
     private nonisolated static let cropRenderContext = CIContext()
 
-    /// Sample-buffer callbacks arrive on `sessionQueue`, off the main actor.
-    /// This tiny delegate does the CGImage conversion there, then hops back
-    /// to the MainActor-isolated manager to publish the result.
+    /// Sample-buffer callbacks arrive on `sessionQueue`, off the main actor; this delegate converts there, then hops back.
     private final class FramePublisher: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         weak var owner: CameraManager?
         private let ciContext = CIContext()
-        /// Detection/embedding only ever need a modest-resolution frame —
-        /// running Vision on the full sensor resolution (often 1080p+) is
-        /// pure waste. This only affects the `image` half of `CameraFrame`
-        /// (used for detection); the live preview renders from the capture
-        /// session directly via `AVCaptureVideoPreviewLayer` and is
-        /// unaffected. The undownscaled `source` is kept alongside it for
-        /// callers that need native-resolution pixels (see `renderCrop`).
+        /// Detection only needs a modest resolution; the live preview renders from the capture session directly and
+        /// is unaffected. The undownscaled `source` is kept alongside for callers needing native pixels (`renderCrop`).
         private let maxLongEdge: CGFloat = 640
         private var nextFrameID: UInt64 = 0
 

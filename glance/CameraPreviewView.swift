@@ -2,9 +2,7 @@
 //  CameraPreviewView.swift
 //  glance
 //
-//  Milestone A/B display: shows the live camera feed and draws a green box
-//  around each face Vision finds, updated every frame.
-//
+
 
 import SwiftUI
 import AVFoundation
@@ -32,9 +30,7 @@ final class PreviewHostView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer = CALayer()
-        // .resizeAspectFill crops to completely fill the view instead of
-        // letterboxing — without it, the sensor's rectangular aspect ratio
-        // leaves visible gaps inside a circular mask.
+        // .resizeAspectFill crops to fill the view — without it, the sensor's aspect ratio leaves gaps inside a circular mask.
         previewLayer.videoGravity = .resizeAspectFill
         layer?.addSublayer(previewLayer)
     }
@@ -47,15 +43,10 @@ final class PreviewHostView: NSView {
         super.layout()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        // Geometry is set via bounds+position (not .frame) because a
-        // non-identity transform is applied below, and Core Animation
-        // mis-reports .frame once a layer is transformed.
+        // bounds+position, not .frame — Core Animation mis-reports .frame once a non-identity transform is applied.
         previewLayer.bounds = CGRect(origin: .zero, size: bounds.size)
         previewLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
-        // Horizontal flip so the preview reads like a mirror (turn head
-        // left -> moves left on screen). Done at the layer level rather
-        // than via the capture connection's isVideoMirrored, which had no
-        // effect on this hardware/preview combination.
+        // Mirror horizontally at the layer level — the capture connection's isVideoMirrored had no effect here.
         previewLayer.setAffineTransform(CGAffineTransform(scaleX: -1, y: 1))
         CATransaction.commit()
     }

@@ -2,12 +2,8 @@
 //  FaceLabController.swift
 //  glance
 //
-//  Orchestrates the Face Lab debug tab: wires the camera to
-//  FaceRecognitionPipeline (detect -> align -> embed) and the encrypted
-//  enrollment store, and exposes everything the UI needs. Deliberately
-//  never touches LockMonitor, KeystrokeInjector, or SecureCredentialManager
-//  for *unlocking* — connecting recognition to unlock is milestone G,
-//  handled separately by FaceUnlockCoordinator (off by default).
+//  Orchestrates the Face Lab debug tab. Deliberately never touches LockMonitor, KeystrokeInjector, or
+//  SecureCredentialManager for *unlocking* — that's handled separately by FaceUnlockCoordinator (off by default).
 //
 
 import Foundation
@@ -19,9 +15,7 @@ struct RecognitionResult: Identifiable {
     let name: String
     /// Similarity against the identity's averaged template.
     let centroidSimilarity: Float
-    /// Similarity against the single closest individual sample — catches
-    /// cases where averaging blurred together poses that shouldn't be
-    /// blended. A match must clear the threshold on *both* measures.
+    /// Similarity against the single closest sample. A match must clear the threshold on *both* measures.
     let maxSampleSimilarity: Float
     let isStale: Bool
 }
@@ -44,29 +38,17 @@ final class FaceLabController {
     private(set) var detectedFaces: [DetectedFace] = []
     private(set) var currentResult: FaceRecognitionResult?
 
-    /// Fed every frame a face is detected, live — same as
-    /// `FaceUnlockCoordinator`'s scan loop, so this is exactly what the
-    /// real unlock path would see, not a separately-tuned debug copy.
+    /// Fed live, same as `FaceUnlockCoordinator`'s scan loop — this is exactly what the real unlock path would see.
     private let livenessAnalyzer = LivenessAnalyzer()
     private(set) var currentLiveness = LivenessSnapshot.empty
-    /// Diagnostics behind the flat-vs-3D cue (excess ratio, coherence, pair
-    /// counts, yaw range) — the numbers that explain *why* that cue is
-    /// reading what it reads, which the cue's own 0...1 level can't show.
+    /// Diagnostics behind the flat-vs-3D cue, explaining *why* it reads what it reads beyond the cue's own 0...1 level.
     private(set) var currentGeometry = GeometryLivenessResult.empty
-    /// The single most recent extracted frame — separate from the window
-    /// `livenessAnalyzer` holds internally, which isn't itself inspectable.
-    /// Exists so the debug view can show raw measurements (eye-aspect-ratio,
-    /// device overlap, specular fraction) live, not just the derived cue
-    /// levels — needed to tell "the threshold is wrong" from "the underlying
-    /// measurement isn't moving at all," which isn't visible from the level
-    /// alone.
+    /// Lets the debug view show raw measurements live (not just derived cue levels), to tell a wrong threshold from
+    /// a measurement that isn't moving at all.
     private(set) var lastLivenessFrame: LivenessFrame?
 
-    /// Face Lab drives mode and tuning locally rather than reading
-    /// `GlanceSettings`, so experimenting here can never silently change
-    /// what actually unlocks the Mac. Heavy by default in the lab — the
-    /// point of this tab is to watch the confirm cues, which Light mode
-    /// short-circuits entirely.
+    /// Drives mode/tuning locally rather than reading `GlanceSettings`, so experimenting here can't change what
+    /// actually unlocks the Mac. Heavy by default since the point of this tab is watching the confirm cues.
     var livenessMode: LivenessMode = .heavy
     var livenessTuning = LivenessTuning.default
     var enabledLivenessCues: Set<LivenessCue> = Set(LivenessCue.allCases)
@@ -83,10 +65,7 @@ final class FaceLabController {
         }
     }
 
-    /// Restarts just the liveness half without touching the camera or
-    /// recognition — cue firing latches for a whole scan by design, so
-    /// re-testing a spoof after one has been caught needs an explicit
-    /// clear.
+    /// Cue firing latches for a whole scan by design, so re-testing a spoof after one's been caught needs an explicit clear.
     func resetLiveness() {
         livenessAnalyzer.reset()
         currentLiveness = .empty
@@ -95,11 +74,7 @@ final class FaceLabController {
     }
 
     var enrollName: String = ""
-    /// Raw cosine similarity cutoff (-1...1), the value ArcFace thresholds
-    /// are conventionally quoted in (typical verification cutoffs sit
-    /// around 0.28-0.40). Vision feature-print has no such standard, so
-    /// this stays tunable regardless of which embedder is active — see the
-    /// calibration harness for picking a value empirically.
+    /// Raw cosine similarity cutoff (-1...1); typical ArcFace verification cutoffs sit around 0.28-0.40.
     var threshold: Double = 0.6
 
     private(set) var recognitionResults: [RecognitionResult] = []
@@ -145,10 +120,7 @@ final class FaceLabController {
         log("Camera stopped.")
     }
 
-    /// Face embeddings are encrypted under the same Touch-ID-gated session
-    /// key as the stored Mac password (see SecureFaceStore) — this mirrors
-    /// POCController.unlockSession() so Face Lab can unlock the session
-    /// without leaving this page.
+    /// Mirrors `POCController.unlockSession()` so Face Lab can unlock the session without leaving this page.
     func unlockSession() async {
         sessionError = nil
         do {
@@ -162,9 +134,7 @@ final class FaceLabController {
         }
     }
 
-    /// Re-subscribes on every change, matching the pattern used by
-    /// `POCController` for `LockMonitor` — `withObservationTracking` only
-    /// fires once per registration.
+    /// Re-subscribes on every change — `withObservationTracking` only fires once per registration.
     private func observeFrames() {
         withObservationTracking {
             _ = camera.currentFrame
@@ -176,9 +146,7 @@ final class FaceLabController {
         }
     }
 
-    /// Skips frames that arrive while a previous one is still being
-    /// processed — a simple "always work on the latest frame" throttle
-    /// instead of a fixed timer.
+    /// Skips frames that arrive mid-processing — an "always work on the latest frame" throttle instead of a timer.
     private func processLatestFrame() async {
         guard !isProcessingFrame, let cameraFrame = camera.currentFrame else { return }
         isProcessingFrame = true
@@ -206,7 +174,7 @@ final class FaceLabController {
         }
     }
 
-    // MARK: - Milestone E: enrollment
+    // MARK: - Enrollment
 
     func captureSample() {
         guard let result = currentResult else {
@@ -241,24 +209,15 @@ final class FaceLabController {
     }
 
     // MARK: - Multi-identity enrollment
-    //
-    // Prototyped here ahead of the Your Face settings tab: the store, the
-    // pipeline's `bestMatch` margin, and the guided flow all handle N
-    // identities already — only the UI was single-identity.
 
-    /// Counts only the red band of `FaceSample.qualityTier`, so this debug
-    /// list and the Your Face page's tick strip always agree about what
-    /// "low" means. The bands sit well above `OnboardingController`'s 0.2
-    /// accept-floor, which is a *gate* applied during capture: no guided
-    /// sample can be below it, so a 0.2 cutoff would always report zero.
-    /// Samples with no score at all count as unrated, never as low.
+    /// Counts only the red band of `FaceSample.qualityTier`, so this debug list and the Your Face tick strip always
+    /// agree about what "low" means. Samples with no score count as unrated, never as low.
     func lowQualityCount(in identity: FaceIdentity) -> Int {
         identity.samples.filter { $0.qualityTier == .poor }.count
     }
 
-    /// Face Lab and the onboarding flow each own a separate `CameraManager`
-    /// pointed at the same physical device — stopping ours first avoids
-    /// handing it to two live sessions with different configurations.
+    /// Face Lab and onboarding each own a separate `CameraManager` on the same device — stop ours first to avoid
+    /// two live sessions with different configurations.
     func startFullOnboarding() {
         camera.stop()
         log("Starting the full onboarding flow.")
@@ -282,7 +241,7 @@ final class FaceLabController {
         return String(format: "%.0f%%", quality * 100)
     }
 
-    // MARK: - Milestone F: recognition
+    // MARK: - Recognition
 
     func recognize() {
         guard let result = currentResult else {
@@ -323,16 +282,11 @@ final class FaceLabController {
 
     // MARK: - Threshold calibration
 
-    /// Tagged similarity scores collected during this session — the actual
-    /// data a threshold should be picked from, rather than guessed. Record
-    /// genuine samples across lighting/pose/expression, and impostor
-    /// samples against a different person, then look at where the two
-    /// distributions land relative to each other.
+    /// Tagged similarity scores collected this session — the actual data a threshold should be picked from, not guessed.
     private(set) var calibrationSamples: [CalibrationSample] = []
 
-    /// Tags the most recent `recognize()` result's top score as genuine or
-    /// impostor. Uses centroid similarity, matching what the threshold
-    /// slider actually gates on.
+    /// Tags the most recent `recognize()` top score as genuine or impostor, using centroid similarity (what the
+    /// threshold slider actually gates on).
     func recordCalibrationSample(isGenuine: Bool) {
         guard let top = recognitionResults.first else {
             log("Nothing to record — run Identify first.")
@@ -346,9 +300,7 @@ final class FaceLabController {
         calibrationSamples.removeAll()
     }
 
-    /// Midpoint between the lowest genuine score and the highest impostor
-    /// score — the standard "split the gap" pick once you have both
-    /// distributions. Nil until at least one of each has been recorded.
+    /// Midpoint between the lowest genuine score and the highest impostor score. Nil until at least one of each is recorded.
     var suggestedThreshold: Float? {
         let genuine = calibrationSamples.filter(\.isGenuine).map(\.centroidSimilarity)
         let impostor = calibrationSamples.filter { !$0.isGenuine }.map(\.centroidSimilarity)
@@ -356,10 +308,7 @@ final class FaceLabController {
         return (minGenuine + maxImpostor) / 2
     }
 
-    /// True if any impostor score is >= any genuine score — meaning no
-    /// single threshold perfectly separates the two groups yet, a real
-    /// possibility worth surfacing rather than hiding behind a suggested
-    /// midpoint that would still misclassify some of the recorded samples.
+    /// True if any impostor score is >= any genuine score — no single threshold perfectly separates the two groups yet.
     var calibrationDistributionsOverlap: Bool {
         let genuine = calibrationSamples.filter(\.isGenuine).map(\.centroidSimilarity)
         let impostor = calibrationSamples.filter { !$0.isGenuine }.map(\.centroidSimilarity)

@@ -2,11 +2,6 @@
 //  RecognitionSettingsPage.swift
 //  glance
 //
-//  Gated behind the same Touch-ID session as Password/Your Face: match
-//  confidence and detection distance are recognition-tuning knobs, and
-//  changing them while locked would be adjusting how face unlock behaves
-//  without having proven you're allowed to touch it at all.
-//
 
 import SwiftUI
 
@@ -18,10 +13,8 @@ struct RecognitionSettingsPage: View {
     @State private var isUnlocking = false
     @State private var sessionError: String?
 
-    /// Read from `POCController` rather than a local `@State` copy — same
-    /// reasoning as `PasswordSettingsPage`: the session can lock itself out
-    /// from under this page (`SessionAutoLocker`, or the Password tab's
-    /// "Remove password"), and a local copy wouldn't notice.
+    /// Read from `POCController`, not a local copy — same reasoning as
+    /// `PasswordSettingsPage`.
     private var isSessionUnlocked: Bool { pocController.isSessionUnlocked }
 
     var body: some View {
@@ -38,9 +31,8 @@ struct RecognitionSettingsPage: View {
         }
         .animation(SettingsMetrics.stateTransitionAnimation, value: isSessionUnlocked)
         .onAppear { pocController.refreshCredentialStatus() }
-        // Password/name/enrollment flows run in the notch, entirely
-        // outside this window — this page never disappears while one is
-        // open, so nothing else would prompt a re-check once it closes.
+        // Password/name/enrollment flows run in the notch, outside this
+        // window, so nothing else prompts a re-check once one closes.
         .onChange(of: NotchOverlayController.shared.phase) { _, newPhase in
             guard newPhase == .closed else { return }
             pocController.refreshCredentialStatus()
@@ -103,9 +95,8 @@ struct RecognitionSettingsPage: View {
 
     // MARK: - Match confidence
 
-    /// Nearest of the three snap points to whatever's actually stored —
-    /// covers a threshold saved before this redesign (the old slider was
-    /// continuous across -1...1), which won't land exactly on 0.66/0.70/0.74.
+    /// Nearest of the three snap points to whatever's stored, in case the
+    /// value doesn't land exactly on one of the stops.
     private var matchConfidenceLevel: MatchConfidenceLevel {
         .nearest(to: coordinator.matchThreshold)
     }
@@ -144,9 +135,7 @@ struct RecognitionSettingsPage: View {
 }
 
 /// The three selectable points on the "Match confidence" slider — named
-/// rather than exposing the raw cosine-similarity threshold directly, since
-/// a number in -1...1 means nothing to someone tuning how strict face
-/// unlock should be.
+/// rather than exposing the raw cosine-similarity threshold directly.
 private enum MatchConfidenceLevel: Int, CaseIterable {
     case lessStrict, standard, moreStrict
 

@@ -13,20 +13,13 @@ struct PasswordSettingsPage: View {
     @State private var sessionError: String?
     @State private var statusMessage: String?
 
-    /// Read from `POCController` rather than a local `@State` copy: the
-    /// session can also be locked from outside this view (by
-    /// `SessionAutoLocker` when the idle limit elapses), and a local copy
-    /// would keep rendering the unlocked state for a session that's gone.
+    /// Read from `POCController`, not a local copy — `SessionAutoLocker` can
+    /// lock the session from outside this view.
     private var isSessionUnlocked: Bool { pocController.isSessionUnlocked }
 
-    /// Three mutually exclusive states, not two — "no password stored" takes
-    /// priority over lock state entirely. Without that, right after removal
-    /// (which also destroys the session key, see `removePassword`) this
-    /// would fall back to the ordinary "Session locked" prompt, offering to
-    /// unlock a session that no longer protects anything — and even if the
-    /// user unlocked a *fresh* bootstrap session afterward, `unlockedState`'s
-    /// "Password encrypted" / "Remove password" rows would be actively
-    /// wrong with nothing stored to encrypt or remove.
+    /// "No password stored" takes priority over lock state entirely, so
+    /// removal doesn't fall back to an "unlock session" prompt for a
+    /// session that no longer protects anything.
     private enum PageState: Equatable {
         case noPassword
         case locked
@@ -42,8 +35,7 @@ struct PasswordSettingsPage: View {
         ZStack(alignment: .top) {
             noPasswordState
                 .opacity(pageState == .noPassword ? 1 : 0)
-                // Hidden from hit-testing *and* accessibility while faded
-                // out, so an invisible copy can't be clicked or focused.
+                // Hidden from hit-testing and accessibility while faded out.
                 .allowsHitTesting(pageState == .noPassword)
                 .accessibilityHidden(pageState != .noPassword)
 
@@ -59,14 +51,8 @@ struct PasswordSettingsPage: View {
         }
         .animation(SettingsMetrics.stateTransitionAnimation, value: pageState)
         .onAppear { pocController.refreshCredentialStatus() }
-        // The onboarding password step runs in the notch, entirely outside
-        // this window's view hierarchy — this view never disappears while
-        // it's open, so nothing would otherwise prompt a re-check once it
-        // closes. Without this, setting a password via "Set password" (or
-        // changing one via "Change") would leave this page showing stale
-        // state until the user happened to switch tabs and back. `.closed`
-        // also fires after unrelated face-unlock scan cycles; re-running a
-        // cheap, side-effect-free status read then is harmless.
+        // The onboarding password step runs in the notch, outside this
+        // view's hierarchy, so nothing else prompts a re-check once it closes.
         .onChange(of: NotchOverlayController.shared.phase) { _, newPhase in
             guard newPhase == .closed else { return }
             pocController.refreshCredentialStatus()
@@ -151,23 +137,16 @@ struct PasswordSettingsPage: View {
         Task {
             await pocController.unlockSession()
             sessionError = pocController.sessionError
-            // The face store is encrypted under the same session key, so it
-            // can only be read once that key exists — without this the Your
-            // Face page stays "locked" until something else reloads it.
+            // Face store is encrypted under the same session key, so reload
+            // it now rather than leaving Your Face stuck showing "locked".
             FaceEnrollmentStore.shared.reloadIfUnlocked()
             isUnlocking = false
         }
     }
 
-    /// Face samples must be deleted *before* the password/session key —
-    /// `deletePassword()` also clears the cached session key, and deleting
-    /// the face store requires an unlocked session.
-    ///
-    /// `statusMessage` is set here but rendered from `noPasswordState`, not
-    /// `unlockedState` — this call is exactly what makes `pageState` leave
-    /// `.unlocked` for `.noPassword` (no password remains), so a message
-    /// left only on the view being faded out would flash and vanish with
-    /// it before anyone could read it.
+    /// Face samples must be deleted before the password/session key —
+    /// `deletePassword()` clears the cached session key, and deleting the
+    /// face store requires an unlocked session.
     private func removePassword() {
         do {
             FaceEnrollmentStore.shared.deleteAll()

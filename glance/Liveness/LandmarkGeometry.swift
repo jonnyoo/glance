@@ -2,27 +2,15 @@
 //  LandmarkGeometry.swift
 //  glance
 //
-//  Shared landmark math used by both `FaceAligner` (aligning a single frame
-//  for embedding) and the liveness analyzer (comparing landmarks *across*
-//  frames to tell a live face from a flat presentation). Everything here
-//  operates in top-left/y-down pixel space, matching `DetectedFace
-//  .boundingBox` — see `imagePoints(of:imageSize:)` for the origin flip
-//  Vision's own coordinate space requires.
-//
-//  Moved out of `FaceAligner` (where these were `private static`) rather
-//  than duplicated, so the two call sites can never drift apart.
+//  Shared landmark math used by `FaceAligner` and the liveness analyzer —
+//  moved out of `FaceAligner` so the two call sites can't drift apart.
 //
 
 import Vision
 import CoreGraphics
 
-/// Every landmark region this app reads from `VNFaceLandmarks2D`. Includes
-/// several — `faceContour`, `medianLine`, `noseCrest`, the eyebrows,
-/// `innerLips` — that `FaceAligner` never needed (5-point alignment only
-/// uses eyes/nose/outerLips) but liveness does: the more regions sampled,
-/// the better `LivenessScoring`'s residual-coherence check can tell
-/// "several independent facial parts moved together, non-rigidly" apart
-/// from "the whole rigid plane moved."
+/// Every landmark region this app reads from `VNFaceLandmarks2D`. Includes several regions
+/// `FaceAligner` never needed — liveness samples more of them for its residual-coherence check.
 enum LandmarkRegion: String, CaseIterable, Hashable {
     case leftEye, rightEye
     case leftEyebrow, rightEyebrow
@@ -31,11 +19,8 @@ enum LandmarkRegion: String, CaseIterable, Hashable {
     case faceContour, medianLine
 }
 
-/// One landmark point, tagged with where it came from. `indexInRegion` is
-/// what lets two frames' points be paired up for cross-frame comparison —
-/// Vision returns each region's points in a stable order for points that
-/// are actually detected, but a region can be entirely absent on either
-/// frame (see the correspondence handling in `LivenessFeatures`).
+/// One landmark point, tagged with where it came from. `indexInRegion` lets two frames'
+/// points be paired up for cross-frame comparison.
 struct LandmarkPoint {
     let point: CGPoint
     let region: LandmarkRegion
@@ -45,11 +30,8 @@ struct LandmarkPoint {
 /// Pure geometry — `nonisolated` so it's callable from the same background
 /// tasks `FaceAligner`/`FaceDetector` already run on.
 nonisolated enum LandmarkGeometry {
-    /// Vision's `pointsInImage(imageSize:)` returns pixel-scale points in
-    /// Vision's native bottom-left-origin, y-up convention (confirmed via
-    /// the newer origin-aware `pointsInImageCoordinates(_:origin:)` API,
-    /// whose default is `.lowerLeft`). Flipped here to top-left/y-down to
-    /// match `DetectedFace.boundingBox`.
+    /// Vision returns points in bottom-left-origin, y-up; flipped here to top-left/y-down
+    /// to match `DetectedFace.boundingBox`.
     static func imagePoints(of region: VNFaceLandmarkRegion2D, imageSize: CGSize) -> [CGPoint] {
         region.pointsInImage(imageSize: imageSize).map { CGPoint(x: $0.x, y: imageSize.height - $0.y) }
     }
@@ -70,10 +52,8 @@ nonisolated enum LandmarkGeometry {
         return nil
     }
 
-    /// Distance between the two eye centers — the normalization scale used
-    /// throughout liveness scoring (residuals, nose offset, blink depth are
-    /// all expressed as a fraction of this), so scores stay comparable
-    /// regardless of how close the face is to the camera.
+    /// Distance between the two eye centers — the normalization scale used throughout
+    /// liveness scoring so scores stay comparable regardless of camera distance.
     static func interocularDistance(from landmarks: VNFaceLandmarks2D, imageSize: CGSize) -> CGFloat? {
         guard let left = eyeCenter(pupil: landmarks.leftPupil, eye: landmarks.leftEye, imageSize: imageSize),
               let right = eyeCenter(pupil: landmarks.rightPupil, eye: landmarks.rightEye, imageSize: imageSize)
@@ -81,13 +61,8 @@ nonisolated enum LandmarkGeometry {
         return hypot(left.x - right.x, left.y - right.y)
     }
 
-    /// Height/width of a landmark region's bounding box — a cheap stand-in
-    /// for the classic 6-point eye-aspect-ratio (Vision's eye outline point
-    /// count isn't the fixed 6 that formula assumes). A blink collapses
-    /// this toward 0; a fully open eye sits in a roughly stable band per
-    /// person. Used only as supporting evidence — see `LivenessScoring`'s
-    /// blink cue, which treats a *dip and recovery* as the event, not this
-    /// raw ratio's absolute value.
+    /// Height/width of a landmark region's bounding box — a stand-in for the classic
+    /// 6-point eye-aspect-ratio (Vision's point count isn't the fixed 6 that assumes).
     private static func boundingBoxAspectRatio(of region: VNFaceLandmarkRegion2D, imageSize: CGSize) -> CGFloat? {
         let points = imagePoints(of: region, imageSize: imageSize)
         guard points.count >= 3, let minX = points.map(\.x).min(), let maxX = points.map(\.x).max(),
@@ -102,8 +77,6 @@ nonisolated enum LandmarkGeometry {
         boundingBoxAspectRatio(of: eyeRegion, imageSize: imageSize)
     }
 
-    /// The named region accessor on `VNFaceLandmarks2D` for each
-    /// `LandmarkRegion` case.
     static func region(_ region: LandmarkRegion, of landmarks: VNFaceLandmarks2D) -> VNFaceLandmarkRegion2D? {
         switch region {
         case .leftEye: return landmarks.leftEye
@@ -119,11 +92,8 @@ nonisolated enum LandmarkGeometry {
         }
     }
 
-    /// Every point Vision detected across every region in `LandmarkRegion`,
-    /// each tagged with its region and position within that region so a
-    /// later frame's points can be matched back up to these — a region
-    /// missing entirely on this frame just contributes nothing, rather than
-    /// throwing off the indices of the regions that are present.
+    /// Every point Vision detected, tagged by region and position so a later frame's
+    /// points can be matched back up; a region missing this frame just contributes nothing.
     static func allPoints(from landmarks: VNFaceLandmarks2D, imageSize: CGSize) -> [LandmarkPoint] {
         var result: [LandmarkPoint] = []
         for regionCase in LandmarkRegion.allCases {
@@ -138,10 +108,8 @@ nonisolated enum LandmarkGeometry {
 
     // MARK: - Homography (projective) transform
 
-    /// 3×3 homography mapping `p` → `((h11 x + h12 y + h13) / w, (h21 x + h22 y + h23) / w)`
-    /// with `w = h31 x + h32 y + h33`. This is exactly the model a flat
-    /// photograph (or a phone screen) is limited to, including perspective
-    /// tilt — strictly more general than `solveSimilarityTransform`.
+    /// 3×3 homography — the model a flat photograph (or phone screen) is limited to,
+    /// including perspective tilt; strictly more general than `solveSimilarityTransform`.
     struct Homography {
         let h11, h12, h13, h21, h22, h23, h31, h32, h33: CGFloat
 
@@ -198,11 +166,9 @@ nonisolated enum LandmarkGeometry {
         return denormalizeHomography(hNorm, source: srcT, destination: dstT)
     }
 
-    /// Two-pass IRLS around `solveHomography`, Tukey biweight. A single
-    /// wildly jittered landmark can't pull the plane around. The cutoff
-    /// uses the full-set median so a smiling mouth (large but not wild)
-    /// stays in the fit and keeps the nose inside the hull — dropping it
-    /// lets an underconstrained upper-face homography absorb parallax.
+    /// Two-pass IRLS around `solveHomography`, Tukey biweight, so one wildly jittered
+    /// landmark can't pull the plane around. Cutoff uses the full-set median so a smiling
+    /// mouth stays in the fit rather than letting an underconstrained homography absorb parallax.
     static func solveRobustHomography(from sourcePoints: [CGPoint], to destinationPoints: [CGPoint]) -> Homography? {
         guard var current = solveHomography(from: sourcePoints, to: destinationPoints) else { return nil }
         for _ in 0..<2 {
@@ -348,19 +314,9 @@ nonisolated enum LandmarkGeometry {
 
     // MARK: - Similarity transform
 
-    /// Closed-form least-squares similarity transform (rotation + uniform
-    /// scale + translation) mapping `sourcePoints` onto `destinationPoints`,
-    /// via the standard 2D Procrustes solution using complex-number
-    /// arithmetic: treating each mean-centered point as p = x + iy, the
-    /// optimal complex scalar z = scale * e^(i*theta) is
-    ///     z = (sum of qk * conj(pk)) / (sum of |pk|^2)
-    /// with translation recovered from the centroids afterward. No SVD
-    /// needed for the 2D case.
-    ///
-    /// This is also exactly the model a flat presentation (print or
-    /// screen) is limited to: rotation, uniform scale, translation. Any
-    /// motion a real face makes that *isn't* explained by this transform is
-    /// the non-rigid residual `LivenessScoring` measures.
+    /// Closed-form least-squares similarity transform (rotation + uniform scale + translation),
+    /// via 2D Procrustes in complex-number form — no SVD needed. This is exactly the model a flat
+    /// presentation is limited to; motion it can't explain is the non-rigid residual `LivenessScoring` measures.
     static func solveSimilarityTransform(from sourcePoints: [CGPoint], to destinationPoints: [CGPoint]) -> CGAffineTransform? {
         guard sourcePoints.count == destinationPoints.count, sourcePoints.count >= 2 else { return nil }
 

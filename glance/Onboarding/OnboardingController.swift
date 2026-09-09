@@ -2,15 +2,12 @@
 //  OnboardingController.swift
 //  glance
 //
-//  State machine behind the notch-hosted guided onboarding flow:
-//  permissions, guided nine-pose face enrollment (auto-capture as the user
-//  turns/tilts their head through 8 compass directions plus center), and
-//  password setup. Reuses the same camera/detection/embedding/storage
-//  pieces as the Face Lab debug tab — this is a polished front door onto the
-//  same on-device pipeline, not a separate implementation of it.
+//  State machine behind the notch-hosted guided onboarding flow: permissions, guided
+//  nine-pose face enrollment, and password setup. Reuses the same camera/detection/
+//  embedding/storage pieces as the Face Lab debug tab rather than reimplementing them.
 //
-//  Still not milestone G: finishing onboarding stores an encrypted password
-//  and a face template, but nothing here triggers an unlock.
+//  Still not milestone G: finishing onboarding stores an encrypted password and a face
+//  template, but nothing here triggers an unlock.
 //
 
 import Foundation
@@ -19,9 +16,7 @@ import AVFoundation
 import AppKit
 import SwiftUI
 
-/// `String`-backed (not just `CaseIterable`) so `GlanceSettings
-/// .onboardingResumeStep` can persist it directly by name — see that
-/// property's doc comment for why resume needs persistence at all.
+/// `String`-backed so `GlanceSettings.onboardingResumeStep` can persist it directly by name.
 enum OnboardingStep: String, CaseIterable {
     case intro
     case permissions
@@ -37,9 +32,8 @@ enum OnboardingStep: String, CaseIterable {
         return all[index - 1]
     }
 
-    /// Whether this step shows the Figma "Back"/primary button pair. Enroll
-    /// is fully guided (close control only); complete and intro have only
-    /// one side.
+    /// Whether this step shows the Back/primary button pair; enroll is close-control
+    /// only, and complete/intro have just one side.
     var showsBackButton: Bool {
         switch self {
         case .permissions, .preSetup, .name, .password: return true
@@ -47,17 +41,10 @@ enum OnboardingStep: String, CaseIterable {
         }
     }
 
-    /// Where a first-run flow should resume if the app quit while on this
-    /// step — see `OnboardingController.step`'s `didSet`. `.enroll`,
-    /// `.name`, and `.password` all depend on in-memory state
-    /// (`collectedSamples`, captured poses) that a fresh launch doesn't
-    /// have, so all three collapse back to `.preSetup` — the last step
-    /// before anything camera/capture-related happens — rather than
-    /// resuming directly into a step whose prerequisites no longer exist.
-    /// This is also exactly why a user who quit mid-enrollment must never
-    /// be dropped straight back into the camera step: `.preSetup` is a
-    /// plain explainer screen with a "Next" button, not an automatic
-    /// camera prompt.
+    /// Where a first-run flow should resume if the app quit on this step. `.enroll`,
+    /// `.name`, and `.password` all depend on in-memory state a fresh launch doesn't
+    /// have, so they collapse back to `.preSetup` rather than resuming into a step
+    /// whose prerequisites no longer exist.
     var resumeTarget: OnboardingStep {
         switch self {
         case .enroll, .name, .password: return .preSetup
@@ -152,13 +139,9 @@ final class OnboardingController {
     private let store = FaceEnrollmentStore.shared
     private let sweepWindow = EnrollmentSweepWindowController()
 
-    /// Persists the resume point for a true first-run flow on every step
-    /// change (see `isFirstRunFlow` and `OnboardingStep.resumeTarget`) —
-    /// this is what lets `AppDelegate` drop a relaunched, mid-onboarding
-    /// user back where they left off instead of always restarting at
-    /// `.intro`. Settings-triggered flows (`isEnrollmentOnly`/
-    /// `isPasswordOnly`) never touch this: quitting mid-"change password"
-    /// must not make onboarding think it needs to resume there.
+    /// Persists the resume point for a true first-run flow on every step change, so
+    /// `AppDelegate` can drop a relaunched, mid-onboarding user back where they left off.
+    /// Settings-triggered flows never touch this.
     private(set) var step: OnboardingStep = .intro {
         didSet {
             guard isFirstRunFlow else { return }
@@ -171,61 +154,38 @@ final class OnboardingController {
         }
     }
 
-    /// Fires exactly once — after the true first-run flow's "You're all
-    /// set" screen dismisses — so `AppDelegate` can open Settings (and
-    /// start Sparkle) only once onboarding UI is gone. Wired by
-    /// `startFlow(resumingAt:onFirstRunComplete:)`; `nil` for every other
-    /// entry point (Face Lab's debug button included), which is fine —
-    /// by the time any of those are reachable, onboarding has already
-    /// completed once for real and this has already fired.
+    /// Fires exactly once, after the true first-run flow's "You're all set" screen
+    /// dismisses, so `AppDelegate` can open Settings only once onboarding UI is gone.
+    /// `nil` for every other entry point.
     var onFirstRunComplete: (() -> Void)?
 
-    /// True when this flow was started by `startEnrollmentOnly()` — shows
-    /// only the guided pose-capture step (reusing `.enroll`, no new
-    /// `OnboardingStep` case needed) and saves samples directly on
-    /// completion instead of continuing on to the password step.
+    /// True when started by `startEnrollmentOnly()` — shows only the guided pose-capture
+    /// step and saves samples directly instead of continuing to the password step.
     private let isEnrollmentOnly: Bool
 
-    /// True when started by `startPasswordOnly()` — the mirror image of
-    /// `isEnrollmentOnly`: jumps straight to `.password` and treats Back as
-    /// "cancel" rather than stepping into a setup flow that isn't running.
+    /// True when started by `startPasswordOnly()` — jumps straight to `.password` and
+    /// treats Back as "cancel" rather than a setup flow that isn't running.
     private let isPasswordOnly: Bool
 
-    /// True only for the genuine first-run flow — not a settings-triggered
-    /// re-enrollment, add-identity, recapture, or password-change. This is
-    /// what `step`'s `didSet` gates on: only this flow's progress is worth
-    /// persisting as a resume point, and only this flow reaching `.complete`
-    /// means *onboarding itself* is done. Also true when replayed manually
-    /// via Face Lab's "Start Onboarding" debug button — indistinguishable
-    /// from a real first run, which is fine: completing it either way means
-    /// the guided flow genuinely ran to the end.
+    /// True only for the genuine first-run flow (also true when replayed via Face Lab's
+    /// "Start Onboarding" debug button). Gates whether `step`'s `didSet` persists a resume point.
     private var isFirstRunFlow: Bool { !isEnrollmentOnly && !isPasswordOnly }
 
-    /// Whether the intro screen's one-time top-to-bottom light sweep has
-    /// already played this session. Lives here, not as `@State` on
-    /// `IntroStepView`, because that view is torn down and recreated every
-    /// time step navigation leaves `.intro` and returns (Permissions' Back
-    /// button lands here) — the controller is what actually persists for
-    /// the whole session, so it's the only place a "played once" flag
-    /// survives that round trip. Resets naturally on every new flow
-    /// (relaunch, or replaying via Face Lab's "Start Onboarding"), since
-    /// each of those constructs a fresh `OnboardingController`.
+    /// Whether the intro's one-time light sweep already played this session. Lives here
+    /// rather than as `@State` on `IntroStepView` because that view is torn down and
+    /// recreated whenever navigation leaves and returns to `.intro`.
     private var hasPlayedIntroSweep = false
 
-    /// Plays the intro screen's one-time top-to-bottom light sweep,
-    /// full-screen the same way guided enrollment's sweep is — not confined
-    /// to this small notch panel — via the same `sweepWindow` enrollment
-    /// already uses. No-op after the first call this session.
+    /// Plays the intro screen's one-time top-to-bottom light sweep full-screen via the
+    /// same `sweepWindow` guided enrollment uses. No-op after the first call this session.
     func playIntroSweepIfNeeded() {
         guard !hasPlayedIntroSweep else { return }
         hasPlayedIntroSweep = true
         sweepWindow.presentOnce(direction: .down)
     }
 
-    /// Who this run is enrolling. Recapture is keyed by `id` rather than by
-    /// name so the naming step can rename an identity in the same pass —
-    /// matching by name would either lose the rename or orphan the old
-    /// identity under its old name.
+    /// Who this run is enrolling. Recapture is keyed by `id` rather than name so the
+    /// naming step can rename an identity without orphaning it under its old name.
     enum EnrollmentTarget: Equatable {
         case newIdentity
         case replacing(UUID)
@@ -243,17 +203,12 @@ final class OnboardingController {
     /// pick the scroll direction for the blur transition.
     private(set) var navDirection: NavDirection = .forward
 
-    /// Entry point used by Face Lab's "Start Onboarding" button, and by
-    /// `AppDelegate` both at first launch and whenever the user tries to
-    /// reach Settings before onboarding is done. Onboarding has no window
-    /// of its own — it's presented entirely inside the notch.
+    /// Entry point used by Face Lab's "Start Onboarding" button, and by `AppDelegate` at
+    /// first launch and whenever the user tries to reach Settings before onboarding is done.
     ///
-    /// - Parameter resumingAt: where a previously-quit first-run flow left
-    ///   off (`GlanceSettings.onboardingResumeStep`), or `nil` to start
-    ///   fresh at `.intro` — the default, so every existing zero-argument
-    ///   call site (Face Lab's debug button) is unaffected. `.permissions`
-    ///   is the one resumable step with a side effect (live polling) that
-    ///   jumping straight past `advance()` would otherwise skip.
+    /// - Parameter resumingAt: where a previously-quit first-run flow left off, or `nil`
+    ///   to start fresh at `.intro`. `.permissions` is the one resumable step with a side
+    ///   effect (live polling) that jumping straight past `advance()` would otherwise skip.
     /// - Parameter onFirstRunComplete: see the property of the same name.
     static func startFlow(resumingAt step: OnboardingStep? = nil, onFirstRunComplete: (() -> Void)? = nil) {
         let controller = OnboardingController()
@@ -268,14 +223,11 @@ final class OnboardingController {
         NotchOverlayController.shared.presentOnboarding(controller)
     }
 
-    /// Entry point used by Settings' "Set up FaceID" / "Redo Face
-    /// Enrollment" — presents the guided pose-capture step plus the naming
-    /// step (no intro/permissions/password) and saves directly once done.
+    /// Entry point used by Settings' "Set up FaceID" / "Redo Face Enrollment" — presents
+    /// the guided pose-capture plus naming step and saves directly once done.
     ///
-    /// The Your Face page is still single-identity (it reads
-    /// `identities.first`), so this keeps targeting that first identity:
-    /// "redo" replaces it in place, and with nothing enrolled it enrolls
-    /// someone new.
+    /// The Your Face page is still single-identity, so this keeps targeting
+    /// `identities.first`: "redo" replaces it in place, or enrolls someone new.
     static func startEnrollmentOnly() {
         Task { @MainActor in
             guard await unlockForEnrollment(reason: "Authenticate to re-enroll your face") else { return }
@@ -289,10 +241,8 @@ final class OnboardingController {
         }
     }
 
-    /// Entry point used by Face Lab's "Add Identity" — the same guided
-    /// capture, but always enrolling a *new* person alongside whoever is
-    /// already enrolled. The name starts empty rather than at `defaultName`:
-    /// this is explicitly somebody else.
+    /// Entry point used by Face Lab's "Add Identity" — always enrolls a *new* person
+    /// alongside whoever is already enrolled; name starts empty rather than `defaultName`.
     static func startAddIdentity() {
         Task { @MainActor in
             guard await unlockForEnrollment(reason: "Authenticate to enroll another face") else { return }
@@ -301,9 +251,8 @@ final class OnboardingController {
         }
     }
 
-    /// Entry point used by Face Lab's per-identity "Recapture" — replaces
-    /// that identity's samples wholesale, keeping its id and enrollment
-    /// date, with its current name pre-filled and editable.
+    /// Entry point used by Face Lab's per-identity "Recapture" — replaces that identity's
+    /// samples wholesale, keeping its id and enrollment date.
     static func startRecapture(of identity: FaceIdentity) {
         Task { @MainActor in
             guard await unlockForEnrollment(reason: "Authenticate to re-enroll this face") else { return }
@@ -312,10 +261,8 @@ final class OnboardingController {
         }
     }
 
-    /// Enrollment-only flows persist as soon as the naming step is
-    /// confirmed, so unlike the full setup flow there's no later password
-    /// step to unlock the session — Touch ID has to happen up front, before
-    /// the notch ever appears.
+    /// Enrollment-only flows persist as soon as naming is confirmed, so Touch ID has to
+    /// happen up front — there's no later password step to unlock the session.
     private static func unlockForEnrollment(reason: String) async -> Bool {
         guard !SecureCredentialManager.isSessionUnlocked else { return true }
         do {
@@ -334,15 +281,11 @@ final class OnboardingController {
         NotchOverlayController.shared.presentOnboarding(controller)
     }
 
-    /// Entry point used by Settings' "Change password" — presents only the
-    /// password step in the notch, reusing the same field, validation and
-    /// save path as first-run setup rather than duplicating them in a
-    /// settings-only form.
+    /// Entry point used by Settings' "Change password" — presents only the password step,
+    /// reusing the same field, validation and save path as first-run setup.
     ///
-    /// No Touch ID prompt here, unlike `startEnrollmentOnly()`: the only
-    /// caller is the Password page's unlocked state, which by definition
-    /// already has a live session. `finish(password:)` re-asserts that
-    /// anyway, so a session that lapsed in between still can't save silently.
+    /// No Touch ID prompt here: the only caller already has a live session, and
+    /// `finish(password:)` re-asserts that anyway.
     static func startPasswordOnly() {
         Task { @MainActor in
             let controller = OnboardingController(isPasswordOnly: true)
@@ -352,10 +295,8 @@ final class OnboardingController {
 
     // MARK: - Panel sizing (read by NotchOverlayView)
 
-    /// The silhouette the panel is currently wearing — read fresh off the
-    /// preferred screen each time rather than cached, same as
-    /// `NotchWindowController.currentGeometry`, so it stays correct across a
-    /// display change mid-flow.
+    /// Read fresh off the preferred screen each time rather than cached, so it stays
+    /// correct across a display change mid-flow.
     private var currentPanelStyle: NotchPanelStyle {
         NotchGeometry.preferredScreen().map(NotchGeometry.forScreen)?.style ?? .notch
     }
@@ -373,50 +314,36 @@ final class OnboardingController {
 
     // MARK: - Enrollment
 
-    /// Samples needed per pose before advancing. 9 poses x 2 samples = 18
-    /// total — enough for a stable template across 9 poses without making
-    /// the user hold each one too long.
+    /// 9 poses x 2 samples = 18 total, enough for a stable template without overlong holds.
     private let samplesPerPose = 2
-    /// Consecutive matching frames required before a capture fires — a
-    /// simple debounce so a single lucky frame near a pose boundary doesn't
-    /// trigger a capture, and consecutive captures are naturally spaced out.
+    /// Consecutive matching frames required before a capture fires — debounces a lucky
+    /// frame near a pose boundary.
     private let requiredMatchStreak = 3
-    /// Once yaw/pitch (or center) already matches the current pose, wait
-    /// this long before samples start counting so the user has settled
-    /// into the turn rather than being captured mid-motion.
+    /// Wait this long after yaw/pitch matches before samples count, so the user has
+    /// settled into the turn rather than being captured mid-motion.
     private let poseHoldDuration: Duration = .milliseconds(500)
-    /// Vision's capture-quality score has no fixed universal cutoff; this is
-    /// a permissive floor so we don't block enrollment on a nil/low score
-    /// from a fast-moving frame — better to accept a mediocre sample than to
-    /// stall the whole flow.
+    /// Permissive floor for Vision's capture-quality score (no fixed universal cutoff) —
+    /// better to accept a mediocre sample than stall the whole flow.
     private let qualityFloor: Float = 0.2
-    /// How long to hold off accepting captures once the camera comes up —
-    /// enough for the user to settle into frame and look at the camera
-    /// before the center pose starts counting, so the first samples aren't
-    /// taken mid-blink or mid-flinch. Detection and the ring's live
-    /// yaw/pitch readout still run during this window; only capture is held
-    /// back.
+    /// Hold off accepting captures this long once the camera comes up, so the first
+    /// samples aren't taken mid-blink. Detection still runs during this window.
     private let initialCaptureDelay: Duration = .seconds(1.5)
-    /// Enrollment wants a closer face than unlock's bystander cutoff —
-    /// sitting back in a chair is still "prominent" enough to unlock, but
-    /// too far for a reliable template. Floor is still the shared
-    /// prominence width so a tighter Recognition setting can't be bypassed.
+    /// Enrollment wants a closer face than unlock's bystander cutoff — sitting back in a
+    /// chair is still enough to unlock, but too far for a reliable template.
     private var enrollmentMinimumFaceWidth: Float {
         max(FaceRecognitionPipeline.minimumProminentFaceWidth, 0.2)
     }
 
-    // Pose-matching bands, in radians. Yaw's sign (left turn -> positive)
-    // matches the mirrored front-camera preview as expected. Pitch's sign
-    // is the opposite of the initial guess — see `pitchMatches` below.
+    // Pose-matching bands, in radians. Yaw: left turn is positive, matching the mirrored
+    // preview. Pitch's sign is the opposite of the initial guess — see `pitchMatches` below.
     private let yawInnerThreshold: Float = 0.25
     private let yawCenterTolerance: Float = 0.18
     private let yawOuterCap: Float = 1.2
     private let pitchInnerThreshold: Float = 0.20
     private let pitchCenterTolerance: Float = 0.15
     private let pitchOuterCap: Float = 0.9
-    /// If a pose takes longer than this to capture, matching bands widen by
-    /// `stallWidenFactor` so an unusual camera angle or seating position
-    /// can't permanently strand the user on one step.
+    /// If a pose takes longer than this, matching bands widen by `stallWidenFactor` so an
+    /// unusual camera angle can't permanently strand the user.
     private let stallTimeout: Duration = .seconds(12)
     private let stallWidenFactor: Float = 1.25
 
@@ -425,10 +352,8 @@ final class OnboardingController {
     private(set) var faceDetected = false
     private(set) var currentYaw: Float?
     private(set) var currentPitch: Float?
-    /// Whether the last-seen face read as too small (too far from the
-    /// camera) to enroll reliably — the enroll step swaps its pose
-    /// instruction for a "move closer" prompt and overlays a chevron on
-    /// the preview while this is true.
+    /// Whether the last-seen face read as too small to enroll reliably — swaps the pose
+    /// instruction for a "move closer" prompt while true.
     private(set) var isTooFar = false
     private(set) var enrollmentComplete = false
 
@@ -452,44 +377,31 @@ final class OnboardingController {
     private struct CollectedSample {
         let embedding: [Float]
         let pose: EnrollmentPose
-        /// Carried through from `FaceRecognitionResult.quality` so an
-        /// enrolled identity can report how good its samples actually were,
-        /// instead of the score being read once for the accept-floor gate
-        /// and then discarded.
+        /// Carried through so an enrolled identity can report how good its samples were.
         let quality: Float?
-        /// Stamped when the frame was captured, not when it was saved.
-        /// These sit in memory across the naming (and, on first run, the
-        /// password) step, so a save-time stamp would date every sample of
-        /// a first-run enrollment to minutes after the capture actually
-        /// happened.
+        /// Stamped at capture, not at save — samples sit in memory across the naming
+        /// (and, on first run, password) step, so a save-time stamp would be wrong.
         let capturedAt: Date
     }
-    /// Held in memory (not persisted) until the identity has a name: the
-    /// naming step commits directly in the add/recapture flows, while in
-    /// first-run setup saving additionally requires an unlocked session (see
-    /// SecureFaceStore), and nothing unlocks it until `finish(password:)`
-    /// calls `SecureCredentialManager.unlockSession` — which happens after
-    /// enrollment in this flow's step order.
+    /// Held in memory (not persisted) until the identity has a name; in first-run setup
+    /// saving additionally requires the session `finish(password:)` unlocks.
     private var collectedSamples: [CollectedSample] = []
     private var matchStreak = 0
     private var isProcessingFrame = false
     private var poseStartedAt: ContinuousClock.Instant = .now
-    /// Set once, in `beginEnrollment()` — not per-pose — so it only holds
-    /// back the very first pose (always `.center`) rather than pausing
-    /// again after every later pose change.
+    /// Set once in `beginEnrollment()` — not per-pose — so it only holds back the first
+    /// pose rather than pausing again after every later pose change.
     private var captureReadyAt: ContinuousClock.Instant = .now
-    /// When the current pose first started matching continuously. `nil`
-    /// while the head isn't in the requested yaw/pitch band (or the face
-    /// is too far); capture waits `poseHoldDuration` past this instant.
+    /// When the current pose first started matching continuously; `nil` while out of band.
+    /// Capture waits `poseHoldDuration` past this instant.
     private var poseHoldStartedAt: ContinuousClock.Instant?
 
     var currentPose: EnrollmentPose? {
         EnrollmentPose(rawValue: currentPoseIndex)
     }
 
-    /// Copy shown under the camera during enrollment — pose guidance, a
-    /// closer-up prompt when the face is too small in frame, or the
-    /// completion line while the checkmark plays.
+    /// Copy shown under the camera: pose guidance, a closer-up prompt, or the
+    /// completion line.
     var enrollmentInstruction: String {
         if enrollmentComplete { return "Face captured" }
         if isTooFar { return "Bring your face closer" }
@@ -510,10 +422,7 @@ final class OnboardingController {
 
     // MARK: - Naming
 
-    /// The name being given to this enrollment — bound directly by
-    /// `NameStepView`, and pre-filled by whichever entry point started the
-    /// flow (the full-name default for first-run, the existing name for a
-    /// recapture, empty when adding somebody new).
+    /// Bound directly by `NameStepView`; pre-filled by whichever entry point started the flow.
     var pendingName: String = ""
     private(set) var nameError: String?
 
@@ -537,13 +446,10 @@ final class OnboardingController {
         observeFrames()
         if isEnrollmentOnly {
             step = .enroll
-            // Deferred a tick for the same reason `advance()` defers it
-            // when transitioning into `.enroll` normally — see the comment
-            // there.
+            // Deferred a tick for the same reason `advance()` defers it — see comment there.
             Task { @MainActor [weak self] in self?.beginEnrollment() }
         } else if isPasswordOnly {
-            // No camera and no deferral needed: the password step starts
-            // nothing heavy, so it can be the initial step outright.
+            // No deferral needed: the password step starts nothing heavy.
             step = .password
         }
     }
@@ -568,25 +474,18 @@ final class OnboardingController {
         switch step {
         case .permissions: startPermissionsPolling()
         case .enroll:
-            // Deferred a tick so the (comparatively heavy) camera start
-            // doesn't land in the same runloop turn as the panel-resize/
-            // scroll transition kicking off — doing both at once was
-            // visibly stealing frames from the spring animation instead of
-            // letting it start smoothly.
+            // Deferred a tick so the heavy camera start doesn't land in the same runloop
+            // turn as the panel-resize transition, stealing frames from the spring animation.
             Task { @MainActor [weak self] in self?.beginEnrollment() }
         default: break
         }
     }
 
-    /// Steps backward. The enroll close control also lands here: in the
-    /// full setup flow that's a retreat to pre-setup, and in add/recapture
-    /// it's a cancel.
+    /// Steps backward. The enroll close control also lands here: a retreat to pre-setup
+    /// in the full setup flow, a cancel in add/recapture.
     func back() {
         navDirection = .backward
-        // In the password-only flow there is no earlier step to return to —
-        // stepping back into the enrollment flow (the normal behaviour
-        // below) would drop the user into a setup they never started. Back
-        // is a plain cancel here.
+        // No earlier step to return to in the password-only flow — Back is a plain cancel.
         if isPasswordOnly {
             teardown()
             NotchOverlayController.shared.dismissOnboarding()
@@ -594,35 +493,26 @@ final class OnboardingController {
         }
         switch step {
         case .enroll where isEnrollmentOnly:
-            // Nothing precedes enrollment in the add/recapture flows, and
-            // unsaved samples are worthless — Close is a cancel.
+            // Nothing precedes enrollment in add/recapture flows — Close is a cancel.
             teardown()
             NotchOverlayController.shared.dismissOnboarding()
         case .enroll:
-            // Full setup: discard the in-progress capture and return to
-            // pre-setup. The camera has to stop here; `.enroll` is the
-            // only step that owns it.
+            // Camera has to stop here; `.enroll` is the only step that owns it.
             resetEnrollmentState()
             camera.stop()
             sweepWindow.dismiss()
             withAnimation(OnboardingMetrics.stepAnimation) { step = .preSetup }
         case .password:
-            // Back to naming, deliberately *without* resetting: the
-            // collected samples and the typed name both survive the trip,
-            // so a user who wants to fix a typo doesn't re-do nine poses.
+            // Deliberately *without* resetting: samples and typed name survive so a typo
+            // fix doesn't mean re-doing nine poses.
             nameError = nil
             withAnimation(OnboardingMetrics.stepAnimation) { step = .name }
         case .name where isEnrollmentOnly:
-            // Nothing precedes naming in the add/recapture flows, and
-            // unsaved samples are worthless — Back is a cancel, mirroring
-            // the password-only flow. Any identity being recaptured is left
-            // completely untouched, since nothing is written until the name
-            // is confirmed.
+            // Nothing precedes naming in add/recapture flows — Back is a cancel.
             teardown()
             NotchOverlayController.shared.dismissOnboarding()
         case .name:
-            // Full setup: `.enroll` can't be resumed halfway, so backing
-            // past it discards the capture and returns to pre-setup.
+            // `.enroll` can't be resumed halfway, so backing past it discards the capture.
             resetEnrollmentState()
             withAnimation(OnboardingMetrics.stepAnimation) { step = .preSetup }
         default:
@@ -634,9 +524,7 @@ final class OnboardingController {
         }
     }
 
-    /// Note `pendingName` deliberately survives: backing out of `.password`
-    /// means re-doing the nine poses, and making the user retype a name they
-    /// already chose on the way through would be gratuitous.
+    /// Note `pendingName` deliberately survives — no reason to make the user retype it.
     private func resetEnrollmentState() {
         collectedSamples = []
         nameError = nil
@@ -799,9 +687,7 @@ final class OnboardingController {
         pose: EnrollmentPose
     ) async {
 
-        // Let the user settle in front of the camera before the center pose
-        // starts counting — detection above still ran, so the ring's live
-        // readout isn't frozen, only capture is held back.
+        // Detection above still ran; only capture is held back until settled.
         guard ContinuousClock.now >= captureReadyAt else {
             matchStreak = 0
             poseHoldStartedAt = nil
@@ -809,10 +695,8 @@ final class OnboardingController {
         }
 
         let qualityOK = result.quality.map { $0 >= qualityFloor } ?? true
-        // Only a 5-point alignment produces a reliably canonical input —
-        // a 2-point or padded-crop fallback (more likely exactly during a
-        // turned/tilted pose, where landmarks are harder to find) isn't
-        // accepted toward enrollment.
+        // Only a 5-point alignment is reliably canonical; a 2-point/padded-crop fallback
+        // isn't accepted toward enrollment.
         let alignmentOK = result.alignmentTier == .fivePoint
         let widened = ContinuousClock.now - poseStartedAt > stallTimeout
         let poseOK = poseMatches(yaw: yaw, pitch: pitch, pose: pose, widened: widened)
@@ -869,11 +753,8 @@ final class OnboardingController {
         }
     }
 
-    /// Confirmed empirically against Face Lab's live yaw/pitch readout:
-    /// Vision reports a *negative* pitch for "looking up" and positive for
-    /// "looking down" — the opposite of the initial guess (see the class
-    /// doc comment above the threshold constants). Bands below are written
-    /// against that confirmed convention.
+    /// Confirmed empirically: Vision reports negative pitch for "looking up" and positive
+    /// for "looking down" — the opposite of the initial guess.
     private func pitchMatches(_ pitch: Float, band: EnrollmentPose.PitchBand, factor: Float) -> Bool {
         switch band {
         case .none: return abs(pitch) < pitchCenterTolerance * factor
@@ -882,12 +763,8 @@ final class OnboardingController {
         }
     }
 
-    /// Runs the camera-complete sequence: pose instructions fade, camera
-    /// preview fades, the checkmark draws on, then auto-advances to the
-    /// naming step. Samples stay in memory here — every flow now names the
-    /// identity before anything is written, and in the full setup flow
-    /// persisting additionally requires the unlocked session that only
-    /// `finish(password:)` produces.
+    /// Runs the camera-complete sequence (instructions fade, preview fades, checkmark
+    /// draws) then auto-advances to naming. Samples stay in memory here.
     private func finishEnrollment() async {
         enrollmentComplete = true
         sweepWindow.dismiss()
@@ -911,20 +788,17 @@ final class OnboardingController {
 
     // MARK: - Naming
 
-    /// Confirms the naming step. In an enrollment-only flow the session is
-    /// already unlocked (the entry points guarantee it), so this is also the
-    /// commit point and the flow ends here. In the full setup flow nothing
-    /// can be written yet — see `finish(password:)`.
+    /// Confirms the naming step. In an enrollment-only flow the session is already
+    /// unlocked, so this is also the commit point. In the full setup flow nothing can be
+    /// written yet — see `finish(password:)`.
     func confirmName() {
         let trimmed = pendingName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             nameError = "Enter a name."
             return
         }
-        // Skipped silently in the full setup flow, where the store is still
-        // locked and `identities` is empty because it's *unreadable*, not
-        // because nothing is enrolled. `finish(password:)` re-checks once
-        // the session opens.
+        // Skipped silently in the full setup flow, where the store is still locked and
+        // `identities` is unreadable, not empty. `finish(password:)` re-checks once open.
         guard !store.nameIsTaken(trimmed, excluding: enrollmentTarget.identityID) else {
             nameError = "A face named \"\(trimmed)\" is already enrolled."
             return
@@ -941,18 +815,13 @@ final class OnboardingController {
         do {
             try commitEnrollment(name: trimmed)
         } catch {
-            // Realistically a session that lapsed between the entry point's
-            // Touch ID prompt and now. Stay on this step with the samples
-            // still in memory rather than showing "You're all set" over a
-            // save that didn't happen.
+            // Realistically a session that lapsed between the entry point's Touch ID
+            // prompt and now. Stay on this step rather than showing "You're all set"
+            // over a save that didn't happen.
             nameError = error.localizedDescription
             return
         }
         navDirection = .forward
-        // Ends on the same `.complete` ("You're all set") screen as the full
-        // setup flow, via the same `scheduleCompletionDismiss` delay, rather
-        // than dismissing the instant samples are saved — that used to
-        // happen with zero confirmation that anything succeeded.
         withAnimation(OnboardingMetrics.stepAnimation) { step = .complete }
         scheduleCompletionDismiss()
     }
@@ -995,16 +864,12 @@ final class OnboardingController {
                 try SecureCredentialManager.unlockSession(reason: "Set up Glance")
             }.value
 
-            // Only now that the session key exists can the face samples
-            // collected during enrollment actually be encrypted and saved.
-            // (`collectedSamples` is empty in the password-only flow, which
-            // shares this method and must not try to write an identity.)
+            // Only now that the session key exists can samples be encrypted and saved.
+            // Empty in the password-only flow, which shares this method.
             store.reloadIfUnlocked()
             if !collectedSamples.isEmpty {
                 let name = pendingName.trimmingCharacters(in: .whitespacesAndNewlines)
-                // The naming step couldn't run this check — the store was
-                // still locked and therefore unreadable. Bounce back rather
-                // than saving over, or silently merging into, someone else.
+                // The naming step couldn't run this check while the store was locked.
                 guard !store.nameIsTaken(name, excluding: enrollmentTarget.identityID) else {
                     nameError = "A face named \"\(name)\" is already enrolled."
                     navDirection = .backward
@@ -1032,10 +897,8 @@ final class OnboardingController {
         }
     }
 
-    /// The "You're all set" screen has no controls — it dismisses itself.
-    /// First-run then hands off to `onFirstRunComplete` (open Settings,
-    /// start Sparkle) so that work happens after the notch is gone, not
-    /// on top of the completion screen.
+    /// The "You're all set" screen has no controls — it dismisses itself, then first-run
+    /// hands off to `onFirstRunComplete` once the notch is gone.
     private func scheduleCompletionDismiss() {
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(OnboardingMetrics.completeScreenDismissDelay))

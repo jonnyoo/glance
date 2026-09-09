@@ -2,16 +2,6 @@
 //  CameraSettingsPage.swift
 //  glance
 //
-//  Gated behind the same Touch-ID session as Password/Your Face/Recognition
-//  — same reasoning as Recognition: picking which camera face unlock uses
-//  is part of that same trust boundary.
-//
-//  The live preview never starts on its own — not on unlock, not on
-//  re-appearing, not after picking a different camera while hidden. It only
-//  ever runs after "Show preview" is tapped, and stops (and hides itself
-//  again, rather than leaving a frozen last frame) the moment the session
-//  locks or the page goes away.
-//
 
 import SwiftUI
 
@@ -40,11 +30,8 @@ struct CameraSettingsPage: View {
                 .accessibilityHidden(!isSessionUnlocked)
         }
         .animation(SettingsMetrics.stateTransitionAnimation, value: isSessionUnlocked)
-        // Publishes the refresh action into the shared page header (see
-        // SettingsWindowView) only while genuinely unlocked — both branches
-        // above stay mounted throughout the crossfade, so gating on
-        // `isSessionUnlocked` here is what keeps the header's icon from
-        // appearing while this page is showing the locked prompt.
+        // Gated on isSessionUnlocked so the header's refresh icon doesn't
+        // show while this page is displaying the locked prompt.
         .preference(
             key: HeaderTrailingActionKey.self,
             value: isSessionUnlocked ? HeaderAction(perform: refreshDevices) : nil
@@ -55,9 +42,8 @@ struct CameraSettingsPage: View {
             hidePreview()
         }
         .onDisappear { hidePreview() }
-        // Password/name/enrollment flows run in the notch, entirely
-        // outside this window — this page never disappears while one is
-        // open, so nothing else would prompt a re-check once it closes.
+        // Password/name/enrollment flows run in the notch, outside this
+        // window, so nothing else prompts a re-check once one closes.
         .onChange(of: NotchOverlayController.shared.phase) { _, newPhase in
             guard newPhase == .closed else { return }
             pocController.refreshCredentialStatus()
@@ -108,10 +94,8 @@ struct CameraSettingsPage: View {
         .onChange(of: settings.externalDisplayCameraID) { restartPreview() }
     }
 
-    /// The rectangle itself: either the live feed, or — until "Show
-    /// preview" is tapped — a plain row-colored placeholder with the same
-    /// chrome the rest of Settings uses, so a page that never asked for
-    /// camera access doesn't get one just by being opened.
+    /// Live feed, or a placeholder until "Show preview" is tapped — opening
+    /// this page alone should never request camera access.
     @ViewBuilder
     private var previewArea: some View {
         if isPreviewShown {
@@ -135,11 +119,9 @@ struct CameraSettingsPage: View {
         isPreviewShown = false
     }
 
-    /// `CameraManager` only re-resolves its device when `start()` runs, so
-    /// picking a new camera while the preview is already showing restarts
-    /// it to reflect the change immediately. A no-op while hidden — there's
-    /// nothing running to restart, and picking a camera must not be what
-    /// quietly turns the camera on.
+    /// `CameraManager` only re-resolves its device on `start()`, so restart
+    /// it to reflect a new pick. No-op while hidden — picking a camera must
+    /// not be what quietly turns it on.
     private func restartPreview() {
         guard isPreviewShown else { return }
         previewCamera.stop()
@@ -189,8 +171,7 @@ struct CameraSettingsPage: View {
         }
     }
 
-    /// Fired by the header's refresh icon (see `HeaderTrailingActionKey`) —
-    /// what "Refresh camera list" used to do inline on this page.
+    /// Fired by the header's refresh icon (see `HeaderTrailingActionKey`).
     private func refreshDevices() {
         devices = CameraDeviceCatalog.availableDevices()
     }

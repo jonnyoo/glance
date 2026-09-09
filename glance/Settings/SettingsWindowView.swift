@@ -12,12 +12,8 @@ import SwiftUI
 
 /// A closure `onPreferenceChange` can actually consume — that API requires
 /// `Value: Equatable`, which a bare closure can never be. Equality is by
-/// identity (a fresh `id` per instance) rather than by comparing the
-/// closures themselves, so this is deliberately never equal to a previous
-/// instance: `onPreferenceChange` firing on every render of the publishing
-/// page is negligible for a settings header, and correctness (never
-/// missing a real change) matters more here than dodging a few redundant
-/// reassignments.
+/// identity (a fresh `id` per instance), so this is deliberately never
+/// equal to a previous instance.
 struct HeaderAction: Equatable {
     private let id = UUID()
     let perform: () -> Void
@@ -26,10 +22,8 @@ struct HeaderAction: Equatable {
 }
 
 /// Lets one page (today, only Camera's "Refresh camera list") publish a
-/// trailing action into the shared page header, without the header itself
-/// needing to know that page's state. Only the currently-selected page is
-/// ever in the view tree, so switching away automatically resolves this
-/// back to `defaultValue` — no manual reset needed.
+/// trailing action into the shared page header without the header needing
+/// to know that page's state. Switching away resolves back to `defaultValue`.
 struct HeaderTrailingActionKey: PreferenceKey {
     static var defaultValue: HeaderAction? { nil }
     static func reduce(value: inout HeaderAction?, nextValue: () -> HeaderAction?) {
@@ -45,12 +39,8 @@ struct SettingsWindowView: View {
 
     /// Defense-in-depth, not the primary gate: Settings is `.suppressed` at
     /// launch and `AppDelegate.revealSettingsWindow()` refuses to open it
-    /// while onboarding is incomplete. This is only here in case this
-    /// content somehow renders anyway — SwiftUI's exact `Window`-scene
-    /// timing relative to `applicationDidFinishLaunching` isn't itself
-    /// guaranteed — so a real user should never see this branch, only a
-    /// blank frame for at most a frame or two before `dismissWindow`
-    /// closes it right back.
+    /// while onboarding is incomplete. A real user should never hit this
+    /// branch, only a blank frame before `dismissWindow` closes it.
     var body: some View {
         if GlanceSettings.shared.hasCompletedOnboarding {
             settingsContent
@@ -90,11 +80,8 @@ struct SettingsWindowView: View {
                         SettingsMetrics.contentBackgroundColor
                         contentPage
                     }
-                    // All four corners now, not just the leading two — the
-                    // panel is a floating card inset from every window edge
-                    // (see .padding below), not flush against the trailing/
-                    // top/bottom edges the way it used to be, so there's no
-                    // reason left for the trailing corners to stay square.
+                    // All four corners — the panel is a floating card inset
+                    // from every window edge (see .padding below).
                     .clipShape(
                         RoundedRectangle(cornerRadius: SettingsMetrics.contentCornerRadius, style: .continuous)
                     )
@@ -122,50 +109,31 @@ struct SettingsWindowView: View {
                 .padding(SettingsMetrics.contentOuterSpacing)
             }
         }
-        // No `.clipShape` on the outer window — deliberately, and this is
-        // the fix for the too-square corners. Rounding the content ourselves
-        // can only ever *subtract* from the window's real shape, so a
-        // hand-picked radius silently overrode the system's; now that the
-        // window keeps its native background (see WindowConfiguringView),
-        // AppKit masks the whole thing to the genuine macOS 26 corner —
-        // measured identical to Finder's, and free to track future OS
-        // changes without a constant here to go stale.
-        //
-        // No manual stroke on the outer window either — macOS already draws its
-        // own glass-style edge highlight on a translucent window; a second
-        // hand-drawn stroke on top of that just looked doubled.
-        //
-        // No SwiftUI `.shadow` here either — it would be clipped at the
-        // window's edge. The window's own AppKit shadow follows this rounded
-        // shape, since the window is transparent (see WindowConfiguringView).
+        // No `.clipShape`, manual stroke, or `.shadow` on the outer window —
+        // deliberately: the window keeps its native background (see
+        // WindowConfiguringView), so AppKit masks it to the real macOS
+        // corner and draws its own edge highlight and shadow for free.
         //
         // Fills whatever size the window is (set once by
-        // WindowConfiguringView) rather than declaring a fixed size here —
-        // a fixed size combined with content-size resizability is what made
-        // SwiftUI keep re-adding a titlebar band to the window height.
+        // WindowConfiguringView) — a fixed size here combined with
+        // content-size resizability made SwiftUI keep re-adding a titlebar
+        // band to the window height.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
         .background(WindowConfigurator())
-        // Cascades to every native control (Toggle, Slider, Picker, Button)
-        // so nothing falls back to the system accent — everything uses the
-        // same #347DFF as GlanceTheme. This only takes effect because the
-        // window can become key; see WindowConfiguringView.configure.
+        // Cascades to every native control so nothing falls back to the
+        // system accent. Only takes effect because the window can become
+        // key; see WindowConfiguringView.configure.
         .tint(GlanceTheme.accent)
-        // `Window` (unlike `WindowGroup`) is a singleton scene — closing it
-        // only orders the NSWindow out, but SwiftUI keeps this view's
-        // `@State` alive in memory for whenever `openWindow(id:)` shows it
-        // again. Without this, `selection` silently remembers whatever tab
-        // was open when the window last closed, so reopening (menu bar
-        // "Settings", or the automatic post-onboarding open) lands back
-        // where the user left off instead of on General, as requested.
+        // `Window` is a singleton scene — closing it only orders the
+        // NSWindow out, keeping `@State` alive, so without this `selection`
+        // would remember the last tab instead of resetting to General.
         .onDisappear { selection = .general }
     }
 
-    /// The header floats over the scroll content in a `ZStack` (rather than
-    /// sitting above it in a `VStack`) so scrolled rows pass *underneath* it
-    /// instead of being pushed down by it. It's fully transparent — see the
-    /// note on `SettingsMetrics.headerHeight` for what was tried instead and
-    /// why none of it stuck.
+    /// The header floats over the scroll content in a `ZStack` so scrolled
+    /// rows pass underneath it rather than being pushed down. Fully
+    /// transparent — see the note on `SettingsMetrics.headerHeight`.
     private var contentPage: some View {
         ZStack(alignment: .top) {
             ScrollView(.vertical) {

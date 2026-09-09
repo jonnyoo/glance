@@ -2,16 +2,9 @@
 //  NotchWindow.swift
 //  glance
 //
-//  Borderless, transparent, click-through panel. Created once at
-//  `NotchGeometry.windowSize(for:)` and never resized — the spike (Phase 0)
-//  confirmed standard AppKit window levels are NOT visible on the real
-//  lock screen, so `NotchSkyLight` is used to bridge that gap, toggled on
-//  only while the screen is actually locked.
-//
-//  All expansion/collapse is SwiftUI animating content inside this fixed
-//  window — the single most important technique borrowed from studying
-//  Boring Notch's architecture (never call setFrame/setContentSize on this
-//  window; only setFrameOrigin, to reposition it).
+//  Borderless, transparent, click-through panel. Created once and never resized —
+//  all expansion/collapse is SwiftUI animating content inside this fixed window
+//  (never call setFrame/setContentSize on it; only setFrameOrigin, to reposition).
 //
 
 import AppKit
@@ -32,15 +25,13 @@ final class NotchWindow: NSPanel {
         level = .mainMenu + 3
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
 
-        // Decorative by default — clicks pass straight through. Flipped on
-        // only while a failed attempt is waiting to be tapped for retry
-        // (see NotchWindowController.setInteractive).
+        // Decorative by default — clicks pass through until a failed attempt is
+        // waiting to be tapped for retry (see NotchWindowController.setInteractive).
         ignoresMouseEvents = true
     }
 
-    /// Must be able to become key while interactive, otherwise the tap-to-
-    /// retry gesture never receives the click. Still never becomes *main*,
-    /// so it doesn't take over as the app's primary window.
+    /// Must become key while interactive or the tap-to-retry gesture never receives
+    /// the click; never becomes main, so it doesn't take over as the app's primary window.
     override var canBecomeKey: Bool { !ignoresMouseEvents }
     override var canBecomeMain: Bool { false }
 }

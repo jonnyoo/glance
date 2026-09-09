@@ -2,13 +2,8 @@
 //  ScanAnimationView.swift
 //  glance
 //
-//  Plays one of the Face ID-style scan animations exactly once and holds
-//  on its final frame — deliberately not looping, since each video ends on
-//  a meaningful resolved state (the success video's own checkmark, or the
-//  failure video's end state).
-//
-//  All assets are 432x432 with a solid black background, so they composite
-//  natively against the black notch panel with no alpha channel needed.
+//  Plays a scan animation once and holds its final frame — deliberately not
+//  looping, since each video ends on a meaningful resolved state.
 //
 
 import SwiftUI
@@ -105,27 +100,18 @@ final class ScanAnimationHostView: NSView {
         let newPlayer = AVPlayer(url: url)
         // This can play at the lock screen — never make noise.
         newPlayer.isMuted = true
-        // `.none` leaves the player paused on its final frame rather than
-        // rewinding, which is exactly the "linger on the last frame"
-        // behavior each animation's ending depends on.
+        // Leaves the player paused on its final frame rather than rewinding.
         newPlayer.actionAtItemEnd = .none
 
         playerLayer.player = newPlayer
         player = newPlayer
 
-        // The still stays visible (and the player layer stays hidden) until
-        // the layer actually has a decoded frame ready to show. Swapping on
-        // a fixed delay (the previous approach) raced the real decode time
-        // and produced a black-frame flash whenever decoding took longer
-        // than the guess. `isReadyForDisplay` is the correct signal for
-        // "there is now a frame to show."
+        // Waits for `isReadyForDisplay` rather than a fixed delay, which raced the
+        // real decode time and produced a black-frame flash.
         let reveal: () -> Void = { [weak self] in
             guard let self else { return }
-            // Without disabling implicit actions, toggling `isHidden`
-            // cross-fades both layers over CALayer's default ~0.25s — the
-            // still fading out while the video fades in, which is exactly
-            // the "video briefly fades in from black" flash. This makes
-            // the swap instant and atomic instead.
+            // Without disabling implicit actions, toggling `isHidden` cross-fades both
+            // layers over CALayer's default duration instead of swapping instantly.
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             self.playerLayer.isHidden = false

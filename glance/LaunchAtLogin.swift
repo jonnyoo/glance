@@ -2,10 +2,7 @@
 //  LaunchAtLogin.swift
 //  glance
 //
-//  Thin wrapper around SMAppService.mainApp. Deliberately not persisted via
-//  GlanceSettings — SMAppService's own registration status IS the source of
-//  truth (survives relaunch at the OS level), so mirroring it into
-//  UserDefaults would just create a second copy that can drift out of sync.
+//  Thin wrapper around SMAppService.mainApp. Not persisted via GlanceSettings — SMAppService's own status is already the source of truth.
 //
 
 import Foundation
