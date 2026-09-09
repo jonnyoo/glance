@@ -268,12 +268,16 @@ private struct EnrollmentCloseButton: View {
 }
 
 private struct EnrollmentTooFarChevron: View {
+    @State private var isAnimating = false
+
     var body: some View {
-        Image(systemName: "chevron.up.2")
+        Image(systemName: "chevron.up")
             .font(.system(size: OnboardingMetrics.enrollTooFarChevronSize, weight: .semibold))
             .foregroundStyle(.white)
             .shadow(color: .black.opacity(0.45), radius: 6, y: 1)
-            .symbolEffect(.bounce.up.byLayer, options: .repeating)
+            .symbolEffect(.bounce.up.byLayer, options: .repeating, value: isAnimating)
+            .onAppear { isAnimating = true }
+            .onDisappear { isAnimating = false }
             .accessibilityHidden(true)
     }
 }

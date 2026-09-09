@@ -11,41 +11,26 @@ import SwiftUI
 struct glanceApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-    /// Only way to reliably reopen a `Window` scene once its `NSWindow` has
-    /// fully closed — see `AppDelegate.openSettingsWindowAction`'s doc
-    /// comment for why the previous `NSApp.windows` walk couldn't do this.
-    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some Scene {
         settingsWindow
     }
 
-    /// Settings is a suppressed scene so it does not appear on launch or
-    /// restore after quit. The `openWindow` action is captured here, not
-    /// in the window's `onAppear`, because the window may never have appeared
-    /// before the menu bar item (or first-run completion) needs to open it.
+    /// Settings stays closed at launch. Bind the action from the scene body
+    /// so the menu can open it before its content has ever appeared.
     private var settingsWindow: some Scene {
-        let open = openWindow
+        let open = openSettings
         let delegate = appDelegate
         DispatchQueue.main.async {
-            delegate.bindOpenWindowAction { open(id: "settings") }
+            delegate.bindOpenWindowAction { open() }
         }
-        return Window("Glance Settings", id: "settings") {
-            SettingsWindowView(environment: appDelegate.environment)
+        return Settings {
+            SettingsWindowView(environment: delegate.environment)
                 .onAppear {
-                    delegate.bindOpenWindowAction { open(id: "settings") }
+                    delegate.bindOpenWindowAction { open() }
                 }
         }
-        // Deliberately no `.windowResizability(.contentSize)`: it kept
-        // re-deriving the window size as (content + titlebar band), which
-        // grew the window every time the titlebar band changed height — and
-        // it now has a real, taller one (see WindowConfiguringView's
-        // toolbar). Size is set once by WindowConfiguringView instead, and
-        // the window is made non-resizable there, so nothing re-derives it.
-        .windowStyle(.hiddenTitleBar)
-        .defaultPosition(.center)
-        .defaultLaunchBehavior(.suppressed)
-        .restorationBehavior(.disabled)
     }
 }
 
@@ -70,27 +55,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// its title/icon in place each time the menu opens, rather than
     /// tearing down and rebuilding the whole menu just for one row.
     private var sessionMenuItem: NSMenuItem?
-    /// Bridges SwiftUI's `openWindow(\.settings)` environment action in
-    /// from `glanceApp.body` — see that call site. This delegate is a plain
-    /// `NSObject`, not a View, so it has no `@Environment` of its own;
-    /// capturing the action as a closure once and calling it later is the
-    /// standard way to reach a SwiftUI environment action from AppKit code.
-    ///
-    /// Bound from the `App` scene body (not the window's `onAppear`) so it
-    /// is ready before Settings has ever been shown — the window is
-    /// `.suppressed` at launch and would never appear on its own.
-    ///
-    /// This exists because `NSApp.windows` stops containing the Settings
-    /// window once it's fully closed (not just miniaturized/ordered out) —
-    /// walking that array, which is what `revealSettingsWindow()` used to
-    /// do exclusively, is a silent no-op in that state: no window to find,
-    /// so nothing shows, though `NSApp.setActivationPolicy(.regular)`
-    /// still ran, which is exactly the bug this fixed (Dock icon reappears,
-    /// window doesn't). Only `openWindow(id:)` — SwiftUI's own API for its
-    /// own scene — can reliably re-create a closed `Window` scene.
+    /// SwiftUI's action recreates Settings after its window has closed.
+    /// Bound from the scene body because Settings content is created lazily.
     var openSettingsWindowAction: (() -> Void)?
 
-    /// Called from `glanceApp.body` so `openWindow` is captured even though
+    /// Called from `glanceApp.body` so `openSettings` is captured even though
     /// Settings never auto-opens. Reassigning on every scene rebuild is
     /// intentional — the action is cheap and must not go stale.
     func bindOpenWindowAction(_ action: @escaping () -> Void) {
@@ -160,7 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateSessionMenuItem()
 
         // SwiftUI can flip the app back to `.regular` while installing
-        // scenes, even with `.defaultLaunchBehavior(.suppressed)`. Re-assert
+        // scenes. Re-assert
         // accessory so launch itself never materializes a Dock icon.
         NSApp.setActivationPolicy(.accessory)
 
@@ -330,7 +299,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 window.makeKeyAndOrderFront(nil)
             }
         }
-        // `openWindow` materializes the scene asynchronously, and coming from
+        // `openSettings` materializes the scene asynchronously, and coming from
         // `.accessory` (post-onboarding) there is no user gesture to activate
         // the app — unlike a menu-bar click. Without this, Settings appears
         // in the inactive look and clicks won't take focus until the user
@@ -340,7 +309,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Makes Settings the key window of an already-`.regular` app. Two
-    /// runloop hops: `openWindow(id:)` hasn't created the `NSWindow` on
+    /// runloop hops: `openSettings()` hasn't created the `NSWindow` on
     /// this turn, and `WindowConfiguringView` also configures it on the
     /// next turn — waiting one extra cycle means we order front after
     /// that window actually exists.

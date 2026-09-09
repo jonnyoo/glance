@@ -1014,6 +1014,7 @@ final class WindowConfiguringView: NSView {
     }
 
     private static func configure(_ window: NSWindow) {
+        window.isRestorable = false
         // `.fullSizeContentView` + transparent titlebar + hidden title is
         // the *supported* way to get "no title bar": the window keeps all of
         // its real titlebar machinery — real traffic lights, native frame,
