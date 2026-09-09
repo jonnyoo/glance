@@ -8,6 +8,7 @@ import SwiftUI
 
 struct GeneralSettingsPage: View {
     @Bindable var coordinator: FaceUnlockCoordinator
+    @Bindable var sudoAuth: SudoAuthController
     @Bindable private var settings = GlanceSettings.shared
 
     @State private var launchAtLoginEnabled = LaunchAtLogin.isEnabled
@@ -60,9 +61,20 @@ struct GeneralSettingsPage: View {
                 GlanceToggle(isOn: $coordinator.isEnabled)
             }
             SettingsGroupDivider()
+            SettingsRowContent(title: "Face for sudo") {
+                GlanceToggle(isOn: Binding(
+                    get: { sudoAuth.isSudoFaceEnabled },
+                    set: { sudoAuth.isSudoFaceEnabled = $0 }
+                ))
+            }
+            SettingsGroupDivider()
             UnlockTriggerPicker(selection: $settings.unlockTriggers, isEnabled: coordinator.isEnabled)
             SettingsGroupDivider()
             displayPicker()
+        }
+        .onAppear {
+            sudoAuth.refreshInstallStatus()
+            sudoAuth.reconcileListener()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
             screens = NSScreen.screens
@@ -88,6 +100,17 @@ struct GeneralSettingsPage: View {
         }
         if let launchAtLoginError {
             SettingsCaption(text: launchAtLoginError)
+        }
+        if let installError = sudoAuth.lastInstallError {
+            SettingsCaption(text: installError)
+        } else if sudoAuth.isSudoFaceEnabled {
+            let status = sudoAuth.pamInstallStatus.label
+            let listener = sudoAuth.isListenerActive
+                ? "Listening for sudo."
+                : (SecureCredentialManager.isSessionUnlocked
+                   ? "Waiting for PAM install."
+                   : "Unlock session for Face sudo.")
+            SettingsCaption(text: "\(status) — \(listener) Cascade: Face → Touch ID → password.")
         }
         if hasInheritedXcodePermission {
             SettingsCaption(text: "Running from Xcode — permission checks resolve against Xcode’s grants, not glance’s, so this reading is meaningless. Launch glance.app on its own to see the real state.")

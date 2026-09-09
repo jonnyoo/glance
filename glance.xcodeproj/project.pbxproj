@@ -73,6 +73,7 @@
 				601C4938300FFC8400D3DE9D /* Sources */,
 				601C4939300FFC8400D3DE9D /* Frameworks */,
 				601C493A300FFC8400D3DE9D /* Resources */,
+				B7E4A91C2F5A4D0E9C1D2E3F /* Embed pam_glance */,
 			);
 			buildRules = (
 			);
@@ -135,6 +136,34 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		B7E4A91C2F5A4D0E9C1D2E3F /* Embed pam_glance */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/pam_glance/pam_glance.c",
+				"$(SRCROOT)/pam_glance/install.sh",
+				"$(SRCROOT)/pam_glance/Makefile",
+				"$(SRCROOT)/pam_glance/embed-resources.sh",
+			);
+			name = "Embed pam_glance";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/pam_glance.so",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/pam_glance_install.sh",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\n\"${SRCROOT}/pam_glance/embed-resources.sh\" \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		601C4938300FFC8400D3DE9D /* Sources */ = {

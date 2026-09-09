@@ -9,6 +9,9 @@ xcuserdata/
 # Compiled Core ML models are derived from the committed .mlpackage source
 *.mlmodelc
 
+# Built PAM module (Xcode embed phase / make — never commit the binary)
+pam_glance/pam_glance.so
+
 # Python virtualenv used by tools/convert_arcface.py
 .venv/
 __pycache__/

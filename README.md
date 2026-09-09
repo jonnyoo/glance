@@ -36,6 +36,8 @@ https://github.com/user-attachments/assets/77438826-80a9-4ab2-9fc3-42407a2d0adb
 > 
 > Glance is a convenience feature, not a security upgrade. It's off by default, and you can leave
 it that way.
+>
+> **Face for sudo** (optional): when enabled, `sudo` can try Glance face match first, then Touch ID, then password. It only works while Glance is running with an unlocked session — same 2D-camera limits as lock-screen unlock. See `pam_glance/README.md`.
 
 ## Installation
 
@@ -159,6 +161,9 @@ debug section should appear in the sidebar.
   ```
 3. Run the project:
   - Click `run` or press `Cmd + R`.
+  - The **Embed pam_glance** build phase compiles the Face-for-sudo PAM module into the app automatically.
+
+Face for sudo (optional): unlock the session → Settings → General → **Face for sudo**. Details in [`pam_glance/README.md`](pam_glance/README.md).
 
 
 
