@@ -122,8 +122,15 @@ struct SecurityNoticeStepView: View {
                 .padding(.bottom, 10)
 
             HStack(spacing: 10) {
-                PillButton(title: "Back", style: .secondary) {
-                    controller.back()
+                if controller.isPostUpdateNotice {
+                    // Declining isn't a real option here — see `declinePostUpdateNotice()`.
+                    PillButton(title: "No thanks", style: .secondary) {
+                        controller.declinePostUpdateNotice()
+                    }
+                } else {
+                    PillButton(title: "Back", style: .secondary) {
+                        controller.back()
+                    }
                 }
                 PillButton(title: "I understand", isDefault: true) {
                     controller.advance()

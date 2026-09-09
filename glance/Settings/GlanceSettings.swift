@@ -112,6 +112,7 @@ final class GlanceSettings {
         static let externalDisplayCameraID = "GlanceSettings.externalDisplayCameraID"
         static let hasCompletedOnboarding = "GlanceSettings.hasCompletedOnboarding"
         static let onboardingResumeStep = "GlanceSettings.onboardingResumeStep"
+        static let hasAcknowledgedSecurityNotice = "GlanceSettings.hasAcknowledgedSecurityNotice"
     }
 
     @ObservationIgnored private let defaults = UserDefaults.standard
@@ -241,6 +242,15 @@ final class GlanceSettings {
     var onboardingResumeStep: OnboardingStep? {
         didSet { defaults.set(onboardingResumeStep?.rawValue, forKey: Key.onboardingResumeStep) }
     }
+    /// Gates the one-time post-update notice for users who completed onboarding before the
+    /// security-disclaimer step existed. Set alongside `hasCompletedOnboarding` for anyone
+    /// finishing normal onboarding (which now includes that step), and separately by
+    /// `OnboardingController.startPostUpdateNotice()` once the standalone catch-up notice is
+    /// acknowledged. Defaults `false`, so an upgrading 1.0 install (where this key has never
+    /// been written) correctly triggers the catch-up flow once.
+    var hasAcknowledgedSecurityNotice: Bool {
+        didSet { defaults.set(hasAcknowledgedSecurityNotice, forKey: Key.hasAcknowledgedSecurityNotice) }
+    }
 
     private init() {
         // Enabled by default — onboarding already enrolled a face and set a
@@ -305,6 +315,7 @@ final class GlanceSettings {
         hasCompletedOnboarding = defaults.object(forKey: Key.hasCompletedOnboarding) as? Bool ?? false
         onboardingResumeStep = defaults.string(forKey: Key.onboardingResumeStep)
             .flatMap(OnboardingStep.init(rawValue:))
+        hasAcknowledgedSecurityNotice = defaults.object(forKey: Key.hasAcknowledgedSecurityNotice) as? Bool ?? false
 
         // Push into the nonisolated mirror immediately, or FaceRecognitionPipeline
         // would keep its own default until the slider is first touched.

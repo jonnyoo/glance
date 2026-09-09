@@ -157,6 +157,9 @@ final class OnboardingController {
             guard isFirstRunFlow else { return }
             if step == .complete {
                 GlanceSettings.shared.hasCompletedOnboarding = true
+                // Normal onboarding now passes through `.securityNotice` on its own —
+                // completing it here means the standalone post-update notice never needs to.
+                GlanceSettings.shared.hasAcknowledgedSecurityNotice = true
                 GlanceSettings.shared.onboardingResumeStep = nil
             } else {
                 GlanceSettings.shared.onboardingResumeStep = step.resumeTarget
@@ -164,9 +167,9 @@ final class OnboardingController {
         }
     }
 
-    /// Fires exactly once, after the true first-run flow's "You're all set" screen
-    /// dismisses, so `AppDelegate` can open Settings only once onboarding UI is gone.
-    /// `nil` for every other entry point.
+    /// Fires exactly once, after the "You're all set" screen dismisses — either the true
+    /// first-run flow (so `AppDelegate` can open Settings only once onboarding UI is gone)
+    /// or the standalone post-update notice (so it can resume startup). `nil` otherwise.
     var onFirstRunComplete: (() -> Void)?
 
     /// True when started by `startEnrollmentOnly()` — shows only the guided pose-capture
@@ -177,9 +180,15 @@ final class OnboardingController {
     /// treats Back as "cancel" rather than a setup flow that isn't running.
     private let isPasswordOnly: Bool
 
+    /// True when started by `startPostUpdateNotice()` — a standalone replay of just the
+    /// security-notice step for users who completed onboarding before it existed. Skips
+    /// straight to `.complete` on acknowledgment; every other step is unreachable. Read by
+    /// `SecurityNoticeStepView` to swap its Back button for "No thanks."
+    let isPostUpdateNotice: Bool
+
     /// True only for the genuine first-run flow (also true when replayed via Face Lab's
     /// "Start Onboarding" debug button). Gates whether `step`'s `didSet` persists a resume point.
-    private var isFirstRunFlow: Bool { !isEnrollmentOnly && !isPasswordOnly }
+    private var isFirstRunFlow: Bool { !isEnrollmentOnly && !isPasswordOnly && !isPostUpdateNotice }
 
     /// Whether the intro's one-time light sweep already played this session. Lives here
     /// rather than as `@State` on `IntroStepView` because that view is torn down and
@@ -301,6 +310,16 @@ final class OnboardingController {
             let controller = OnboardingController(isPasswordOnly: true)
             NotchOverlayController.shared.presentOnboarding(controller)
         }
+    }
+
+    /// Entry point used by `AppDelegate` at launch for users who completed onboarding
+    /// before the security-notice step existed — a standalone replay of just that step, so
+    /// they still see it once. Everything else is already done, so acknowledging it jumps
+    /// straight to `.complete` (see `advance()`) rather than resuming the full flow.
+    static func startPostUpdateNotice(onComplete: (() -> Void)? = nil) {
+        let controller = OnboardingController(isPostUpdateNotice: true)
+        controller.onFirstRunComplete = onComplete
+        NotchOverlayController.shared.presentOnboarding(controller)
     }
 
     // MARK: - Panel sizing (read by NotchOverlayView)
@@ -477,10 +496,12 @@ final class OnboardingController {
     init(
         isEnrollmentOnly: Bool = false,
         isPasswordOnly: Bool = false,
+        isPostUpdateNotice: Bool = false,
         enrollmentTarget: EnrollmentTarget = .newIdentity
     ) {
         self.isEnrollmentOnly = isEnrollmentOnly
         self.isPasswordOnly = isPasswordOnly
+        self.isPostUpdateNotice = isPostUpdateNotice
         self.enrollmentTarget = enrollmentTarget
         observeFrames()
         if isEnrollmentOnly {
@@ -490,6 +511,8 @@ final class OnboardingController {
         } else if isPasswordOnly {
             // No deferral needed: the password step starts nothing heavy.
             step = .password
+        } else if isPostUpdateNotice {
+            step = .securityNotice
         }
     }
 
@@ -499,15 +522,20 @@ final class OnboardingController {
         navDirection = .forward
         let leavingStep = step
         withAnimation(OnboardingMetrics.stepAnimation) {
-            switch step {
-            case .intro: step = .permissions
-            case .permissions: step = .securityNotice
-            case .securityNotice: step = .preSetup
-            case .preSetup: step = .enroll
-            case .enroll: break // advances automatically on completion
-            case .name: break // handled by confirmName()
-            case .password: break // handled by finish(password:)
-            case .complete: break
+            if isPostUpdateNotice {
+                // The only transition this flow has: notice seen, done.
+                step = .complete
+            } else {
+                switch step {
+                case .intro: step = .permissions
+                case .permissions: step = .securityNotice
+                case .securityNotice: step = .preSetup
+                case .preSetup: step = .enroll
+                case .enroll: break // advances automatically on completion
+                case .name: break // handled by confirmName()
+                case .password: break // handled by finish(password:)
+                case .complete: break
+                }
             }
         }
         if leavingStep == .permissions { stopPermissionsPolling() }
@@ -517,8 +545,18 @@ final class OnboardingController {
             // Deferred a tick so the heavy camera start doesn't land in the same runloop
             // turn as the panel-resize transition, stealing frames from the spring animation.
             Task { @MainActor [weak self] in self?.beginEnrollment() }
+        case .complete where isPostUpdateNotice:
+            GlanceSettings.shared.hasAcknowledgedSecurityNotice = true
+            scheduleCompletionDismiss()
         default: break
         }
+    }
+
+    /// "No thanks" on the post-update notice. Declining isn't a real option — the app
+    /// requires acknowledgment before it'll run — so this quits rather than dismissing back
+    /// into use.
+    func declinePostUpdateNotice() {
+        NSApp.terminate(nil)
     }
 
     /// Steps backward. The enroll close control also lands here: a retreat to pre-setup
@@ -937,17 +975,18 @@ final class OnboardingController {
         }
     }
 
-    /// The "You're all set" screen has no controls — it dismisses itself, then first-run
-    /// hands off to `onFirstRunComplete` once the notch is gone.
+    /// The "You're all set" screen has no controls — it dismisses itself, then hands off
+    /// to `onFirstRunComplete` once the notch is gone, for first-run and the post-update
+    /// notice alike.
     private func scheduleCompletionDismiss() {
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(OnboardingMetrics.completeScreenDismissDelay))
             guard let self else { return }
-            let finishedFirstRun = self.isFirstRunFlow
+            let shouldFireCompletion = self.isFirstRunFlow || self.isPostUpdateNotice
             let onComplete = self.onFirstRunComplete
             self.teardown()
             NotchOverlayController.shared.dismissOnboarding()
-            if finishedFirstRun {
+            if shouldFireCompletion {
                 onComplete?()
             }
         }

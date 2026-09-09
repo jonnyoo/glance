@@ -120,7 +120,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Deferred until onboarding is done — Sparkle's own "Check for updates automatically?" consent alert fires the moment
         // it starts on a fresh install, and starting unconditionally here used to pop it mid-onboarding.
         if GlanceSettings.shared.hasCompletedOnboarding {
-            startUpdaterIfNeeded()
+            if GlanceSettings.shared.hasAcknowledgedSecurityNotice {
+                startUpdaterIfNeeded()
+            } else {
+                // Upgraded from a version before the notice existed — show it once, standalone.
+                presentPostUpdateSecurityNotice()
+            }
         } else {
             presentOnboardingGate()
         }
@@ -142,6 +147,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self?.startUpdaterIfNeeded()
             }
         )
+    }
+
+    /// One-time catch-up for users who completed onboarding before the security-notice step
+    /// existed — same accessory/window-closing treatment as `presentOnboardingGate()`, but
+    /// resumes straight into the updater afterward instead of revealing Settings, since setup
+    /// itself is already done.
+    private func presentPostUpdateSecurityNotice() {
+        for window in NSApp.windows where window.canBecomeMain {
+            window.close()
+        }
+        NSApp.setActivationPolicy(.accessory)
+        // Reachable repeatedly — every gated menu action re-enters here while unacknowledged.
+        // A fresh `startPostUpdateNotice()` would just replace the one already on screen.
+        guard NotchOverlayController.shared.phase != .onboarding else { return }
+        OnboardingController.startPostUpdateNotice { [weak self] in
+            self?.startUpdaterIfNeeded()
+        }
     }
 
     /// Reachable from launch (onboarding already done) or from first-run completion — `hasStartedUpdater` collapses both into "exactly once."
@@ -178,6 +200,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Locking is immediate; unlocking prompts Touch ID, so this can't be a plain synchronous action for that branch.
     @objc private func toggleSession() {
+        guard !isBlockedByPostUpdateNotice else {
+            presentPostUpdateSecurityNotice()
+            return
+        }
         if environment.pocController.isSessionUnlocked {
             environment.pocController.lockSession()
         } else {
@@ -202,9 +228,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// True whenever an updated user hasn't acknowledged the post-update security notice yet.
+    /// Checked by every menu-bar action that would otherwise let them use the app — Settings,
+    /// locking/unlocking — before the notice has been seen.
+    private var isBlockedByPostUpdateNotice: Bool {
+        GlanceSettings.shared.hasCompletedOnboarding && !GlanceSettings.shared.hasAcknowledgedSecurityNotice
+    }
+
     /// Restores the Dock icon before bringing the window forward — doing it after the window is already key can leave the icon
     /// out of sync. During onboarding this only ensures the notch flow is up; it doesn't open Settings or show a Dock icon.
     private func revealSettingsWindow() {
+        if isBlockedByPostUpdateNotice {
+            presentPostUpdateSecurityNotice()
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
         guard GlanceSettings.shared.hasCompletedOnboarding else {
             // Re-present rather than restart: a fresh startFlow() would throw away the in-session step already navigated to,
             // since it only knows the last step written to disk.
