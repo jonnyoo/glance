@@ -63,3 +63,21 @@ python tools/convert_arcface.py --onnx-path /path/to/w600k_mbf.onnx
 If you ever swap in a different ArcFace variant (e.g. `w600k_r50` via
 `--variant w600k_r50`), this contract stays the same — only the file size
 and latency change.
+
+## Overlay input checks
+
+`notch_input_selftest.swift` opens two temporary windows and checks which one macOS would target. It covers click-through hover states, setup controls, transparent margins and rounded corners, dragging outside the popup, keyboard eligibility, and intermediate resize/slide animation frames. It does not move the mouse or require Accessibility permission.
+
+Run with Swift 6.2+ and the macOS SDK:
+
+```bash
+swiftc -swift-version 5 -default-isolation MainActor \
+  glance/NotchOverlay/NotchWindow.swift \
+  glance/NotchOverlay/NotchInteractionRegion.swift \
+  glance/NotchOverlay/NotchShape.swift \
+  glance/NotchOverlay/NotchPanelStyle.swift \
+  tools/notch_input_selftest.swift -o /tmp/glance-input-check
+/tmp/glance-input-check
+```
+
+For a manual check, move the pointer through the popup's edges and click a window behind it. During setup, also confirm that buttons and password entry work, including after moving the pointer outside the popup.

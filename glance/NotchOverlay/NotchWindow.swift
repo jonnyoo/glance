@@ -32,15 +32,83 @@ final class NotchWindow: NSPanel {
         level = .mainMenu + 3
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
 
-        // Decorative by default — clicks pass straight through. Flipped on
-        // only while a failed attempt is waiting to be tapped for retry
-        // (see NotchWindowController.setInteractive).
         ignoresMouseEvents = true
     }
 
-    /// Must be able to become key while interactive, otherwise the tap-to-
-    /// retry gesture never receives the click. Still never becomes *main*,
-    /// so it doesn't take over as the app's primary window.
-    override var canBecomeKey: Bool { !ignoresMouseEvents }
+    enum Interaction {
+        case none, hover, controls
+    }
+
+    weak var interactionRegion: NotchInteractionRegion.RegionView?
+    var interaction: Interaction = .none {
+        didSet {
+            if interaction != .controls { pressedButtons.removeAll() }
+            updatePointer()
+        }
+    }
+    private var pointerTimer: Timer?
+    private var localMonitor: Any?
+    private var globalMonitor: Any?
+    private var isHovering = false
+    private var pressedButtons: Set<Int> = []
+
+    /// Hover observation does not require the window to intercept clicks.
+    /// The timer also handles a stationary pointer while the panel animates.
+    func startPointerTracking() {
+        guard pointerTimer == nil else { return }
+        let moves: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: moves) { [weak self] _ in
+            self?.updatePointer()
+        }
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: moves) { [weak self] event in
+            self?.updatePointer()
+            return event
+        }
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updatePointer() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        pointerTimer = timer
+        updatePointer()
+    }
+
+    func stopPointerTracking() {
+        pointerTimer?.invalidate()
+        pointerTimer = nil
+        if let localMonitor { NSEvent.removeMonitor(localMonitor) }
+        if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
+        localMonitor = nil
+        globalMonitor = nil
+        pressedButtons.removeAll()
+        ignoresMouseEvents = true
+        setHovering(false)
+    }
+
+    func updatePointer(at screenPoint: NSPoint = NSEvent.mouseLocation) {
+        let inside = isVisible && interactionRegion?.contains(screenPoint: screenPoint) == true
+        ignoresMouseEvents = interaction != .controls || (!inside && pressedButtons.isEmpty)
+        setHovering(interaction != .none && inside)
+    }
+
+    private func setHovering(_ hovering: Bool) {
+        guard hovering != isHovering else { return }
+        isHovering = hovering
+        interactionRegion?.onHover?(hovering)
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+            pressedButtons.insert(event.buttonNumber)
+        case .leftMouseUp, .rightMouseUp, .otherMouseUp:
+            pressedButtons.remove(event.buttonNumber)
+        default: break
+        }
+        super.sendEvent(event)
+        updatePointer()
+    }
+
+    // Keyboard focus must survive moving the pointer out of a password field.
+    override var canBecomeKey: Bool { interaction == .controls }
     override var canBecomeMain: Bool { false }
 }

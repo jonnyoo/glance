@@ -48,6 +48,7 @@ final class NotchWindowController {
         let window = windowIfNeeded()
         reposition(window)
         window.orderFrontRegardless()
+        window.startPointerTracking()
 
         if LockMonitor.isScreenActuallyLocked(), let skyLight = NotchSkyLight.shared {
             skyLight.delegate(window)
@@ -72,19 +73,14 @@ final class NotchWindowController {
             skyLight.undelegate(window)
             isSkyLightDelegated = false
         }
+        window.stopPointerTracking()
         window.orderOut(nil)
     }
 
-    /// Toggles whether the overlay accepts clicks. Off for the whole normal
-    /// lifecycle; on while a failed attempt waits for a retry tap, or while
-    /// onboarding is active.
-    ///
-    /// `key: true` additionally activates the app and makes the panel the
-    /// key window — needed only for onboarding's password field to receive
-    /// keystrokes. `NotchWindow.canBecomeKey` already gates on
-    /// `!ignoresMouseEvents`, so this is safe to call any time.
+    /// Hover-only states remain click-through. Onboarding accepts clicks
+    /// inside its visible shape and may also request keyboard focus.
     func setInteractive(_ interactive: Bool, key: Bool = false) {
-        window?.ignoresMouseEvents = !interactive
+        window?.interaction = !interactive ? .none : (key ? .controls : .hover)
         guard interactive, key, let window else { return }
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)

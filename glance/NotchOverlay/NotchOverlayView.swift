@@ -343,6 +343,17 @@ struct NotchOverlayView: View {
         .frame(width: currentSize.width, height: currentSize.height)
         .background(Color.black)
         .clipShape(NotchShape(topRadius: topRadius, bottomRadius: bottomRadius, style: style))
+        .background {
+            NotchInteractionRegion(
+                shape: NotchShape(topRadius: topRadius, bottomRadius: bottomRadius, style: style)
+            ) { hovering in
+                isHovering = hovering
+                if hovering {
+                    performHapticFeedback(.generic)
+                    controller.activate()
+                }
+            }
+        }
         // Shadow only while expanded — with the window staying on-screen
         // continuously in armed mode, a shadow visible at the *closed* size
         // rendered as a faint dim halo sitting around the real notch even
@@ -357,17 +368,9 @@ struct NotchOverlayView: View {
         // explicit choreography above.
         .animation(expansionAnimation(entering: true), value: onboardingController?.panelSize)
         .blur(radius: panelBlur)
-        // Applied after the shadow so both travel together, and before
-        // `.onHover` so the hover region tracks where the panel actually is.
+        // Move the panel, its shadow, and its interaction region together.
         .offset(y: verticalOffset)
         .animation(.easeOut(duration: 0.18), value: isHovering)
-        .onHover { hovering in
-            isHovering = hovering
-            if hovering {
-                performHapticFeedback(.generic)
-                controller.activate()
-            }
-        }
         .onAppear {
             // Sync without animating — there's nothing to animate *from* on
             // first appearance.
