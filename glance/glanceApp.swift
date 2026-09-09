@@ -18,6 +18,28 @@ struct glanceApp: App {
 
     var body: some Scene {
         settingsWindow
+            .commands { settingsCommand }
+    }
+
+    /// Puts "Settings…" in the app menu on the standard ⌘, shortcut, where
+    /// a Mac user looks for it first. `replacing: .appSettings` fills the slot
+    /// SwiftUI reserves for that item: the app has no `Settings` scene —
+    /// Settings is a plain `Window` so it can be `.suppressed` at launch —
+    /// so the slot is otherwise left empty and the menu bar item is the only
+    /// way in once onboarding is done.
+    ///
+    /// Routes through the delegate instead of calling `openWindow` here so
+    /// every entry point goes through `revealSettingsWindow()`, which also
+    /// restores the Dock icon (`.accessory` -> `.regular`) and defers to the
+    /// onboarding gate — `openWindow` alone would show the window with the
+    /// activation policy still wrong.
+    private var settingsCommand: some Commands {
+        CommandGroup(replacing: .appSettings) {
+            Button("Settings…") {
+                appDelegate.openSettingsWindow()
+            }
+            .keyboardShortcut(",", modifiers: .command)
+        }
     }
 
     /// Settings is a suppressed scene so it does not appear on launch or
@@ -289,9 +311,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return flag
     }
 
-    /// Menu bar "Settings" — the only user-facing way to open the window
-    /// after onboarding.
-    @objc private func openSettingsWindow() {
+    /// Menu bar "Settings", and the app menu's "Settings…" item (see
+    /// `glanceApp.settingsCommand`) — the two user-facing ways to open the
+    /// window after onboarding. Non-private for that second caller.
+    @objc func openSettingsWindow() {
         revealSettingsWindow()
         NSApp.activate(ignoringOtherApps: true)
     }
