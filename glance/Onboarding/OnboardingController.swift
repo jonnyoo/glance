@@ -20,6 +20,7 @@ import SwiftUI
 enum OnboardingStep: String, CaseIterable {
     case intro
     case permissions
+    case securityNotice
     case preSetup
     case enroll
     case name
@@ -36,7 +37,7 @@ enum OnboardingStep: String, CaseIterable {
     /// only, and complete/intro have just one side.
     var showsBackButton: Bool {
         switch self {
-        case .permissions, .preSetup, .name, .password: return true
+        case .securityNotice, .permissions, .preSetup, .name, .password: return true
         case .intro, .enroll, .complete: return false
         }
     }
@@ -48,7 +49,7 @@ enum OnboardingStep: String, CaseIterable {
     var resumeTarget: OnboardingStep {
         switch self {
         case .enroll, .name, .password: return .preSetup
-        case .intro, .permissions, .preSetup, .complete: return self
+        case .intro, .securityNotice, .permissions, .preSetup, .complete: return self
         }
     }
 }
@@ -223,7 +224,7 @@ final class OnboardingController {
         NotchOverlayController.shared.presentOnboarding(controller)
     }
 
-    /// Entry point used by Settings' "Set up FaceID" / "Redo Face Enrollment" — presents
+    /// Entry point used by Settings' "Set up Face Unlock" / "Redo Face Enrollment" — presents
     /// the guided pose-capture plus naming step and saves directly once done.
     ///
     /// The Your Face page is still single-identity, so this keeps targeting
@@ -462,7 +463,8 @@ final class OnboardingController {
         withAnimation(OnboardingMetrics.stepAnimation) {
             switch step {
             case .intro: step = .permissions
-            case .permissions: step = .preSetup
+            case .permissions: step = .securityNotice
+            case .securityNotice: step = .preSetup
             case .preSetup: step = .enroll
             case .enroll: break // advances automatically on completion
             case .name: break // handled by confirmName()

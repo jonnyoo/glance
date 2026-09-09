@@ -18,6 +18,8 @@ struct OnboardingNotchView: View {
                 IntroStepView(controller: controller)
             case .permissions:
                 PermissionsStepView(controller: controller)
+            case .securityNotice:
+                SecurityNoticeStepView(controller: controller)
             case .preSetup:
                 PreSetupStepView(controller: controller)
             case .enroll:

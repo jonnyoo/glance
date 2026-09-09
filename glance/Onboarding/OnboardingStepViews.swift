@@ -20,7 +20,7 @@ struct IntroStepView: View {
                 Text("Glance")
                     .font(GlanceTheme.Font.title)
                     .foregroundStyle(GlanceTheme.textPrimary)
-                Text("FaceID for Mac")
+                Text("Face Unlock for Mac")
                     .font(GlanceTheme.Font.button)
                     .foregroundStyle(GlanceTheme.textSecondary)
 
@@ -95,7 +95,48 @@ struct PermissionsStepView: View {
     }
 }
 
-// MARK: - 3. Pre set-up
+// MARK: - 3. Security notice
+
+struct SecurityNoticeStepView: View {
+    let controller: OnboardingController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.system(size: 40, weight: .semibold))
+                .foregroundStyle(GlanceTheme.textPrimary)
+                .padding(.top, 25)
+                .padding(.leading, 4)
+
+            Text("Glance is not as secure as Apple's FaceID or TouchID.")
+                .font(GlanceTheme.Font.title)
+                .foregroundStyle(GlanceTheme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 4)
+
+            Text("It uses your Mac's standard webcam and is designed for convenience, not high-security authentication.")
+                .font(GlanceTheme.Font.passwordCaption)
+                .foregroundStyle(GlanceTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 4)
+                .padding(.bottom, 10)
+
+            HStack(spacing: 10) {
+                PillButton(title: "Back", style: .secondary) {
+                    controller.back()
+                }
+                PillButton(title: "I understand", isDefault: true) {
+                    controller.advance()
+                }
+            }
+        }
+        .onboardingContentPadding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(GlanceTheme.panel)
+    }
+}
+
+// MARK: - 4. Pre set-up
 
 struct PreSetupStepView: View {
     let controller: OnboardingController
@@ -143,7 +184,7 @@ private struct UnlockGlyphView: View {
     }
 }
 
-// MARK: - 4-6. Guided enrollment (camera + tick ring + camera-complete)
+// MARK: - 5-7. Guided enrollment (camera + tick ring + camera-complete)
 
 struct EnrollStepView: View {
     let controller: OnboardingController
@@ -270,7 +311,7 @@ private struct EnrollmentTooFarChevron: View {
     }
 }
 
-// MARK: - 7. Name
+// MARK: - 8. Name
 
 /// Asks who was just captured — for a recapture, pre-filled with the existing name so
 /// this doubles as rename.
@@ -322,7 +363,7 @@ struct NameStepView: View {
     }
 }
 
-// MARK: - 8. Password
+// MARK: - 9. Password
 
 struct PasswordStepView: View {
     let controller: OnboardingController
@@ -376,7 +417,7 @@ struct PasswordStepView: View {
     }
 }
 
-// MARK: - 9. Complete
+// MARK: - 10. Complete
 
 struct CompleteStepView: View {
     var body: some View {

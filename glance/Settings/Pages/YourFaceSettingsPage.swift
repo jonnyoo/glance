@@ -34,7 +34,7 @@ struct YourFaceSettingsPage: View {
     private var stateKind: PageStateKind {
         if store.isLocked { return .locked }
         // Ahead of `.notEnrolled` — a failed decrypt looks like an empty
-        // store, and offering "Set up FaceID" there would destroy the data.
+        // store, and offering "Set up Face Unlock" there would destroy the data.
         if store.loadFailure != nil { return .unreadable }
         return store.identities.isEmpty ? .notEnrolled : .enrolled
     }
@@ -134,7 +134,7 @@ struct YourFaceSettingsPage: View {
         SettingsEmptyStateView(
             icon: "faceid",
             message: "Face enrollment",
-            buttonTitle: "Set up FaceID",
+            buttonTitle: "Set up Face Unlock",
             isButtonEnabled: !enrollmentFlowIsRunning,
             action: { OnboardingController.startEnrollmentOnly() }
         )
@@ -185,7 +185,7 @@ struct YourFaceSettingsPage: View {
                         .foregroundStyle(SettingsMetrics.textSecondary)
                 }
 
-                Text("Enroll separate identities to use FaceID with multiple people, accessories (ex. glasses), facial expressions, or new lighting environments. This improves recognition quality.")
+                Text("Enroll separate identities to use Glance with multiple people, accessories (ex. glasses), facial expressions, or new lighting environments. This improves recognition quality.")
                     .font(.system(size: 12))
                     .foregroundStyle(SettingsMetrics.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)

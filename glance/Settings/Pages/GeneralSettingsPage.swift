@@ -86,11 +86,11 @@ struct GeneralSettingsPage: View {
         VStack(alignment: .leading, spacing: 8) {
             SettingsSectionTitle(text: "Behaviour")
             SettingsGroup {
-                SettingsRowContent(title: "Retry FaceID on Hover") {
+                SettingsRowContent(title: "Retry again on Hover") {
                     GlanceToggle(isOn: $settings.retryOnHover)
                 }
                 SettingsGroupDivider()
-                SettingsRowContent(title: "Auto retry FaceID once") {
+                SettingsRowContent(title: "Auto retry again once") {
                     GlanceToggle(isOn: $settings.autoRetryOnce)
                 }
                 SettingsGroupDivider()
