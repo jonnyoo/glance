@@ -98,14 +98,23 @@ enum EnrollmentPose: Int, CaseIterable {
     var instruction: String {
         switch self {
         case .center: return "Look straight at the camera"
-        case .left: return "Tilt your head slightly left"
-        case .topLeft: return "Tilt your head to the top left"
-        case .top: return "Tilt your head slightly up"
-        case .topRight: return "Tilt your head to the top right"
-        case .right: return "Tilt your head slightly right"
-        case .bottomRight: return "Tilt your head to the bottom right"
-        case .bottom: return "Tilt your head slightly down"
-        case .bottomLeft: return "Tilt your head to the bottom left"
+        case .left: return "Turn your head slightly left"
+        case .topLeft: return "Turn your head to the top left"
+        case .top: return "Turn your head slightly up"
+        case .topRight: return "Turn your head to the top right"
+        case .right: return "Turn your head slightly right"
+        case .bottomRight: return "Turn your head to the bottom right"
+        case .bottom: return "Turn your head slightly down"
+        case .bottomLeft: return "Turn your head to the bottom left"
+        }
+    }
+
+    /// Relaxes this pose's yaw/pitch bands — same knob as `stallWidenFactor`, so >1 is easier.
+    var matchLeniency: Float {
+        switch self {
+        case .bottomLeft, .bottomRight: return 1.5
+        case .bottom: return 1.2
+        default: return 1
         }
     }
 
@@ -407,6 +416,35 @@ final class OnboardingController {
         if enrollmentComplete { return "Face captured" }
         if isTooFar { return "Bring your face closer" }
         return currentPose?.instruction ?? ""
+    }
+
+    /// Where the head is currently turned, for the ring's live indicator.
+    struct HeadTurn: Equatable {
+        /// Compass angle (0 = up, clockwise) — same frame as `EnrollmentPose.compassAngle`.
+        let angle: Double
+        /// How far the turn has gone toward the current pose's threshold, 0...1.
+        let progress: Double
+    }
+
+    /// Below this fraction of the threshold the direction is mostly sensor noise.
+    private let headTurnDeadzone: Double = 0.15
+
+    /// Live head direction, or `nil` when there's nothing to point at. Axes are normalized
+    /// against the current pose's thresholds, so `progress` hits 1 as the pose starts matching.
+    var headTurn: HeadTurn? {
+        guard step == .enroll, !enrollmentComplete, faceDetected, !isTooFar,
+              let pose = currentPose, pose != .center,
+              let yaw = currentYaw, let pitch = currentPitch else { return nil }
+
+        // Vision inverts both axes vs. the screen: +yaw turns left, +pitch looks down.
+        let x = Double(-yaw / (yawInnerThreshold / pose.matchLeniency))
+        let y = Double(-pitch / (pitchInnerThreshold / pose.matchLeniency))
+
+        let magnitude = (x * x + y * y).squareRoot()
+        guard magnitude > headTurnDeadzone else { return nil }
+
+        let degrees = atan2(x, y) * 180 / .pi
+        return HeadTurn(angle: degrees < 0 ? degrees + 360 : degrees, progress: min(magnitude, 1))
     }
 
     private enum EnrollFrameOutcome: Sendable {
@@ -742,7 +780,7 @@ final class OnboardingController {
     }
 
     private func poseMatches(yaw: Float, pitch: Float, pose: EnrollmentPose, widened: Bool) -> Bool {
-        let factor: Float = widened ? stallWidenFactor : 1.0
+        let factor = (widened ? stallWidenFactor : 1.0) * pose.matchLeniency
         return yawMatches(yaw, band: pose.yawBand, factor: factor)
             && pitchMatches(pitch, band: pose.pitchBand, factor: factor)
     }

@@ -9,7 +9,18 @@
 import SwiftUI
 
 enum GlanceTheme {
-    static let accent = Color(red: 0x34 / 255, green: 0x99 / 255, blue: 0xFF / 255)
+    private static let accentRGB = (r: 0x34 / 255.0, g: 0x99 / 255.0, b: 0xFF / 255.0)
+    static let accent = Color(red: accentRGB.r, green: accentRGB.g, blue: accentRGB.b)
+
+    /// White at 0, `accent` at 1.
+    static func whiteToAccent(_ t: Double) -> Color {
+        let t = min(max(t, 0), 1)
+        return Color(
+            red: 1 + (accentRGB.r - 1) * t,
+            green: 1 + (accentRGB.g - 1) * t,
+            blue: 1 + (accentRGB.b - 1) * t
+        )
+    }
     /// Accent-derived shades for the enrollment sweep, shifted so layered streaks read
     /// as one body of light rather than several flat shapes.
     static let accentPale   = Color(red: 0xCF / 255, green: 0xE7 / 255, blue: 0xFF / 255)

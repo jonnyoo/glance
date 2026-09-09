@@ -3,7 +3,7 @@ build/
 DerivedData/
 *.xcuserstate
 
-# Xcode per-user state (schemes, breakpoints) — not meant to be shared
+# Xcode per-user state (schemes, breakpoints)
 xcuserdata/
 
 # Compiled Core ML models are derived from the committed .mlpackage source
@@ -14,3 +14,6 @@ xcuserdata/
 __pycache__/
 
 .DS_Store
+
+# Local release notes
+RELEASING.md

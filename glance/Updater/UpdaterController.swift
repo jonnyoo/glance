@@ -2,7 +2,7 @@
 //  UpdaterController.swift
 //  glance
 //
-//  Thin wrapper around Sparkle's `SPUStandardUpdaterController` (see RELEASING.md for the release process this depends on).
+//  Thin wrapper around Sparkle's `SPUStandardUpdaterController`.
 //  Split into two types because Sparkle's `@objc` delegate protocols need an `NSObject` conformer, which doesn't mix with
 //  `@Observable`: `UpdaterController` is what the app touches; `UpdatePresentationDelegate` only relays Sparkle's show/hide callbacks.
 //
