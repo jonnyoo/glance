@@ -24,6 +24,7 @@ https://github.com/user-attachments/assets/77438826-80a9-4ab2-9fc3-42407a2d0adb
 ---
 
 > [!WARNING]
+> ## Read before downloading
 > ## Glance is not as secure as Apple's FaceID or TouchID
 > 
 > MacBooks don't come equipped with the depth sensors that make iPhone FaceID trustworthy and secure. An
@@ -34,8 +35,7 @@ https://github.com/user-attachments/assets/77438826-80a9-4ab2-9fc3-42407a2d0adb
 > - macOS has no API that lets a third-party app authorize a login, so Glance unlocks by typing
 >   your stored password on the lock screen
 > 
-> Glance is a convenience feature, not a security upgrade. It's off by default, and you can leave
-it that way.
+> Glance is a convenience feature, not a security upgrade. Only continue if you accept the tradeoff.
 
 ## Installation
 
