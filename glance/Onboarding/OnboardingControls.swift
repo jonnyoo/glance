@@ -191,3 +191,66 @@ private func firstTextField(in view: NSView) -> NSView? {
     }
     return nil
 }
+
+/// Camera chooser shown on the pre-setup step. Onboarding runs before Settings is
+/// reachable, so on a docked/clamshelled Mac this is the only place to point
+/// enrollment at a USB camera instead of the suspended built-in one.
+struct CameraPickerRow: View {
+    let controller: OnboardingController
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "video.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(GlanceTheme.textDetail)
+                .frame(width: OnboardingMetrics.statusDotSize)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Camera")
+                    .font(GlanceTheme.Font.rowTitle)
+                    .foregroundStyle(GlanceTheme.textPrimary)
+                Text(controller.resolvedCameraName)
+                    .font(GlanceTheme.Font.rowDetail)
+                    .foregroundStyle(GlanceTheme.textDetail)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 4)
+
+            Menu {
+                Button("Automatic") { controller.selectCamera(nil) }
+                ForEach(controller.availableCameras) { device in
+                    Button(device.name) { controller.selectCamera(device.id) }
+                }
+            } label: {
+                Text("Change")
+                    .font(GlanceTheme.Font.grantLabel)
+                    .foregroundStyle(GlanceTheme.textPrimary)
+                    .frame(
+                        width: OnboardingMetrics.grantButtonSize.width,
+                        height: OnboardingMetrics.grantButtonSize.height
+                    )
+                    .background(GlanceTheme.surfaceRaised)
+                    .clipShape(Capsule())
+                    .contentShape(Capsule())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .fixedSize()
+            // Window accent tint otherwise paints the menu label blue.
+            .tint(GlanceTheme.textPrimary)
+            // A single camera and nothing to switch to — keep the row as a
+            // statement of what will be used rather than a dead control.
+            .disabled(controller.availableCameras.count < 2)
+            .opacity(controller.availableCameras.count < 2 ? 0.4 : 1)
+        }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity)
+        .frame(height: OnboardingMetrics.permissionRowHeight)
+        .background(GlanceTheme.surface)
+        .clipShape(Capsule())
+        .onAppear { controller.refreshCameras() }
+    }
+}
