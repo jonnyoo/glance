@@ -39,9 +39,38 @@ final class CameraManager: NSObject {
     /// Handed to the delegate outside the actor; only ever touched via `Task { @MainActor ... }`.
     private let framePublisher = FramePublisher()
 
+    /// Held in a box rather than a stored array so teardown can happen in the box's own
+    /// `deinit` — this class is `@MainActor`, and its `deinit` is not, so it can't touch
+    /// isolated state to unregister.
+    private final class ObserverBox: @unchecked Sendable {
+        var tokens: [NSObjectProtocol] = []
+        deinit { tokens.forEach(NotificationCenter.default.removeObserver) }
+    }
+
+    private let deviceObservers = ObserverBox()
+
     override init() {
         super.init()
         framePublisher.owner = self
+        observeDeviceChanges()
+    }
+
+    /// Docking, undocking, or opening the lid changes which camera `CameraDeviceCatalog`
+    /// would resolve to. Without this the session keeps whatever device it opened at
+    /// `start()` — which, for a camera that went away, means frames simply stop.
+    private func observeDeviceChanges() {
+        let names: [Notification.Name] = [
+            AVCaptureDevice.wasConnectedNotification,
+            AVCaptureDevice.wasDisconnectedNotification,
+        ]
+        deviceObservers.tokens = names.map { name in
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self, self.isRunning else { return }
+                    self.reconcileDeviceIfNeeded()
+                }
+            }
+        }
     }
 
     func start() async {

@@ -341,6 +341,48 @@ final class OnboardingController {
 
     private var permissionsPollTask: Task<Void, Never>?
 
+    // MARK: - Camera selection
+    //
+    // Settings' camera page is unreachable until onboarding finishes, so without a
+    // picker here a clamshelled Mac has no way to enroll: its built-in camera is still
+    // listed by AVFoundation, just suspended, and enrollment sits on a black preview.
+
+    /// Only cameras that can deliver frames right now — a suspended built-in camera
+    /// is exactly what we're trying to steer the user away from.
+    private(set) var availableCameras: [CameraDevice] = []
+
+    /// Nil means "let `CameraDeviceCatalog` decide". Reads through to settings so the
+    /// choice made here is the same one the unlock flow uses afterward.
+    var selectedCameraID: String? { GlanceSettings.shared.defaultCameraID }
+
+    /// Name of the camera enrollment will actually open, resolved the same way
+    /// `CameraManager` resolves it.
+    var resolvedCameraName: String {
+        guard let device = CameraDeviceCatalog.resolvedDevice() else { return "No camera found" }
+        return device.localizedName
+    }
+
+    func refreshCameras() {
+        // A saved pick that's no longer usable isn't cleared — `resolvedCameraName`
+        // already reports the fallback, and silently discarding a Settings choice
+        // because a dock is unplugged would be worse than showing it as inactive.
+        availableCameras = CameraDeviceCatalog.usableDevices()
+    }
+
+    /// `nil` restores automatic selection. Restarts the capture session when enrollment
+    /// is already live so the swap is visible immediately.
+    func selectCamera(_ id: String?) {
+        GlanceSettings.shared.defaultCameraID = id
+        // The per-display overrides would silently win over this pick on the very next
+        // resolve; onboarding's choice is meant to be the one that sticks.
+        GlanceSettings.shared.builtInDisplayCameraID = nil
+        GlanceSettings.shared.externalDisplayCameraID = nil
+
+        guard step == .enroll else { return }
+        camera.stop()
+        Task { await camera.start() }
+    }
+
     // MARK: - Enrollment
 
     /// 9 poses x 2 samples = 18 total, enough for a stable template without overlong holds.

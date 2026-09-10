@@ -168,6 +168,10 @@ struct PreSetupStepView: View {
                 UnlockGlyphView()
                     .frame(width: 120, height: 120)
             }
+
+            CameraPickerRow(controller: controller)
+                .padding(.top, 2)
+
             Spacer(minLength: 4)
 
             HStack(spacing: 10) {

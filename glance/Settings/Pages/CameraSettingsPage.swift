@@ -139,7 +139,11 @@ struct CameraSettingsPage: View {
                 Menu {
                     Button("System default") { selection.wrappedValue = nil }
                     ForEach(devices) { device in
-                        Button(device.name) { selection.wrappedValue = device.id }
+                        // Still selectable — a camera that's unplugged right now
+                        // is a legitimate pick for the config you usually run in.
+                        Button(device.isUsable ? device.name : "\(device.name) (unavailable)") {
+                            selection.wrappedValue = device.id
+                        }
                     }
                 } label: {
                     HStack(spacing: 6) {
