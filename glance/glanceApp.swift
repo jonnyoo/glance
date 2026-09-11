@@ -104,6 +104,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         item.menu = menu
         statusItem = item
+        statusItem?.isVisible = GlanceSettings.shared.showMenuBarIcon
+
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(menuBarVisibilityDidChange(_:)),
+            name: GlanceSettings.menuBarVisibilityDidChangeNotification, object: nil
+        )
 
         updateSessionMenuItem()
 
@@ -211,14 +217,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    @objc private func menuBarVisibilityDidChange(_ notification: Notification) {
+        let isVisible = notification.object as? Bool ?? GlanceSettings.shared.showMenuBarIcon
+        statusItem?.isVisible = isVisible
+    }
+
     /// Keeps the process alive after the window closes so it can still react to the screen locking (e.g. for face unlock).
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
     }
 
-    /// A Dock click must not create the Settings window — that produced a duplicate Recents icon. If already open, the default
-    /// reopen behavior just brings it forward.
+    /// Reopening the app (e.g. via Spotlight or Finder) reveals the Settings window if no window
+    /// is currently visible. This ensures users can always access settings even if the menu bar icon is hidden.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            revealSettingsWindow()
+            return true
+        }
         return flag
     }
 

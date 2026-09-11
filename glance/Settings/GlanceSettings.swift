@@ -89,7 +89,10 @@ enum UnlockTrigger: String, CaseIterable, Identifiable {
 final class GlanceSettings {
     static let shared = GlanceSettings()
 
+    static let menuBarVisibilityDidChangeNotification = Notification.Name("GlanceSettings.menuBarVisibilityDidChangeNotification")
+
     private enum Key {
+        static let showMenuBarIcon = "GlanceSettings.showMenuBarIcon"
         static let isFaceUnlockEnabled = "GlanceSettings.isFaceUnlockEnabled"
         static let matchThreshold = "GlanceSettings.matchThreshold"
         static let livenessChecksEnabled = "GlanceSettings.livenessChecksEnabled"
@@ -117,6 +120,12 @@ final class GlanceSettings {
 
     @ObservationIgnored private let defaults = UserDefaults.standard
 
+    var showMenuBarIcon: Bool {
+        didSet {
+            defaults.set(showMenuBarIcon, forKey: Key.showMenuBarIcon)
+            NotificationCenter.default.post(name: Self.menuBarVisibilityDidChangeNotification, object: showMenuBarIcon)
+        }
+    }
     var isFaceUnlockEnabled: Bool {
         didSet { defaults.set(isFaceUnlockEnabled, forKey: Key.isFaceUnlockEnabled) }
     }
@@ -253,6 +262,7 @@ final class GlanceSettings {
     }
 
     private init() {
+        showMenuBarIcon = defaults.object(forKey: Key.showMenuBarIcon) as? Bool ?? true
         // Enabled by default — onboarding already enrolled a face and set a
         // password specifically to use Face Unlock.
         isFaceUnlockEnabled = defaults.object(forKey: Key.isFaceUnlockEnabled) as? Bool ?? true
