@@ -104,6 +104,7 @@ final class GlanceSettings {
         static let faceDetectionSeconds = "GlanceSettings.faceDetectionSeconds"
         static let autoRetryOnce = "GlanceSettings.autoRetryOnce"
         static let hapticFeedbackEnabled = "GlanceSettings.hapticFeedbackEnabled"
+        static let nightBoostEnabled = "GlanceSettings.nightBoostEnabled"
         static let preferredDisplayID = "GlanceSettings.preferredDisplayID"
         static let preferredDisplayName = "GlanceSettings.preferredDisplayName"
         static let autoLockIntervalDays = "GlanceSettings.autoLockIntervalDays"
@@ -197,6 +198,15 @@ final class GlanceSettings {
     /// see `NotchOverlayView`'s hover handler and `.onChange(of: controller.phase)`.
     var hapticFeedbackEnabled: Bool {
         didSet { defaults.set(hapticFeedbackEnabled, forKey: Key.hapticFeedbackEnabled) }
+    }
+    /// Dark-room help: brighten frames before recognition, let the camera slow to 15 fps for a longer exposure, and
+    /// light the display up during the scan — see the `NightBoost` folder. Mirrored into `LowLightEnhancer.isEnabled`
+    /// since the frame path reads it off the main actor.
+    var nightBoostEnabled: Bool {
+        didSet {
+            defaults.set(nightBoostEnabled, forKey: Key.nightBoostEnabled)
+            LowLightEnhancer.isEnabled = nightBoostEnabled
+        }
     }
 
     static let faceDetectionRange = 3...10
@@ -301,6 +311,7 @@ final class GlanceSettings {
             ?? 5
         autoRetryOnce = defaults.object(forKey: Key.autoRetryOnce) as? Bool ?? false
         hapticFeedbackEnabled = defaults.object(forKey: Key.hapticFeedbackEnabled) as? Bool ?? true
+        nightBoostEnabled = defaults.object(forKey: Key.nightBoostEnabled) as? Bool ?? true
         preferredDisplayID = defaults.string(forKey: Key.preferredDisplayID)
         preferredDisplayName = defaults.string(forKey: Key.preferredDisplayName)
 
@@ -320,5 +331,6 @@ final class GlanceSettings {
         // Push into the nonisolated mirror immediately, or FaceRecognitionPipeline
         // would keep its own default until the slider is first touched.
         FaceRecognitionPipeline.minimumProminentFaceWidth = minimumFaceWidth
+        LowLightEnhancer.isEnabled = nightBoostEnabled
     }
 }

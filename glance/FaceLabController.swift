@@ -157,7 +157,8 @@ final class FaceLabController {
             let (result, livenessFrame) = try await Task.detached(priority: .userInitiated) {
                 let result = try pipeline.recognize(in: cameraFrame.image)
                 let faceCrop = CameraManager.renderCrop(from: cameraFrame, imageRect: result.face.boundingBox)
-                return (result, LivenessFeatureExtractor.extract(from: result, frame: cameraFrame.image, faceCrop: faceCrop))
+                // `rawImage`, matching FaceUnlockCoordinator — Face Lab exists to show the real cue values.
+                return (result, LivenessFeatureExtractor.extract(from: result, frame: cameraFrame.rawImage, faceCrop: faceCrop))
             }.value
             detectedFaces = [result.face]
             currentResult = result

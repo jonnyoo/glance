@@ -158,6 +158,7 @@ final class FaceUnlockCoordinator {
         scanGeneration &+= 1
         autoRetryTask?.cancel()
         autoRetryTask = nil
+        SceneIlluminator.shared.end()
         camera.stop()
         NotchOverlayController.shared.disarm()
         // Covers isEnabled being switched off directly, keeping "disarmed" and "not listening for space" in lockstep.
@@ -234,6 +235,11 @@ final class FaceUnlockCoordinator {
     /// of itself. This was a real bug — a superseded `camera.stop()` queued behind the newer cycle's `startRunning()` made the
     /// camera visibly switch on then die mid-warm-up, leaving the surviving cycle polling a dead session and never unlocking.
     private func runScanCycle(generation: Int) async {
+        // Released here rather than on the success path alone: this function has four exits, and the flood light is a
+        // global side effect (display brightness pinned, a panel over the lock screen). The generation test keeps the
+        // intended "a newer cycle owns it now" hand-off — that cycle's own defer releases it.
+        defer { if generation == scanGeneration { SceneIlluminator.shared.end() } }
+
         guard LockMonitor.isScreenActuallyLocked() else { return }
 
         await camera.start()
@@ -257,6 +263,7 @@ final class FaceUnlockCoordinator {
         )
 
         // A newer cycle now owns the camera and overlay — leave both alone, and leave the auto-retry one-shot unspent.
+        // The illuminator is handed over the same way, by the generation test in this function's `defer`.
         guard generation == scanGeneration else { return }
 
         camera.stop()
@@ -340,6 +347,8 @@ final class FaceUnlockCoordinator {
         var lastFaceBoundingBox: CGRect?
         /// Cheap way to detect "no new camera frame yet" vs. "fresh frame" — without it a repeat frame would corrupt the liveness motion signal.
         var lastProcessedFrameID: UInt64?
+        /// One-shot per cycle: once the light is on, every later frame reads bright, so this can't be re-derived per frame.
+        var hasEngagedNightBoost = false
 
         while Date() < deadline, !Task.isCancelled,
               !requireOverlayScanning || NotchOverlayController.shared.phase == .scanning {
@@ -352,12 +361,34 @@ final class FaceUnlockCoordinator {
             }
             lastProcessedFrameID = frame.id
 
+            // Night boost: the first dark frame of a cycle switches the display into a flood light for the rest of it.
+            // Judged on the raw luma, not the enhanced frame, and independent of animation settings — it's functional,
+            // not decorative. The screen must be the one the camera faces, or the light lands behind the user.
+            if !hasEngagedNightBoost,
+               GlanceSettings.shared.nightBoostEnabled,
+               frame.meanLuminance < LowLightEnhancer.darknessThreshold,
+               let screen = CameraDeviceCatalog.screenForActiveCamera() {
+                hasEngagedNightBoost = true
+                SceneIlluminator.shared.begin(on: screen)
+                statusMessage = "Dark room — lighting up the screen…"
+            }
+
+            // Frames captured while the light ramps are bad evidence for both halves: over-exposed highlights read as
+            // screen glare to the deny cue, and a half-lit face scores below threshold, which would otherwise burn
+            // through the six-frame wrong-face streak in ~0.4s at 15fps. Skip them outright rather than judge them.
+            if SceneIlluminator.shared.isSettling {
+                try? await Task.sleep(nanoseconds: 20_000_000)
+                continue
+            }
+
             let pipeline = self.pipeline
             let previousBoundingBox = lastFaceBoundingBox
             let outcome = await Task.detached(priority: .userInitiated) { () -> (FaceRecognitionResult, LivenessFrame)? in
                 guard let result = try? pipeline.recognize(in: frame.image, preferNear: previousBoundingBox) else { return nil }
                 let faceCrop = CameraManager.renderCrop(from: frame, imageRect: result.face.boundingBox)
-                return (result, LivenessFeatureExtractor.extract(from: result, frame: frame.image, faceCrop: faceCrop))
+                // Recognition gets the brightened frame; the deny cues get what the sensor actually saw, so our own
+                // gain can neither manufacture nor erase the rectangle a spoofed phone bezel would show.
+                return (result, LivenessFeatureExtractor.extract(from: result, frame: frame.rawImage, faceCrop: faceCrop))
             }.value
 
             guard let (result, livenessFrame) = outcome else {

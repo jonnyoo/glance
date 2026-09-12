@@ -77,6 +77,7 @@ Open the `.dmg` file and drag Glance to `/Applications`, then open it.
 | **Camera & display** | Choose which camera to use, including different cameras for the built-in display vs. an external monitor. |
 | **Auto-locking sessions** | The Touch ID session re-locks itself after an idle period you choose, so an unattended Mac doesn't stay authorized forever. |
 | **Trackpad haptics** | Hovering over the notch will trigger haptics |
+| **Night boost** | Works in a dark room: the top third of the display becomes a warm flood light for the length of the scan (brightness raised and restored afterwards, password field left clear), the camera is allowed to drop to 15 fps for a longer exposure, and frames are denoised and gained up before recognition. Frames captured while the light is still coming up are skipped rather than judged. Toggle under General → Night. |
 | **Notchless Mac support** | Macs without a notch will be replaced with a pill-shape, dynamic island style design. |
 | **Your data, your call** | Edit or delete your enrolment or stored password at any time. The encrypted files are removed immediately. |
 

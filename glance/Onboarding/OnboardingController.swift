@@ -384,6 +384,10 @@ final class OnboardingController {
     /// Whether the last-seen face read as too small to enroll reliably — swaps the pose
     /// instruction for a "move closer" prompt while true.
     private(set) var isTooFar = false
+    /// Set when the room is dark enough that Night Boost is gaining frames up. Enrolling from those would bake a
+    /// noisy, under-exposed face into the template, which then matches neither daylight nor the flood-lit scan the
+    /// unlock path produces in the same room.
+    private(set) var isTooDark = false
     private(set) var enrollmentComplete = false
 
     /// Sectors already captured — read by EnrollmentRingView to decide which
@@ -433,6 +437,7 @@ final class OnboardingController {
     /// completion line.
     var enrollmentInstruction: String {
         if enrollmentComplete { return "Face captured" }
+        if isTooDark { return "Too dark to set up — turn on a light" }
         if isTooFar { return "Bring your face closer" }
         return currentPose?.instruction ?? ""
     }
@@ -451,7 +456,7 @@ final class OnboardingController {
     /// Live head direction, or `nil` when there's nothing to point at. Axes are normalized
     /// against the current pose's thresholds, so `progress` hits 1 as the pose starts matching.
     var headTurn: HeadTurn? {
-        guard step == .enroll, !enrollmentComplete, faceDetected, !isTooFar,
+        guard step == .enroll, !enrollmentComplete, faceDetected, !isTooFar, !isTooDark,
               let pose = currentPose, pose != .center,
               let yaw = currentYaw, let pitch = currentPitch else { return nil }
 
@@ -704,6 +709,14 @@ final class OnboardingController {
               let cameraFrame = camera.currentFrame, let pose = currentPose else { return }
         isProcessingFrame = true
         defer { isProcessingFrame = false }
+
+        guard !cameraFrame.isLowLightEnhanced else {
+            isTooDark = true
+            matchStreak = 0
+            poseHoldStartedAt = nil
+            return
+        }
+        isTooDark = false
 
         let pipeline = self.pipeline
         let minimumWidth = enrollmentMinimumFaceWidth
