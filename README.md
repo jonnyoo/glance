@@ -155,7 +155,7 @@ debug section should appear in the sidebar.
   ```
 2. Open in Xcode:
   ```bash
-   open glance/glance.xcodeproj
+   open glance.xcodeproj
   ```
 3. Run the project:
   - Click `run` or press `Cmd + R`.
