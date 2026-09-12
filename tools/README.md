@@ -63,3 +63,37 @@ python tools/convert_arcface.py --onnx-path /path/to/w600k_mbf.onnx
 If you ever swap in a different ArcFace variant (e.g. `w600k_r50` via
 `--variant w600k_r50`), this contract stays the same — only the file size
 and latency change.
+
+---
+
+# Enrollment self-test
+
+`enrollment_selftest.swift` drives the guided-enrollment pose maths with a
+simulated head and reports how hard enrollment is to finish.
+
+```bash
+swiftc -O tools/enrollment_selftest.swift glance/Onboarding/EnrollmentPoseGeometry.swift \
+    -o /tmp/enrollment_selftest
+/tmp/enrollment_selftest
+```
+
+It compiles the shipping `EnrollmentPoseGeometry.swift` rather than a copy, so
+it cannot stay green while the app's matching drifts.
+
+It asserts the properties that matter and prints the numbers behind them:
+
+1. **The ring and the gate agree** for a turn pointing at the requested pose:
+   `headTurn`'s progress and `poseMatches` derive from the same normalized
+   vector and honour the same outer cap, so the ring can never read full while
+   the pose is refused. A turn pointing at a *different* sector is a separate
+   matter — the ring only ever describes the pose being asked for.
+2. **A diagonal costs no more head turn than a cardinal.**
+3. **The eight sectors tile the circle exactly once**, boundaries included: no
+   direction satisfies two poses, and none falls between them.
+
+It then simulates enrollment at three levels of user effort with a noisy
+yaw/pitch estimate, modelling the real capture loop — the 500 ms continuous
+hold, the match streak, and two samples per pose, with any non-matching frame
+restarting the hold. It prints time-to-enrol and give-up rate against the old
+rectangular matcher, which is kept in the file purely so the regression stays
+visible. The random source is seeded, so runs are reproducible.
