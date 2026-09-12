@@ -429,9 +429,21 @@ final class OnboardingController {
         EnrollmentPose(rawValue: currentPoseIndex)
     }
 
+    /// Non-nil when the ArcFace Core ML model failed to load and `FaceRecognitionPipeline` fell back to Vision feature
+    /// prints. That fallback makes enrollment impossible rather than merely worse: `VisionFeaturePrintEmbedder` sets
+    /// `requiresAlignment = false`, so `recognize` returns `.paddedCrop`, and `processMatchedEnrollFrame` accepts only
+    /// `.fivePoint`. Every frame is silently rejected, at every angle, in every light. Until now the only place that
+    /// said so was Face Lab, which is hidden behind five clicks on the About page.
+    var recognitionUnavailableReason: String? {
+        guard pipeline.usingFallbackEmbedder else { return nil }
+        return pipeline.fallbackReason ?? "the face model could not be loaded"
+    }
+
     /// Copy shown under the camera: pose guidance, a closer-up prompt, or the
     /// completion line.
     var enrollmentInstruction: String {
+        // First, because it is the only one of these the user cannot act their way out of.
+        if recognitionUnavailableReason != nil { return "Face model didn't load — setup can't continue" }
         if enrollmentComplete { return "Face captured" }
         if isTooFar { return "Bring your face closer" }
         return currentPose?.instruction ?? ""

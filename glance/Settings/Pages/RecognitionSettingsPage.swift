@@ -56,6 +56,12 @@ struct RecognitionSettingsPage: View {
 
     private var unlockedState: some View {
         VStack(alignment: .leading, spacing: 20) {
+            // Every control below tunes a model that isn't running. Shown here rather than only in Face Lab, which is
+            // hidden behind five clicks on the About page — an affected user has no reason to know it exists.
+            if coordinator.pipeline.usingFallbackEmbedder {
+                SettingsCaption(text: "The ArcFace model didn’t load (\(coordinator.pipeline.fallbackReason ?? "unknown reason")), so glance fell back to Vision’s feature print, which is far too weak to unlock with. Face setup can’t complete and the thresholds below don’t apply. Reinstalling glance is the usual fix.")
+            }
+
             SettingsGroup {
                 SettingsSteppedSliderRowContent(
                     title: "Match confidence",
