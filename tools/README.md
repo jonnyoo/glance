@@ -63,3 +63,28 @@ python tools/convert_arcface.py --onnx-path /path/to/w600k_mbf.onnx
 If you ever swap in a different ArcFace variant (e.g. `w600k_r50` via
 `--variant w600k_r50`), this contract stays the same — only the file size
 and latency change.
+
+---
+
+# Enrollment self-test
+
+`enrollment_selftest.swift` drives the guided-enrollment pose maths with a
+simulated head and reports how hard enrollment is to finish.
+
+```bash
+swiftc -O tools/enrollment_selftest.swift -o /tmp/enrollment_selftest
+/tmp/enrollment_selftest
+```
+
+It asserts the two properties that matter and prints the numbers behind them:
+
+1. **The ring and the gate agree.** `headTurn`'s progress and `poseMatches`
+   read the same normalized vector, so the ring can never fill while the pose
+   is still refused.
+2. **A diagonal costs no more head turn than a cardinal**, and a turn
+   satisfies only the sector it actually points at.
+
+It then simulates enrollment at three levels of user effort with a noisy
+yaw/pitch estimate, and prints time-to-enrol and give-up rate against the old
+rectangular matcher, which is kept in the file purely so the regression stays
+visible. The random source is seeded, so runs are reproducible.

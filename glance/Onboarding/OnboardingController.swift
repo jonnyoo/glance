@@ -59,25 +59,6 @@ enum OnboardingStep: String, CaseIterable {
 enum EnrollmentPose: Int, CaseIterable {
     case center, left, topLeft, top, topRight, right, bottomRight, bottom, bottomLeft
 
-    enum YawBand { case left, none, right }
-    enum PitchBand { case up, none, down }
-
-    var yawBand: YawBand {
-        switch self {
-        case .left, .topLeft, .bottomLeft: return .left
-        case .right, .topRight, .bottomRight: return .right
-        case .center, .top, .bottom: return .none
-        }
-    }
-
-    var pitchBand: PitchBand {
-        switch self {
-        case .top, .topLeft, .topRight: return .up
-        case .bottom, .bottomLeft, .bottomRight: return .down
-        case .center, .left, .right: return .none
-        }
-    }
-
     /// Compass angle (0 = up, clockwise) this pose's ring sector is centered
     /// on. `nil` for center, which pulses the whole ring instead of
     /// claiming a sector.
@@ -367,10 +348,13 @@ final class OnboardingController {
     // preview. Pitch's sign is the opposite of the initial guess — see `pitchMatches` below.
     private let yawInnerThreshold: Float = 0.25
     private let yawCenterTolerance: Float = 0.18
-    private let yawOuterCap: Float = 1.2
     private let pitchInnerThreshold: Float = 0.20
     private let pitchCenterTolerance: Float = 0.15
-    private let pitchOuterCap: Float = 0.9
+    /// Half of a 45-degree ring sector, so a turn counts toward the sector it actually points at and no other.
+    private let poseSectorTolerance: Double = 22.5
+    /// Replaces the old per-axis outer caps, which rejected wild Vision estimates. In `TurnVector` units those were
+    /// yawOuterCap/yawInnerThreshold = 4.8 and pitchOuterCap/pitchInnerThreshold = 4.5; the lower keeps the stricter.
+    private let outerMagnitudeCap: Double = 4.5
     /// If a pose takes longer than this, matching bands widen by `stallWidenFactor` so an
     /// unusual camera angle can't permanently strand the user.
     private let stallTimeout: Duration = .seconds(12)
@@ -448,22 +432,45 @@ final class OnboardingController {
     /// Below this fraction of the threshold the direction is mostly sensor noise.
     private let headTurnDeadzone: Double = 0.15
 
-    /// Live head direction, or `nil` when there's nothing to point at. Axes are normalized
-    /// against the current pose's thresholds, so `progress` hits 1 as the pose starts matching.
+    /// Where the head is pointing, normalized so 1.0 means "turned far enough". Both the ring the user is watching
+    /// and the gate that accepts a pose read this, so the two cannot drift apart — see `poseMatches`.
+    private struct TurnVector {
+        /// Screen-right, in units of `yawInnerThreshold`.
+        let x: Double
+        /// Up, in units of `pitchInnerThreshold`.
+        let y: Double
+
+        var magnitude: Double { (x * x + y * y).squareRoot() }
+
+        /// Compass degrees, 0 = up, clockwise — the same frame as `EnrollmentPose.compassAngle`.
+        var compassAngle: Double {
+            let degrees = atan2(x, y) * 180 / .pi
+            return degrees < 0 ? degrees + 360 : degrees
+        }
+    }
+
+    /// Vision inverts both axes against the screen: +yaw turns left, +pitch looks down.
+    private func normalizedTurn(yaw: Float, pitch: Float) -> TurnVector {
+        TurnVector(x: Double(-yaw / yawInnerThreshold), y: Double(-pitch / pitchInnerThreshold))
+    }
+
+    /// How far the head must turn for `pose`, in `TurnVector` units. Leniency and the stall widening both shrink it,
+    /// exactly as they used to scale the rectangular bands.
+    private func requiredMagnitude(for pose: EnrollmentPose, widened: Bool) -> Double {
+        1.0 / Double((widened ? stallWidenFactor : 1.0) * pose.matchLeniency)
+    }
+
+    /// Live head direction, or `nil` when there's nothing to point at. `progress` hits 1 exactly when the pose starts
+    /// matching, which is now true for the diagonals too.
     var headTurn: HeadTurn? {
         guard step == .enroll, !enrollmentComplete, faceDetected, !isTooFar,
               let pose = currentPose, pose != .center,
               let yaw = currentYaw, let pitch = currentPitch else { return nil }
 
-        // Vision inverts both axes vs. the screen: +yaw turns left, +pitch looks down.
-        let x = Double(-yaw / (yawInnerThreshold / pose.matchLeniency))
-        let y = Double(-pitch / (pitchInnerThreshold / pose.matchLeniency))
-
-        let magnitude = (x * x + y * y).squareRoot()
-        guard magnitude > headTurnDeadzone else { return nil }
-
-        let degrees = atan2(x, y) * 180 / .pi
-        return HeadTurn(angle: degrees < 0 ? degrees + 360 : degrees, progress: min(magnitude, 1))
+        let turn = normalizedTurn(yaw: yaw, pitch: pitch)
+        let required = requiredMagnitude(for: pose, widened: false)
+        guard turn.magnitude > headTurnDeadzone * required else { return nil }
+        return HeadTurn(angle: turn.compassAngle, progress: min(turn.magnitude / required, 1))
     }
 
     private enum EnrollFrameOutcome: Sendable {
@@ -817,28 +824,31 @@ final class OnboardingController {
         }
     }
 
+    /// A directional pose matches when the head has turned far enough *in that direction*, measured the same way the
+    /// progress ring measures it.
+    ///
+    /// This used to test yaw and pitch independently, which quietly made the four diagonals 1.41x harder than the ring
+    /// implied: a perfect 45-degree turn puts 0.707 on each axis and fills the ring to 100%, but each axis still had to
+    /// reach 1.0 on its own, so the user had to keep turning past the point where the UI said they were done, with no
+    /// feedback explaining why. Cardinal poses were unaffected, which is why only the diagonals felt impossible.
     private func poseMatches(yaw: Float, pitch: Float, pose: EnrollmentPose, widened: Bool) -> Bool {
         let factor = (widened ? stallWidenFactor : 1.0) * pose.matchLeniency
-        return yawMatches(yaw, band: pose.yawBand, factor: factor)
-            && pitchMatches(pitch, band: pose.pitchBand, factor: factor)
+        guard let compass = pose.compassAngle else {
+            // Centre is a box around the origin rather than a direction, and was never the problem — left as it was.
+            return abs(yaw) < yawCenterTolerance * factor && abs(pitch) < pitchCenterTolerance * factor
+        }
+
+        let turn = normalizedTurn(yaw: yaw, pitch: pitch)
+        guard turn.magnitude >= requiredMagnitude(for: pose, widened: widened),
+              turn.magnitude <= outerMagnitudeCap
+        else { return false }
+        return Self.angularDistance(turn.compassAngle, compass) <= poseSectorTolerance
     }
 
-    private func yawMatches(_ yaw: Float, band: EnrollmentPose.YawBand, factor: Float) -> Bool {
-        switch band {
-        case .none: return abs(yaw) < yawCenterTolerance * factor
-        case .left: return yaw > yawInnerThreshold / factor && yaw < yawOuterCap
-        case .right: return yaw < -yawInnerThreshold / factor && yaw > -yawOuterCap
-        }
-    }
-
-    /// Confirmed empirically: Vision reports negative pitch for "looking up" and positive
-    /// for "looking down" — the opposite of the initial guess.
-    private func pitchMatches(_ pitch: Float, band: EnrollmentPose.PitchBand, factor: Float) -> Bool {
-        switch band {
-        case .none: return abs(pitch) < pitchCenterTolerance * factor
-        case .up: return pitch < -pitchInnerThreshold / factor && pitch > -pitchOuterCap
-        case .down: return pitch > pitchInnerThreshold / factor && pitch < pitchOuterCap
-        }
+    /// Smallest absolute separation between two compass angles, in degrees.
+    private static func angularDistance(_ a: Double, _ b: Double) -> Double {
+        let delta = abs(a - b).truncatingRemainder(dividingBy: 360)
+        return min(delta, 360 - delta)
     }
 
     /// Runs the camera-complete sequence (instructions fade, preview fades, checkmark
