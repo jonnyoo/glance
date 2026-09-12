@@ -284,7 +284,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = glance/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSCameraUsageDescription = "glance uses the camera to test on-device face recognition in the Face Lab debug tab.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "glance uses the camera to recognize your face and unlock your Mac. Frames are processed on-device and are never saved.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -320,7 +320,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = glance/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSCameraUsageDescription = "glance uses the camera to test on-device face recognition in the Face Lab debug tab.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "glance uses the camera to recognize your face and unlock your Mac. Frames are processed on-device and are never saved.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
