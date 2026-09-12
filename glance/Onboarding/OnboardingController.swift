@@ -666,8 +666,25 @@ final class OnboardingController {
         }
     }
 
+    /// Whether the system alert has been asked for once already this run — see `grantAccessibility`.
+    private var hasRequestedAccessibilityPrompt = false
+
     func grantAccessibility() {
-        KeystrokeInjector.promptForAccessibility()
+        guard !KeystrokeInjector.isAccessibilityTrusted() else {
+            refreshPermissions()
+            return
+        }
+        // `AXIsProcessTrustedWithOptions` raises its alert only while the decision is still undecided. Once the user
+        // has dismissed or denied it — or the app is listed-but-unchecked after a reinstall, a move, or a re-signed
+        // update — it silently returns false and shows nothing. Tapping Grant then does literally nothing, forever,
+        // and Next stays disabled because it waits on `accessibilityGranted`, so onboarding cannot be completed at
+        // all. `grantCamera` already handles the equivalent case by opening System Settings; this mirrors it.
+        guard hasRequestedAccessibilityPrompt else {
+            hasRequestedAccessibilityPrompt = true
+            KeystrokeInjector.promptForAccessibility()
+            return
+        }
+        openSystemSettings(pane: "Privacy_Accessibility")
     }
 
     func grantCamera() {
