@@ -85,6 +85,9 @@ struct CameraSettingsPage: View {
                         .strokeBorder(SettingsMetrics.rowBorder, lineWidth: SettingsMetrics.rowBorderWidth)
                 )
 
+            if isPreviewShown, let note = previewCamera.frameRateNote {
+                SettingsCaption(text: note)
+            }
             if isPreviewShown, let error = previewCamera.errorMessage {
                 SettingsCaption(text: error)
             }

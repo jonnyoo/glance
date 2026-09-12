@@ -617,6 +617,7 @@ final class OnboardingController {
         matchStreak = 0
         poseHoldStartedAt = nil
         isTooFar = false
+        isTooDark = false
         enrollmentComplete = false
         guideVisible = false
         cameraPreviewVisible = true
@@ -629,6 +630,9 @@ final class OnboardingController {
         guideVisible = true
         cameraPreviewVisible = true
         showCheckmark = false
+        // Stale from a previous dark attempt would otherwise show "Too dark" and suppress head-turn feedback before
+        // the restarted camera has produced a single frame to judge.
+        isTooDark = false
         poseStartedAt = .now
         captureReadyAt = .now + initialCaptureDelay
         poseHoldStartedAt = nil

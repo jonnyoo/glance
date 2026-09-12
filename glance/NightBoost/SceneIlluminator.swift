@@ -50,6 +50,11 @@ final class SceneIlluminator {
     private var isSkyLightDelegated = false
     /// Display + brightness as found at `begin`, restored verbatim at `end`.
     private var restoreBrightness: (display: CGDirectDisplayID, value: Float)?
+    /// Retries a refused restore without needing another scan to come along. Bounded, so a permanently unwritable
+    /// display costs a couple of seconds of attempts rather than a task that never ends.
+    private var restoreRetryTask: Task<Void, Never>?
+    private static let restoreRetryAttempts = 6
+    private static let restoreRetryDelay: Duration = .milliseconds(400)
 
     private init() {
         // A quit mid-scan (menu bar Quit, a Sparkle update relaunch, logout) would otherwise leave the display pinned at
@@ -65,17 +70,20 @@ final class SceneIlluminator {
 
     /// Synchronous teardown for paths that have no time for a fade — app termination. Ordinary scan exits use `end()`.
     func restoreImmediately() {
-        guard isActive else { return }
-        isActive = false
-        litAt = nil
-        if let panel {
-            if isSkyLightDelegated, let skyLight = NotchSkyLight.shared {
-                skyLight.undelegate(panel)
+        if isActive {
+            isActive = false
+            litAt = nil
+            if let panel {
+                if isSkyLightDelegated, let skyLight = NotchSkyLight.shared {
+                    skyLight.undelegate(panel)
+                }
+                isSkyLightDelegated = false
+                panel.orderOut(nil)
             }
-            isSkyLightDelegated = false
-            panel.orderOut(nil)
         }
-        restoreBrightnessIfNeeded()
+        // One synchronous attempt and no retry task: the process is going away, so there is nothing left to run it.
+        restoreRetryTask?.cancel()
+        attemptBrightnessRestore()
     }
 
     /// No-op if already lit. `screen` is where the light goes — normally the display the camera lives on.
@@ -90,11 +98,13 @@ final class SceneIlluminator {
 
     /// Safe to call any number of times, from any exit path.
     func end() {
-        guard isActive else { return }
-        isActive = false
-        litAt = nil
-
-        hidePanel()
+        if isActive {
+            isActive = false
+            litAt = nil
+            hidePanel()
+        }
+        // Outside the `isActive` branch on purpose: a restore refused by a previous scan is still owed, and every
+        // caller of this method guards on `isActive`, so gating the retry on it would strand the display forever.
         restoreBrightnessIfNeeded()
     }
 
@@ -107,19 +117,42 @@ final class SceneIlluminator {
               let current = control.brightness(of: display)
         else { return }
         // Only remember a value we will actually change, so `end` never "restores" a brightness the user set themselves.
+        // Flush anything a previous scan still owes before recording a new baseline, and refuse to boost again while
+        // that is unresolved: `current` would be our own boosted value, so recording it would make the display's
+        // brightness permanently ours.
+        restoreRetryTask?.cancel()
+        attemptBrightnessRestore()
+        guard restoreBrightness == nil else { return }
+
         guard current < Self.boostedBrightness else { return }
         restoreBrightness = (display, current)
         control.set(Self.boostedBrightness, on: display)
     }
 
+    /// Attempts the restore, keeping the record if it is refused, and schedules a bounded retry when it is.
+    private func restoreBrightnessIfNeeded() {
+        guard restoreBrightness != nil else { return }
+        guard !attemptBrightnessRestore() else { return }
+
+        restoreRetryTask?.cancel()
+        restoreRetryTask = Task { [weak self] in
+            for _ in 0..<Self.restoreRetryAttempts {
+                try? await Task.sleep(for: Self.restoreRetryDelay)
+                guard !Task.isCancelled, let self, self.restoreBrightness != nil else { return }
+                if self.attemptBrightnessRestore() { return }
+            }
+        }
+    }
+
     /// The record is cleared only once the write is confirmed. Clearing first would make a single refused restore
     /// permanent — the app would have forgotten the brightness the user actually had.
-    private func restoreBrightnessIfNeeded() {
-        guard let pending = restoreBrightness else { return }
-        guard let control = DisplayBrightnessControl.shared, control.canChange(pending.display) else { return }
-        if control.set(pending.value, on: pending.display) {
-            restoreBrightness = nil
-        }
+    @discardableResult
+    private func attemptBrightnessRestore() -> Bool {
+        guard let pending = restoreBrightness else { return true }
+        guard let control = DisplayBrightnessControl.shared, control.canChange(pending.display) else { return false }
+        guard control.set(pending.value, on: pending.display) else { return false }
+        restoreBrightness = nil
+        return true
     }
 
     // MARK: - Panel
