@@ -157,7 +157,8 @@ final class FaceLabController {
             let (result, livenessFrame) = try await Task.detached(priority: .userInitiated) {
                 let result = try pipeline.recognize(in: cameraFrame.image)
                 let faceCrop = CameraManager.renderCrop(from: cameraFrame, imageRect: result.face.boundingBox)
-                return (result, LivenessFeatureExtractor.extract(from: result, frame: cameraFrame.image, faceCrop: faceCrop))
+                // `rawImage`, matching FaceUnlockCoordinator — Face Lab exists to show the real cue values.
+                return (result, LivenessFeatureExtractor.extract(from: result, frame: cameraFrame.rawImage, faceCrop: faceCrop))
             }.value
             detectedFaces = [result.face]
             currentResult = result
@@ -176,7 +177,18 @@ final class FaceLabController {
 
     // MARK: - Enrollment
 
+    /// Mirrors the guided-enrollment guard in `OnboardingController`: a template built from a gained-up frame matches
+    /// neither daylight nor the flood-lit scan the same room later produces. Face Lab is a debug tool, but it writes to
+    /// the same store, so it must not be the back door around that rule.
+    var isTooDarkToEnroll: Bool {
+        camera.currentFrame?.isLowLightEnhanced ?? false
+    }
+
     func captureSample() {
+        guard !isTooDarkToEnroll else {
+            log("Too dark — the frame is being brightened by Night Boost, so this sample would poison the template.")
+            return
+        }
         guard let result = currentResult else {
             log("No face detected — can't capture a sample.")
             return

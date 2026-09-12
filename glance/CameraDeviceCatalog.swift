@@ -33,6 +33,21 @@ enum CameraDeviceCatalog {
         return CGDisplayIsBuiltin(screenNumber) != 0
     }
 
+    /// The screen the active camera physically sits on — the only display whose light actually reaches the user's face.
+    /// `nil` when that can't be determined, so callers skip illuminating rather than light a monitor the camera is not
+    /// facing (which would backlight the subject and make auto-exposure pull the face *darker*).
+    static func screenForActiveCamera() -> NSScreen? {
+        guard let device = resolvedDevice() else { return nil }
+        guard device.deviceType == .builtInWideAngleCamera else {
+            // An external or Continuity camera can sit anywhere; the display it faces is unknowable from here.
+            return nil
+        }
+        return NSScreen.screens.first {
+            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID)
+                .map { CGDisplayIsBuiltin($0) != 0 } ?? false
+        }
+    }
+
     /// Display-specific override, then flat default, then the system default camera.
     static func resolvedDevice() -> AVCaptureDevice? {
         let settings = GlanceSettings.shared

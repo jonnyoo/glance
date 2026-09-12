@@ -400,7 +400,7 @@ struct FaceLabView: View {
                     Button("Capture Sample") {
                         controller.captureSample()
                     }
-                    .disabled(controller.currentResult == nil || controller.store.isLocked)
+                    .disabled(controller.currentResult == nil || controller.store.isLocked || controller.isTooDarkToEnroll)
                 }
 
                 if controller.store.identities.isEmpty {

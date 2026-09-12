@@ -111,6 +111,16 @@ struct GeneralSettingsPage: View {
         }
 
         VStack(alignment: .leading, spacing: 8) {
+            SettingsSectionTitle(text: "Night")
+            SettingsGroup {
+                SettingsRowContent(title: "Light up the screen in the dark") {
+                    GlanceToggle(isOn: $settings.nightBoostEnabled)
+                }
+            }
+            SettingsCaption(text: "When the room is dark, Glance turns the top of the display into a warm light for the length of the scan, lets the camera slow to 15 fps for a longer exposure, and brightens frames before recognition. Your brightness comes back when the scan ends.")
+        }
+
+        VStack(alignment: .leading, spacing: 8) {
             SettingsSectionTitle(text: "Animation")
             SettingsGroup {
                 SettingsRowContent(title: "Show animation") {
