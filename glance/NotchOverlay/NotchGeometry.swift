@@ -193,8 +193,9 @@ struct NotchGeometry {
     /// below can come up implausibly small on odd display configurations.
     private static let minimumNotchWidth: CGFloat = 200
 
+    /// Only a last resort — callers should prefer `preferredScreen()`, which knows where the camera is.
     static func forMainScreen() -> NotchGeometry {
-        guard let screen = NSScreen.main else {
+        guard let screen = NSScreen.screens.first(where: { $0.isBuiltIn }) ?? NSScreen.main else {
             return NotchGeometry(closedSize: pillClosedSize, isPhysicalNotch: false)
         }
         return forScreen(screen)
@@ -217,13 +218,20 @@ struct NotchGeometry {
 
     /// Picks the screen the overlay should show on. If a display is pinned
     /// (`GlanceSettings.preferredDisplayID`), it's used only if still connected — no
-    /// fallback. Otherwise: the physical notch if any display has one, else the primary screen.
+    /// fallback. Otherwise: the physical notch if any display has one, else the built-in display.
     @MainActor
     static func preferredScreen() -> NSScreen? {
         if let targetID = GlanceSettings.shared.preferredDisplayID {
             return NSScreen.screens.first { $0.stableDisplayID == targetID }
         }
-        return NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main
+        if let notched = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) {
+            return notched
+        }
+        // The built-in display, not `NSScreen.main`. `main` is the screen holding the key window, so on a notchless
+        // MacBook with an external monitor the overlay follows whatever the user last clicked — and it changes between
+        // runs. The camera is on the laptop, so enrollment ends up asking you to turn your head while the instructions
+        // sit on a monitor you cannot look at and face the lens at the same time.
+        return NSScreen.screens.first { $0.isBuiltIn } ?? NSScreen.main
     }
 }
 
@@ -235,5 +243,13 @@ extension NSScreen {
             return nil
         }
         return String(number)
+    }
+
+    /// The Mac's own display — where the built-in camera is pointing out of.
+    var isBuiltIn: Bool {
+        guard let number = deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
+            return false
+        }
+        return CGDisplayIsBuiltin(number) != 0
     }
 }
