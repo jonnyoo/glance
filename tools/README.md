@@ -72,19 +72,28 @@ and latency change.
 simulated head and reports how hard enrollment is to finish.
 
 ```bash
-swiftc -O tools/enrollment_selftest.swift -o /tmp/enrollment_selftest
+swiftc -O tools/enrollment_selftest.swift glance/Onboarding/EnrollmentPoseGeometry.swift \
+    -o /tmp/enrollment_selftest
 /tmp/enrollment_selftest
 ```
 
-It asserts the two properties that matter and prints the numbers behind them:
+It compiles the shipping `EnrollmentPoseGeometry.swift` rather than a copy, so
+it cannot stay green while the app's matching drifts.
 
-1. **The ring and the gate agree.** `headTurn`'s progress and `poseMatches`
-   read the same normalized vector, so the ring can never fill while the pose
-   is still refused.
-2. **A diagonal costs no more head turn than a cardinal**, and a turn
-   satisfies only the sector it actually points at.
+It asserts the properties that matter and prints the numbers behind them:
+
+1. **The ring and the gate agree** for a turn pointing at the requested pose:
+   `headTurn`'s progress and `poseMatches` derive from the same normalized
+   vector and honour the same outer cap, so the ring can never read full while
+   the pose is refused. A turn pointing at a *different* sector is a separate
+   matter — the ring only ever describes the pose being asked for.
+2. **A diagonal costs no more head turn than a cardinal.**
+3. **The eight sectors tile the circle exactly once**, boundaries included: no
+   direction satisfies two poses, and none falls between them.
 
 It then simulates enrollment at three levels of user effort with a noisy
-yaw/pitch estimate, and prints time-to-enrol and give-up rate against the old
+yaw/pitch estimate, modelling the real capture loop — the 500 ms continuous
+hold, the match streak, and two samples per pose, with any non-matching frame
+restarting the hold. It prints time-to-enrol and give-up rate against the old
 rectangular matcher, which is kept in the file purely so the regression stays
 visible. The random source is seeded, so runs are reproducible.
