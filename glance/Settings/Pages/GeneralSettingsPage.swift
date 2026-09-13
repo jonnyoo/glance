@@ -47,6 +47,10 @@ struct GeneralSettingsPage: View {
                 ))
             }
             SettingsGroupDivider()
+            SettingsRowContent(title: "Show menu bar icon") {
+                GlanceToggle(isOn: $settings.showMenuBarIcon)
+            }
+            SettingsGroupDivider()
             SettingsRowContent(title: "Enable Face Unlock") {
                 GlanceToggle(isOn: $coordinator.isEnabled)
             }
@@ -75,6 +79,9 @@ struct GeneralSettingsPage: View {
         }
         if let launchAtLoginError {
             SettingsCaption(text: launchAtLoginError)
+        }
+        if !settings.showMenuBarIcon {
+            SettingsCaption(text: "Menu bar icon is hidden. Launch Glance from Spotlight or Applications to open Settings.")
         }
         if hasInheritedXcodePermission {
             SettingsCaption(text: "Running from Xcode — permission checks resolve against Xcode’s grants, not glance’s, so this reading is meaningless. Launch glance.app on its own to see the real state.")
