@@ -18,6 +18,10 @@ final class AppEnvironment {
     let sessionAutoLocker: SessionAutoLocker
     /// Constructed here (not started) so the About page and `AppDelegate` share one instance; `AppDelegate` calls `updater.start()`.
     let updater = UpdaterController()
+    /// Handles explicit, local sudo authentication requests. This is separate from
+    /// lock-screen unlock: it never reads or types the stored Mac password.
+    let sudoFaceAuthenticator = SudoFaceAuthenticator()
+    let sudoAuthServer: SudoAuthServer
 
     /// Revealed by tapping the app icon 5 times on the About page. Plain in-memory `var` so it resets on every relaunch.
     var isDebugSectionRevealed = false
@@ -25,5 +29,9 @@ final class AppEnvironment {
     init() {
         faceUnlockCoordinator = FaceUnlockCoordinator(pocController: pocController)
         sessionAutoLocker = SessionAutoLocker(pocController: pocController)
+        sudoAuthServer = SudoAuthServer()
+        sudoAuthServer.start { [sudoFaceAuthenticator] in
+            await sudoFaceAuthenticator.authenticate()
+        }
     }
 }

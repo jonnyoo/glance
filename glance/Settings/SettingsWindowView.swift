@@ -194,6 +194,8 @@ struct SettingsWindowView: View {
                 YourFaceSettingsPage(environment: environment)
             case .password:
                 PasswordSettingsPage(pocController: environment.pocController)
+            case .sudoAuthentication:
+                SudoSettingsPage()
             case .camera:
                 CameraSettingsPage(pocController: environment.pocController)
             case .recognition:

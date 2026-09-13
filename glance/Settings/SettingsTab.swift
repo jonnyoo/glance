@@ -18,6 +18,7 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
     case general
     case yourFace
     case password
+    case sudoAuthentication
     case camera
     case recognition
     case about
@@ -30,6 +31,7 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
         case .general: return "General"
         case .yourFace: return "Your Face"
         case .password: return "Password"
+        case .sudoAuthentication: return "Sudo"
         case .camera: return "Camera"
         case .recognition: return "Recognition"
         case .about: return "About"
@@ -44,6 +46,7 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
         case .general: return .system("gearshape.fill")
         case .yourFace: return .asset("YourFaceIcon")
         case .password: return .system("lock.fill")
+        case .sudoAuthentication: return .system("terminal.fill")
         case .camera: return .system("video.fill")
         case .recognition: return .system("sparkle")
         case .about: return .system("info.circle.fill")
@@ -59,6 +62,7 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
         case .general: return GlanceTheme.badgeGeneral
         case .yourFace: return GlanceTheme.badgeYourFace
         case .password: return GlanceTheme.badgePassword
+        case .sudoAuthentication: return GlanceTheme.badgePassword
         case .camera: return GlanceTheme.badgeCamera
         case .recognition: return GlanceTheme.badgeRecognition
         case .about: return GlanceTheme.badgeGeneral
@@ -71,7 +75,7 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
     var section: SettingsSection? {
         switch self {
         case .general: return nil
-        case .yourFace, .password, .camera, .recognition: return .authentication
+        case .yourFace, .password, .sudoAuthentication, .camera, .recognition: return .authentication
         case .about: return .glance
         case .debugFaceLab: return .debug
         }

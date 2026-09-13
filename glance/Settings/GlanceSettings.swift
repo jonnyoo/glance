@@ -91,6 +91,7 @@ final class GlanceSettings {
 
     private enum Key {
         static let isFaceUnlockEnabled = "GlanceSettings.isFaceUnlockEnabled"
+        static let isSudoAuthenticationEnabled = "GlanceSettings.isSudoAuthenticationEnabled"
         static let matchThreshold = "GlanceSettings.matchThreshold"
         static let livenessChecksEnabled = "GlanceSettings.livenessChecksEnabled"
         static let livenessMode = "GlanceSettings.livenessMode"
@@ -119,6 +120,12 @@ final class GlanceSettings {
 
     var isFaceUnlockEnabled: Bool {
         didSet { defaults.set(isFaceUnlockEnabled, forKey: Key.isFaceUnlockEnabled) }
+    }
+    /// Allows the separately installed PAM module to request a local face
+    /// check. Off returns immediately so macOS can fall through to Touch ID
+    /// or password without opening the camera.
+    var isSudoAuthenticationEnabled: Bool {
+        didSet { defaults.set(isSudoAuthenticationEnabled, forKey: Key.isSudoAuthenticationEnabled) }
     }
     var matchThreshold: Float {
         didSet { defaults.set(matchThreshold, forKey: Key.matchThreshold) }
@@ -256,6 +263,8 @@ final class GlanceSettings {
         // Enabled by default — onboarding already enrolled a face and set a
         // password specifically to use Face Unlock.
         isFaceUnlockEnabled = defaults.object(forKey: Key.isFaceUnlockEnabled) as? Bool ?? true
+        // Opt-in because the PAM module is a separate privileged install.
+        isSudoAuthenticationEnabled = defaults.object(forKey: Key.isSudoAuthenticationEnabled) as? Bool ?? false
         // Matches `MatchConfidenceLevel.standard` — see RecognitionSettingsPage.swift.
         matchThreshold = defaults.object(forKey: Key.matchThreshold) as? Float ?? 0.66
         livenessChecksEnabled = defaults.object(forKey: Key.livenessChecksEnabled) as? Bool ?? true
