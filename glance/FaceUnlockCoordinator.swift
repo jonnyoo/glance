@@ -111,6 +111,10 @@ final class FaceUnlockCoordinator {
         // A pinned display that isn't connected bails entirely rather than showing up elsewhere; "Main display" (nil) always resolves.
         guard NotchGeometry.preferredScreen() != nil else { return }
 
+        guard GlanceSettings.shared.isFaceUnlockEnabled(for: DisplayContext.current()) else {
+            disarmOverlay()
+            return
+        }
         guard SecureCredentialManager.isSessionUnlocked else {
             statusMessage = "Face unlock is on, but the session is locked — authenticate once from Password settings first."
             return

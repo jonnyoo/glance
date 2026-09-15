@@ -83,6 +83,23 @@ struct GeneralSettingsPage: View {
         }
 
         VStack(alignment: .leading, spacing: 8) {
+            SettingsSectionTitle(text: "Active when")
+            SettingsGroup {
+                SettingsRowContent(title: "Built-in only") {
+                    GlanceToggle(isOn: $settings.isFaceUnlockEnabledBuiltInOnly)
+                }
+                SettingsGroupDivider()
+                SettingsRowContent(title: "Built-in + external") {
+                    GlanceToggle(isOn: $settings.isFaceUnlockEnabledBuiltInAndExternal)
+                }
+                SettingsGroupDivider()
+                SettingsRowContent(title: "External only") {
+                    GlanceToggle(isOn: $settings.isFaceUnlockEnabledExternalOnly)
+                }
+            }
+        }
+
+        VStack(alignment: .leading, spacing: 8) {
             SettingsSectionTitle(text: "Behaviour")
             SettingsGroup {
                 SettingsRowContent(title: "Retry on notch hover") {

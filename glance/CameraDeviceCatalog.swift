@@ -6,7 +6,6 @@
 //
 
 import AVFoundation
-import AppKit
 
 struct CameraDevice: Identifiable, Hashable {
     let id: String // AVCaptureDevice.uniqueID
@@ -27,10 +26,7 @@ enum CameraDeviceCatalog {
     /// (vs. an external monitor) — used to pick between the built-in/
     /// external camera overrides.
     static func isUsingBuiltInDisplay() -> Bool {
-        guard let screen = NSScreen.main,
-              let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
-        else { return true }
-        return CGDisplayIsBuiltin(screenNumber) != 0
+        DisplayContext.current() != .externalOnly
     }
 
     /// Display-specific override, then flat default, then the system default camera.
