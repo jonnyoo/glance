@@ -44,10 +44,10 @@ struct SessionLockButton: View {
         .animation(SettingsMetrics.stateTransitionAnimation, value: pocController.isSessionUnlocked)
         .animation(SettingsMetrics.stateTransitionAnimation, value: isUnlocking)
         .onAppear { pocController.refreshCredentialStatus() }
-        // Some unlock paths call SecureCredentialManager directly rather
-        // than through this pocController, so this doesn't update
-        // reactively on its own — refresh after the notch closes, same as
-        // every gated page.
+        // Session changes from any path now reach pocController on their
+        // own (it observes `.secureCredentialSessionDidChange`); this stays
+        // as the same catch-all every gated page has for state changed from
+        // inside the notch.
         .onChange(of: NotchOverlayController.shared.phase) { _, newPhase in
             guard newPhase == .closed else { return }
             pocController.refreshCredentialStatus()

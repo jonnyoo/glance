@@ -352,6 +352,9 @@ struct SettingsOptionSliderRowContent: View {
             Text(title)
                 .font(SettingsMetrics.rowFont)
                 .foregroundStyle(SettingsMetrics.textPrimary)
+                // The slider below carries the title as its label, so
+                // VoiceOver would otherwise read it twice in a row.
+                .accessibilityHidden(true)
             // Tighter than the title-to-slider gap above, so the labels
             // read as annotating the slider's stops rather than floating a
             // full row's worth of space below it.
@@ -359,6 +362,11 @@ struct SettingsOptionSliderRowContent: View {
                 Slider(value: $index, in: 0...Double(max(stopCount - 1, 1)), step: 1)
                     .controlSize(.regular)
                     .tint(GlanceTheme.accent)
+                    .accessibilityLabel(title)
+                    .accessibilityValue(selectedStepLabel)
+                // The slider announces the selected stop itself; read on
+                // their own, these would list every option with no hint
+                // which one is chosen.
                 HStack {
                     ForEach(Array(stepLabels.enumerated()), id: \.offset) { position, label in
                         Text(label)
@@ -367,10 +375,18 @@ struct SettingsOptionSliderRowContent: View {
                             .frame(maxWidth: .infinity, alignment: alignment(at: position))
                     }
                 }
+                .accessibilityHidden(true)
             }
         }
         .padding(.horizontal, SettingsMetrics.rowHorizontalInset)
         .padding(.vertical, SettingsMetrics.sliderRowVerticalPadding)
+    }
+
+    /// Without this VoiceOver reads the bare index (0, 1, 2), since the
+    /// visible stop labels no longer say which one is selected.
+    private var selectedStepLabel: String {
+        let position = Int(index.rounded())
+        return stepLabels.indices.contains(position) ? stepLabels[position] : ""
     }
 
     private func alignment(at position: Int) -> Alignment {

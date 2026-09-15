@@ -23,6 +23,20 @@ final class POCController {
 
     var statusMessage: String = "Idle"
 
+    init() {
+        // The Face page, Face Lab and onboarding unlock through SecureCredentialManager directly, not through here, so without
+        // this the header pill kept its old state. Posted from whichever thread changed the session — hence the hop.
+        NotificationCenter.default.addObserver(
+            forName: .secureCredentialSessionDidChange,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshCredentialStatus()
+            }
+        }
+    }
+
     func refreshAccessibilityStatus() {
         accessibilityGranted = KeystrokeInjector.isAccessibilityTrusted()
     }
@@ -90,20 +104,24 @@ final class POCController {
     /// buffer before returning. When `requireAuthoritativeLock` is true (the
     /// auto-trigger path), refuses to inject unless the CGSession dictionary
     /// confirms the screen is actually locked.
-    func injectStoredPassword(requireAuthoritativeLock: Bool = false) async {
+    ///
+    /// Returns true only once the password and Return were actually posted: every
+    /// other exit types nothing, and a caller that ignored that used to report an
+    /// unlock that was never attempted.
+    func injectStoredPassword(requireAuthoritativeLock: Bool = false) async -> Bool {
         guard KeystrokeInjector.isAccessibilityTrusted() else {
             statusMessage = "Accessibility not granted — open System Settings and enable glance."
-            return
+            return false
         }
         guard SecureCredentialManager.isSessionUnlocked else {
             statusMessage = "Session locked — authenticate with Touch ID first."
-            return
+            return false
         }
 
         if requireAuthoritativeLock {
             guard LockMonitor.isScreenActuallyLocked() else {
                 statusMessage = "Skipped: CGSession reports screen is not actually locked."
-                return
+                return false
             }
         }
 
@@ -115,8 +133,10 @@ final class POCController {
                 try KeystrokeInjector.typeAndReturn(bytes)
             }.value
             statusMessage = "Injected stored password + Return at \(Date().formatted(date: .omitted, time: .standard))"
+            return true
         } catch {
             statusMessage = "Injection failed: \(error.localizedDescription)"
+            return false
         }
     }
 }

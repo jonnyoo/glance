@@ -110,6 +110,16 @@ struct GeneralSettingsPage: View {
         }
 
         VStack(alignment: .leading, spacing: 8) {
+            SettingsSectionTitle(text: "Night")
+            SettingsGroup {
+                SettingsRowContent(title: "Light up the screen in the dark") {
+                    GlanceToggle(isOn: $settings.nightBoostEnabled)
+                }
+            }
+            SettingsCaption(text: "When the room is dark, Glance turns the top of the display into a warm light for the length of the scan, lets the camera slow to 15 fps for a longer exposure, and brightens frames before recognition. Your brightness comes back when the scan ends.")
+        }
+
+        VStack(alignment: .leading, spacing: 8) {
             SettingsSectionTitle(text: "Animation")
             SettingsGroup {
                 SettingsRowContent(title: "Show animation") {
@@ -150,7 +160,9 @@ struct GeneralSettingsPage: View {
     private func displayPicker() -> some View {
         SettingsRowContent(title: "Display on") {
             SettingsMenuPickerPill(label: displayLabel) {
-                Button("Main display") {
+                // Not "Main display": unpinned placement prefers a notched
+                // screen, then the built-in one, rather than NSScreen.main.
+                Button("Automatic") {
                     settings.preferredDisplayID = nil
                     settings.preferredDisplayName = nil
                 }
@@ -178,8 +190,8 @@ struct GeneralSettingsPage: View {
     }
 
     private var displayLabel: String {
-        guard let targetID = settings.preferredDisplayID else { return "Main display" }
-        if let connected = screens.first(where: { $0.stableDisplayID == targetID }) {
+        guard let targetID = settings.preferredDisplayID else { return "Automatic" }
+        if let connected = screens.first(where: { $0.matches(displayID: targetID) }) {
             return connected.localizedName
         }
         // Picked, but not currently connected — say so rather than showing

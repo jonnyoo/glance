@@ -176,14 +176,26 @@ final class NotchOverlayController {
     /// Shows the idle still; auto-collapses silently (no failure animation) after
     /// `scanTimeoutDuration` if nothing resolves it.
     func beginScanning() {
+        showScanning()
+        startScanTimeout()
+    }
+
+    /// Shows the idle still without starting the clock. Split from `startScanTimeout()` so the coordinator can move
+    /// to `.scanning` while the camera warms up (a lingering `.failure` there let retries start on top of the waiting
+    /// cycle) yet still start the timeout alongside its own scan deadline.
+    func showScanning() {
         resolveTask?.cancel(); resolveTask = nil
-        scanTimeoutTask?.cancel()
+        scanTimeoutTask?.cancel(); scanTimeoutTask = nil
         geometry = windowController.currentGeometry
         activeUnlockStyle = GlanceSettings.shared.effectiveUnlockAnimationStyle
         content = .scan(.idle)
         phase = .scanning
         updateInteractivity()
+    }
 
+    /// Collapses silently after `scanTimeoutDuration` if the overlay is still scanning then. Replaces any pending timeout.
+    func startScanTimeout() {
+        scanTimeoutTask?.cancel()
         scanTimeoutTask = Task { [weak self] in
             try? await Task.sleep(for: self?.scanTimeoutDuration ?? .seconds(5))
             guard let self, !Task.isCancelled, self.phase == .scanning else { return }
@@ -309,7 +321,7 @@ final class NotchOverlayController {
             resolveTask?.cancel(); resolveTask = nil
             if !isArmed {
                 // Captures its own style here; the armed path doesn't need to since
-                // `onActivate()` routes through `beginScanning()`, which captures.
+                // `onActivate()` routes through `showScanning()`, which captures.
                 activeUnlockStyle = GlanceSettings.shared.effectiveUnlockAnimationStyle
                 content = .scan(.idle)
                 phase = .scanning

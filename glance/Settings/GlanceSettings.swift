@@ -104,6 +104,7 @@ final class GlanceSettings {
         static let faceDetectionSeconds = "GlanceSettings.faceDetectionSeconds"
         static let autoRetryOnce = "GlanceSettings.autoRetryOnce"
         static let hapticFeedbackEnabled = "GlanceSettings.hapticFeedbackEnabled"
+        static let nightBoostEnabled = "GlanceSettings.nightBoostEnabled"
         static let preferredDisplayID = "GlanceSettings.preferredDisplayID"
         static let preferredDisplayName = "GlanceSettings.preferredDisplayName"
         static let autoLockIntervalDays = "GlanceSettings.autoLockIntervalDays"
@@ -198,6 +199,15 @@ final class GlanceSettings {
     var hapticFeedbackEnabled: Bool {
         didSet { defaults.set(hapticFeedbackEnabled, forKey: Key.hapticFeedbackEnabled) }
     }
+    /// Dark-room help: brighten frames before recognition, let the camera slow to 15 fps for a longer exposure, and
+    /// light the display up during the scan — see the `NightBoost` folder. Mirrored into `LowLightEnhancer.isEnabled`
+    /// since the frame path reads it off the main actor.
+    var nightBoostEnabled: Bool {
+        didSet {
+            defaults.set(nightBoostEnabled, forKey: Key.nightBoostEnabled)
+            LowLightEnhancer.isEnabled = nightBoostEnabled
+        }
+    }
 
     static let faceDetectionRange = 3...10
 
@@ -256,16 +266,20 @@ final class GlanceSettings {
         // Enabled by default — onboarding already enrolled a face and set a
         // password specifically to use Face Unlock.
         isFaceUnlockEnabled = defaults.object(forKey: Key.isFaceUnlockEnabled) as? Bool ?? true
-        // Matches `MatchConfidenceLevel.standard` — see RecognitionSettingsPage.swift.
-        matchThreshold = defaults.object(forKey: Key.matchThreshold) as? Float ?? 0.66
+        // Read from the stop itself, not a copied literal, so the slider's
+        // "Default" is always the value actually enforced. Stored values win.
+        matchThreshold = defaults.object(forKey: Key.matchThreshold) as? Float
+            ?? MatchConfidenceLevel.standard.threshold
         livenessChecksEnabled = defaults.object(forKey: Key.livenessChecksEnabled) as? Bool ?? true
         // Light by default — Heavy requires a blink/pose/depth signal a
         // still, non-blinking user may never produce, while Light still
         // catches the main attack (a photo on a phone screen).
         livenessMode = defaults.string(forKey: Key.livenessMode)
             .flatMap(LivenessMode.init(rawValue:)) ?? .light
-        // Matches `DetectionDistanceLevel.standard` — see RecognitionSettingsPage.swift.
-        minimumFaceWidth = defaults.object(forKey: Key.minimumFaceWidth) as? Float ?? 0.21
+        // Same as `matchThreshold` above: the literal 0.21 here outlived two
+        // moves of the stop, so cd1e42e's farther default never took effect.
+        minimumFaceWidth = defaults.object(forKey: Key.minimumFaceWidth) as? Float
+            ?? DetectionDistanceLevel.standard.minimumFaceWidth
 
         // Resolve the stored style first, `.none` included, then split it
         // into the pick + the on/off flag the UI now works in.
@@ -301,6 +315,7 @@ final class GlanceSettings {
             ?? 5
         autoRetryOnce = defaults.object(forKey: Key.autoRetryOnce) as? Bool ?? false
         hapticFeedbackEnabled = defaults.object(forKey: Key.hapticFeedbackEnabled) as? Bool ?? true
+        nightBoostEnabled = defaults.object(forKey: Key.nightBoostEnabled) as? Bool ?? true
         preferredDisplayID = defaults.string(forKey: Key.preferredDisplayID)
         preferredDisplayName = defaults.string(forKey: Key.preferredDisplayName)
 
@@ -320,5 +335,6 @@ final class GlanceSettings {
         // Push into the nonisolated mirror immediately, or FaceRecognitionPipeline
         // would keep its own default until the slider is first touched.
         FaceRecognitionPipeline.minimumProminentFaceWidth = minimumFaceWidth
+        LowLightEnhancer.isEnabled = nightBoostEnabled
     }
 }

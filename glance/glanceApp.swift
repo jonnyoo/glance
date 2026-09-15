@@ -55,6 +55,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     /// Held so `menuNeedsUpdate` can refresh this row in place rather than rebuilding the whole menu.
     private var sessionMenuItem: NSMenuItem?
+    /// Hidden unless face unlock is on but can't run — see `updateFaceUnlockReadiness()`.
+    private var faceUnlockPausedMenuItem: NSMenuItem?
     /// Bridges SwiftUI's `openWindow(\.settings)` action in from `glanceApp.body`, since this plain `NSObject` has no
     /// `@Environment` of its own. Bound from the scene body (not `onAppear`) so it's ready before Settings has ever shown —
     /// `NSApp.windows` stops containing the window once fully closed, so only `openWindow(id:)` can reliably re-create it.
@@ -92,6 +94,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Refreshes `sessionMenuItem` right before the menu displays — see `menuNeedsUpdate` below.
         menu.delegate = self
 
+        // No action: it only explains why, and the session row right below it is usually the fix.
+        let pausedItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        pausedItem.isHidden = true
+        menu.addItem(pausedItem)
+        faceUnlockPausedMenuItem = pausedItem
+
         let sessionItem = NSMenuItem(title: "", action: #selector(toggleSession), keyEquivalent: "")
         sessionItem.target = self
         menu.addItem(sessionItem)
@@ -110,6 +118,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem = item
 
         updateSessionMenuItem()
+
+        updateFaceUnlockReadiness()
+        observeFaceUnlockReadiness()
+        // Not every session change goes through POCController (Touch ID unlocks from the Face page call SecureCredentialManager
+        // directly), and it's posted from whichever thread made the change — hence the hop.
+        NotificationCenter.default.addObserver(
+            forName: .secureCredentialSessionDidChange,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.updateFaceUnlockReadiness()
+            }
+        }
+        // A pinned display being unplugged or plugged back in has no observable property, so the screen change is the signal.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.updateFaceUnlockReadiness()
+            }
+        }
+        // Accessibility has no change signal, so granting it in System Settings left the icon dimmed until the next lock.
+        // Coming back to glance afterwards is the natural moment to re-check.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.environment.pocController.refreshAccessibilityStatus()
+                self?.updateFaceUnlockReadiness()
+            }
+        }
 
         // SwiftUI can flip the app back to `.regular` while installing scenes even with `.suppressed`; re-assert accessory.
         NSApp.setActivationPolicy(.accessory)
@@ -190,6 +234,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Fires right before the menu opens — simpler than keeping an `NSMenuItem` reactively bound to `isSessionUnlocked`.
     func menuNeedsUpdate(_ menu: NSMenu) {
         updateSessionMenuItem()
+        updateFaceUnlockReadiness()
     }
 
     private func updateSessionMenuItem() {
@@ -200,6 +245,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             systemSymbolName: isUnlocked ? "lock.open.fill" : "lock.fill",
             accessibilityDescription: nil
         )
+    }
+
+    /// Face unlock silently does nothing at the lock screen when it has nothing to type with, and the lock screen can't say
+    /// why. The menu bar is where that's seen before the Mac locks, so the icon dims (with a tooltip and a menu row naming
+    /// the reason) for as long as it's true.
+    private func updateFaceUnlockReadiness() {
+        let reason = faceUnlockPausedReason
+        let explanation = reason.map { "Face Unlock Paused: \($0)" }
+        statusItem?.button?.appearsDisabled = reason != nil
+        statusItem?.button?.toolTip = explanation
+        faceUnlockPausedMenuItem?.title = explanation ?? ""
+        faceUnlockPausedMenuItem?.isHidden = reason == nil
+    }
+
+    /// Mirrors the user-fixable gates `FaceUnlockCoordinator.evaluateTrigger()` checks before arming, in its order, including
+    /// the pinned display; nil when face unlock is off or ready.
+    private var faceUnlockPausedReason: String? {
+        let settings = GlanceSettings.shared
+        guard settings.hasCompletedOnboarding, settings.isFaceUnlockEnabled else { return nil }
+        // A pinned display that isn't connected makes the coordinator bail without arming; "Main display" (nil) always resolves.
+        if settings.preferredDisplayID != nil, NotchGeometry.preferredScreen() == nil { return "Pinned Display Disconnected" }
+        if !SecureCredentialManager.isSessionUnlocked { return "Session Locked" }
+        if !SecureCredentialManager.hasStoredPassword() { return "No Saved Password" }
+        if !KeystrokeInjector.isAccessibilityTrusted() { return "Accessibility Not Granted" }
+        return nil
+    }
+
+    /// Re-subscribes on every change — `withObservationTracking` only fires once per registration.
+    private func observeFaceUnlockReadiness() {
+        withObservationTracking {
+            _ = GlanceSettings.shared.isFaceUnlockEnabled
+            _ = GlanceSettings.shared.hasCompletedOnboarding
+            _ = GlanceSettings.shared.preferredDisplayID
+            _ = environment.pocController.hasStoredPassword
+            _ = environment.pocController.isSessionUnlocked
+            _ = environment.pocController.accessibilityGranted
+            // Every lock, unlock and wake. Accessibility has no signal of its own, so this and app activation are what refresh it.
+            _ = environment.faceUnlockCoordinator.lockMonitor.eventCount
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.observeFaceUnlockReadiness()
+                self?.updateFaceUnlockReadiness()
+            }
+        }
     }
 
     /// Locking is immediate; unlocking prompts Touch ID, so this can't be a plain synchronous action for that branch.

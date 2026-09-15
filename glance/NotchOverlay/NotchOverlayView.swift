@@ -320,9 +320,11 @@ struct NotchOverlayView: View {
             }
         }
         .onChange(of: controller.isPillDocked) { _, _ in scheduleChoreography() }
+        // The window's own envelope, not the live style's size: the window never
+        // resizes, so a smaller root would be centered in it, off the top edge.
         .frame(
-            width: NotchGeometry.windowSize(for: style).width,
-            height: NotchGeometry.windowSize(for: style).height,
+            width: NotchGeometry.maxWindowSize.width,
+            height: NotchGeometry.maxWindowSize.height,
             alignment: .top
         )
         // Anchored on this outermost, full-window-sized frame so the panel's

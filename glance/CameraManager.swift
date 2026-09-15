@@ -21,6 +21,13 @@ struct CameraFrame {
     let image: CGImage
     let source: CIImage
     let sourceSize: CGSize
+    /// The working frame *before* `LowLightEnhancer`, for anything that must judge what the sensor really saw rather
+    /// than what we brightened — the liveness deny cues. Identical to `image` whenever no enhancement was applied.
+    var rawImage: CGImage
+    /// Mean luma of the raw working frame (before any enhancement), 0…1 — see `SceneLuminance`. 1 if unmeasurable.
+    var meanLuminance: Float = 1
+    /// True when `image` had `LowLightEnhancer` applied; `source` and `rawImage` are always ungained.
+    var isLowLightEnhanced: Bool = false
 }
 
 @Observable
@@ -30,6 +37,9 @@ final class CameraManager: NSObject {
     private(set) var isRunning: Bool = false
     private(set) var currentFrame: CameraFrame?
     private(set) var errorMessage: String?
+    /// Advisory only — never gates a scan. `errorMessage` means "no usable camera"; this means "the camera works, but
+    /// something optional didn't apply". Shown on the Camera settings page beneath the preview, ignored by the unlock path.
+    private(set) var frameRateNote: String?
 
     /// Exposed read-only so `CameraPreviewView` can attach a preview layer to the same session.
     let session = AVCaptureSession()
@@ -65,8 +75,12 @@ final class CameraManager: NSObject {
         }
 
         errorMessage = nil
+        frameRateNote = nil
         configureSessionIfNeeded()
         reconcileDeviceIfNeeded()
+        // After reconcile, not inside it: `reconcileDeviceIfNeeded` early-returns when the device is unchanged, so folding
+        // this in there would leave the frame-rate policy stuck at whatever Night Boost was set to on the first scan.
+        applyFrameRatePolicy()
 
         sessionQueue.async { [session] in
             if !session.isRunning {
@@ -121,13 +135,26 @@ final class CameraManager: NSObject {
     /// Called on every `start()` so a camera preference change in Settings takes effect without an app restart.
     private func reconcileDeviceIfNeeded() {
         guard let device = CameraDeviceCatalog.resolvedDevice() else {
+            // Forget the dead input too, or a replug of the same camera matches it below and is never re-added.
+            if let currentInput, session.inputs.contains(currentInput) {
+                session.beginConfiguration()
+                session.removeInput(currentInput)
+                session.commitConfiguration()
+            }
+            currentInput = nil
             errorMessage = "No camera device found."
             return
         }
-        guard device.uniqueID != currentInput?.device.uniqueID else { return }
+        // Same uniqueID isn't enough: a replugged camera reports the same uniqueID as the dead input `currentInput`
+        // still holds, and whether the session drops that input on unplug isn't documented. The unplugged device
+        // object stays disconnected for good, so require that too and the swap below replaces the input either way.
+        if let currentInput, currentInput.device.uniqueID == device.uniqueID, currentInput.device.isConnected,
+           session.inputs.contains(currentInput) {
+            return
+        }
 
         session.beginConfiguration()
-        if let currentInput {
+        if let currentInput, session.inputs.contains(currentInput) {
             session.removeInput(currentInput)
         }
         if let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) {
@@ -159,6 +186,60 @@ final class CameraManager: NSObject {
         }
     }
 
+    /// The built-in camera pins itself to 30 fps (min == max frame duration on every format this Mac reports), which caps
+    /// its auto-exposure at ~33 ms and is why a dark room arrives as noise. With Night Boost on, raising only the *max*
+    /// frame duration to 1/15 s lets the ISP drop to 15 fps and double the exposure when — and only when — the scene is
+    /// dark; a lit room stays at 30 fps. With it off, the max is pinned back to the format's own floor so the setting takes
+    /// effect on the next scan rather than the next launch. Re-applied on every `start()` since setting `activeFormat`
+    /// resets both durations.
+    private func applyFrameRatePolicy() {
+        guard let device = currentInput?.device else { return }
+        let slowest = CMTime(value: 1, timescale: 15)
+        // 15fps must fall *inside* a supported range. Testing only `maxFrameDuration >= 1/15` is not the same thing: a
+        // format capped at 10fps reports a maximum duration of 1/10s, which is longer than 1/15s and would pass, and we
+        // would then force a rate the device cannot produce.
+        let canSlowDown = device.activeFormat.videoSupportedFrameRateRanges.contains {
+            CMTimeCompare($0.minFrameDuration, slowest) <= 0 && CMTimeCompare(slowest, $0.maxFrameDuration) <= 0
+        }
+        let wantsSlowdown = GlanceSettings.shared.nightBoostEnabled && canSlowDown
+
+        if wantsSlowdown {
+            guard CMTimeCompare(device.activeVideoMaxFrameDuration, slowest) != 0 else { return }
+        } else {
+            // Nothing to undo unless we were the ones who relaxed it. Tracked with a flag rather than compared against
+            // `.invalid`, which is not meaningfully comparable.
+            guard hasRelaxedFrameRate else { return }
+        }
+
+        do {
+            try device.lockForConfiguration()
+            defer { device.unlockForConfiguration() }
+            if wantsSlowdown {
+                // Order matters: max must never sit below min, so widen from the min side first.
+                if CMTimeCompare(slowest, device.activeVideoMinFrameDuration) < 0 {
+                    device.activeVideoMinFrameDuration = slowest
+                }
+                device.activeVideoMaxFrameDuration = slowest
+                hasRelaxedFrameRate = true
+            } else {
+                // Both, not just the maximum: enabling can lower the minimum too, and leaving that behind would cap the
+                // camera at 15fps for the rest of the session after the setting is switched off. `.invalid` restores
+                // the device's own default rather than pinning it to a value we computed.
+                device.activeVideoMinFrameDuration = .invalid
+                device.activeVideoMaxFrameDuration = .invalid
+                hasRelaxedFrameRate = false
+            }
+        } catch {
+            // Genuinely non-fatal, so it must NOT reach `errorMessage`: `FaceUnlockCoordinator.runScanCycle` aborts the
+            // whole scan on any non-nil `errorMessage`, so reporting a failed frame-rate hint there would disable face
+            // unlock entirely whenever another app (FaceTime, Zoom) holds the device's configuration lock.
+            frameRateNote = "Couldn't set the camera's low-light frame rate: \(error.localizedDescription)"
+        }
+    }
+
+    /// Whether we relaxed this device's frame-rate window, so the off path knows there is something to undo.
+    private var hasRelaxedFrameRate = false
+
     fileprivate func publish(frame: CameraFrame) {
         currentFrame = frame
     }
@@ -172,8 +253,10 @@ final class CameraManager: NSObject {
         let scaleX = frame.sourceSize.width / workingWidth
         let scaleY = frame.sourceSize.height / workingHeight
 
-        // Expand ~1.3x so device edges/bezels are captured for texture/moiré cues.
-        let expanded = imageRect.insetBy(dx: -imageRect.width * 0.15, dy: -imageRect.height * 0.15)
+        // Expand ~1.3x so device edges/bezels are captured for texture/moiré cues. The factor lives in GlareCueExtractor,
+        // which maps the face back out of this crop and must agree with it exactly.
+        let expansion = GlareCueExtractor.renderCropExpansion
+        let expanded = imageRect.insetBy(dx: -imageRect.width * expansion, dy: -imageRect.height * expansion)
 
         // Flip from `imageRect`'s top-left/y-down space to Core Image's bottom-left/y-up (reverse of FaceDetector.convertToImageSpace).
         let nativeX = expanded.origin.x * scaleX
@@ -224,14 +307,37 @@ final class CameraManager: NSObject {
                 let scale = maxLongEdge / longEdge
                 ciImage = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
             }
-            guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
+
+            // Night boost: measure the raw working frame, then gain it up if the room is dark. The native `source`
+            // stays untouched so the glare cue keeps reading real sensor highlights (see LowLightEnhancer.swift).
+            // With Night Boost off nothing reads the measurement, so skip its per-frame GPU readback; 1 reads as bright.
+            let meanLuminance = LowLightEnhancer.isEnabled
+                ? (SceneLuminance.meanLuminance(of: ciImage, context: ciContext) ?? 1)
+                : 1
+            let enhanced = LowLightEnhancer.enhance(ciImage, meanLuminance: meanLuminance)
+            let isEnhanced = enhanced !== ciImage
+            guard let cgImage = ciContext.createCGImage(enhanced, from: enhanced.extent) else { return }
+            // Second render only in a dark room: the bezel deny cue reads this, and gain applied to a dark frame can
+            // invent or erase the rectangle edges it keys on (LivenessFeatures.swift feeds it the working frame).
+            let rawCGImage: CGImage
+            if isEnhanced {
+                // Drop the frame rather than fall back to the enhanced one. The liveness deny cues trust `rawImage` to
+                // be ungained, and a transient render failure must not quietly let our own gain move a spoof decision.
+                guard let raw = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
+                rawCGImage = raw
+            } else {
+                rawCGImage = cgImage
+            }
 
             nextFrameID &+= 1
             let frame = CameraFrame(
                 id: nextFrameID,
                 image: cgImage,
                 source: sourceImage,
-                sourceSize: sourceExtent.size
+                sourceSize: sourceExtent.size,
+                rawImage: rawCGImage,
+                meanLuminance: meanLuminance,
+                isLowLightEnhanced: isEnhanced
             )
 
             Task { @MainActor [weak owner] in

@@ -60,25 +60,6 @@ enum OnboardingStep: String, CaseIterable {
 enum EnrollmentPose: Int, CaseIterable {
     case center, left, topLeft, top, topRight, right, bottomRight, bottom, bottomLeft
 
-    enum YawBand { case left, none, right }
-    enum PitchBand { case up, none, down }
-
-    var yawBand: YawBand {
-        switch self {
-        case .left, .topLeft, .bottomLeft: return .left
-        case .right, .topRight, .bottomRight: return .right
-        case .center, .top, .bottom: return .none
-        }
-    }
-
-    var pitchBand: PitchBand {
-        switch self {
-        case .top, .topLeft, .topRight: return .up
-        case .bottom, .bottomLeft, .bottomRight: return .down
-        case .center, .left, .right: return .none
-        }
-    }
-
     /// Compass angle (0 = up, clockwise) this pose's ring sector is centered
     /// on. `nil` for center, which pulses the whole ring instead of
     /// claiming a sector.
@@ -352,9 +333,8 @@ final class OnboardingController {
     /// Wait this long after yaw/pitch matches before samples count, so the user has
     /// settled into the turn rather than being captured mid-motion.
     private let poseHoldDuration: Duration = .milliseconds(500)
-    /// Permissive floor for Vision's capture-quality score (no fixed universal cutoff) —
-    /// better to accept a mediocre sample than stall the whole flow.
-    private let qualityFloor: Float = 0.2
+    /// Shared with unlock, which only counts frames at or above it against a match.
+    private let qualityFloor = FaceCaptureQuality.floor
     /// Hold off accepting captures this long once the camera comes up, so the first
     /// samples aren't taken mid-blink. Detection still runs during this window.
     private let initialCaptureDelay: Duration = .seconds(1.5)
@@ -366,12 +346,8 @@ final class OnboardingController {
 
     // Pose-matching bands, in radians. Yaw: left turn is positive, matching the mirrored
     // preview. Pitch's sign is the opposite of the initial guess — see `pitchMatches` below.
-    private let yawInnerThreshold: Float = 0.25
-    private let yawCenterTolerance: Float = 0.18
-    private let yawOuterCap: Float = 1.2
-    private let pitchInnerThreshold: Float = 0.20
-    private let pitchCenterTolerance: Float = 0.15
-    private let pitchOuterCap: Float = 0.9
+    // Pose geometry — thresholds, sectors and the matching itself — lives in EnrollmentPoseGeometry, which is pure
+    // and dependency-free so tools/enrollment_selftest.swift compiles the shipping source rather than a copy.
     /// If a pose takes longer than this, matching bands widen by `stallWidenFactor` so an
     /// unusual camera angle can't permanently strand the user.
     private let stallTimeout: Duration = .seconds(12)
@@ -385,6 +361,10 @@ final class OnboardingController {
     /// Whether the last-seen face read as too small to enroll reliably — swaps the pose
     /// instruction for a "move closer" prompt while true.
     private(set) var isTooFar = false
+    /// Set when the room is dark enough that Night Boost is gaining frames up. Enrolling from those would bake a
+    /// noisy, under-exposed face into the template, which then matches neither daylight nor the flood-lit scan the
+    /// unlock path produces in the same room.
+    private(set) var isTooDark = false
     private(set) var enrollmentComplete = false
 
     /// Sectors already captured — read by EnrollmentRingView to decide which
@@ -430,10 +410,24 @@ final class OnboardingController {
         EnrollmentPose(rawValue: currentPoseIndex)
     }
 
+    /// Non-nil when `ArcFaceEmbedder` failed to initialise for any reason — a missing model, a Core ML load failure,
+    /// or pixel-buffer pool creation — and `FaceRecognitionPipeline` fell back to Vision feature prints. That fallback
+    /// makes enrollment impossible rather than merely worse: `VisionFeaturePrintEmbedder` sets
+    /// `requiresAlignment = false`, so `recognize` returns `.paddedCrop`, and `processMatchedEnrollFrame` accepts only
+    /// `.fivePoint`. Every frame is silently rejected, at every angle, in every light. Until now the only place that
+    /// said so was Face Lab, which is hidden behind five clicks on the About page.
+    var recognitionUnavailableReason: String? {
+        guard pipeline.usingFallbackEmbedder else { return nil }
+        return pipeline.fallbackReason ?? "face recognition is unavailable"
+    }
+
     /// Copy shown under the camera: pose guidance, a closer-up prompt, or the
     /// completion line.
     var enrollmentInstruction: String {
+        // First, because it is the only one of these the user cannot act their way out of.
+        if recognitionUnavailableReason != nil { return "Face recognition unavailable — setup can't continue" }
         if enrollmentComplete { return "Face captured" }
+        if isTooDark { return "Too dark to set up — turn on a light" }
         if isTooFar { return "Bring your face closer" }
         return currentPose?.instruction ?? ""
     }
@@ -449,22 +443,26 @@ final class OnboardingController {
     /// Below this fraction of the threshold the direction is mostly sensor noise.
     private let headTurnDeadzone: Double = 0.15
 
-    /// Live head direction, or `nil` when there's nothing to point at. Axes are normalized
-    /// against the current pose's thresholds, so `progress` hits 1 as the pose starts matching.
+    /// Folds per-pose leniency and the stall widening into one number for `EnrollmentPoseGeometry`.
+    private func matchFactor(for pose: EnrollmentPose, widened: Bool) -> Float {
+        (widened ? stallWidenFactor : 1.0) * pose.matchLeniency
+    }
+
+    /// Live head direction, or `nil` when there's nothing to point at. `progress` hits 1 exactly when the pose starts
+    /// matching, which is now true for the diagonals too.
     var headTurn: HeadTurn? {
-        guard step == .enroll, !enrollmentComplete, faceDetected, !isTooFar,
+        // `recognitionUnavailableReason`: setup can't capture on the fallback embedder, so don't animate a ring that can't fill.
+        guard step == .enroll, !enrollmentComplete, faceDetected, !isTooFar, !isTooDark, recognitionUnavailableReason == nil,
               let pose = currentPose, pose != .center,
               let yaw = currentYaw, let pitch = currentPitch else { return nil }
 
-        // Vision inverts both axes vs. the screen: +yaw turns left, +pitch looks down.
-        let x = Double(-yaw / (yawInnerThreshold / pose.matchLeniency))
-        let y = Double(-pitch / (pitchInnerThreshold / pose.matchLeniency))
-
-        let magnitude = (x * x + y * y).squareRoot()
-        guard magnitude > headTurnDeadzone else { return nil }
-
-        let degrees = atan2(x, y) * 180 / .pi
-        return HeadTurn(angle: degrees < 0 ? degrees + 360 : degrees, progress: min(magnitude, 1))
+        let turn = EnrollmentPoseGeometry.turn(yaw: yaw, pitch: pitch)
+        let required = EnrollmentPoseGeometry.requiredMagnitude(factor: matchFactor(for: pose, widened: false))
+        guard turn.magnitude > headTurnDeadzone * required else { return nil }
+        // Over-rotated far enough that no pose will accept the turn, so the ring must not read as ready either —
+        // showing a full indicator against a refusing gate is the exact mismatch this whole change exists to remove.
+        guard turn.isWithinRange else { return nil }
+        return HeadTurn(angle: turn.compassAngle, progress: min(turn.magnitude / required, 1))
     }
 
     private enum EnrollFrameOutcome: Sendable {
@@ -614,6 +612,7 @@ final class OnboardingController {
         matchStreak = 0
         poseHoldStartedAt = nil
         isTooFar = false
+        isTooDark = false
         enrollmentComplete = false
         guideVisible = false
         cameraPreviewVisible = true
@@ -626,6 +625,9 @@ final class OnboardingController {
         guideVisible = true
         cameraPreviewVisible = true
         showCheckmark = false
+        // Stale from a previous dark attempt would otherwise show "Too dark" and suppress head-turn feedback before
+        // the restarted camera has produced a single frame to judge.
+        isTooDark = false
         poseStartedAt = .now
         captureReadyAt = .now + initialCaptureDelay
         poseHoldStartedAt = nil
@@ -709,9 +711,9 @@ final class OnboardingController {
     /// Text shown inside the pill: the explicitly chosen device's name, or the resolved
     /// system default's name suffixed "(Default)" when nothing's been picked yet.
     var cameraSelectionLabel: String {
-        if let id = GlanceSettings.shared.defaultCameraID,
-           let device = cameraDevices.first(where: { $0.id == id }) {
-            return device.name
+        if let id = GlanceSettings.shared.defaultCameraID {
+            // A pick that's unplugged still applies on replug, so it isn't the default.
+            return cameraDevices.first(where: { $0.id == id })?.name ?? "Selected camera (disconnected)"
         }
         guard let name = resolveDefaultCameraDevice()?.localizedName else { return "System default" }
         return "\(name) (Default)"
@@ -719,37 +721,28 @@ final class OnboardingController {
 
     /// Writes the pick straight into Settings — the same `defaultCameraID` the Camera
     /// settings page and `CameraDeviceCatalog.resolvedDevice()` read — then re-checks
-    /// whether the panel should follow the built-in display.
+    /// the display pin earlier onboarding saved.
     func selectCamera(id: String?) {
         GlanceSettings.shared.defaultCameraID = id
-        applyDisplayPinForCameraSelection()
+        clearLegacyBuiltInDisplayPin()
     }
 
-    /// Pins the Face Unlock panel to the MacBook's own screen while the built-in camera
-    /// is selected (auto-resolved or explicitly chosen), and releases that pin otherwise
-    /// so the panel returns to the user's normal (often external-monitor) screen. Only
-    /// meaningful with more than one screen connected — nothing to move on just one.
-    /// Called whenever the pick changes and again when the step first appears, so an
-    /// untouched system-default choice that happens to resolve to the built-in camera
-    /// still moves the panel.
-    func applyDisplayPinForCameraSelection() {
-        guard NSScreen.screens.count > 1 else { return }
-        let isBuiltIn = resolveSelectedCameraDevice()?.deviceType == .builtInWideAngleCamera
-        if isBuiltIn {
-            guard let builtInScreen = NSScreen.screens.first(where: { $0.isBuiltIn }) else { return }
-            GlanceSettings.shared.preferredDisplayID = builtInScreen.stableDisplayID
-            GlanceSettings.shared.preferredDisplayName = builtInScreen.localizedName
-        } else {
-            GlanceSettings.shared.preferredDisplayID = nil
-            GlanceSettings.shared.preferredDisplayName = nil
-        }
-    }
-
-    private func resolveSelectedCameraDevice() -> AVCaptureDevice? {
-        if let id = GlanceSettings.shared.defaultCameraID {
-            return AVCaptureDevice(uniqueID: id)
-        }
-        return resolveDefaultCameraDevice()
+    /// Releases a display pin that names the MacBook's own screen. Earlier onboarding saved
+    /// one whenever the built-in camera was picked with a second screen connected, and a
+    /// saved display has no fallback, so closing the lid on a dock silently turned Face
+    /// Unlock off. Re-running setup used to rewrite that pin; now it clears it instead.
+    ///
+    /// Nothing moves while that screen is connected, because unpinned
+    /// `NotchGeometry.preferredScreen()` picks the built-in display anyway. Onboarding never
+    /// saved any other display, so a pin on an external one was set in Settings and stays.
+    /// A pin on a built-in screen that isn't connected can't be identified and is left too.
+    func clearLegacyBuiltInDisplayPin() {
+        let settings = GlanceSettings.shared
+        guard let pinnedID = settings.preferredDisplayID,
+              NSScreen.screens.contains(where: { $0.isBuiltIn && $0.matches(displayID: pinnedID) })
+        else { return }
+        settings.preferredDisplayID = nil
+        settings.preferredDisplayName = nil
     }
 
     /// Same fallback `CameraDeviceCatalog.resolvedDevice()` uses once no override applies.
@@ -776,6 +769,14 @@ final class OnboardingController {
               let cameraFrame = camera.currentFrame, let pose = currentPose else { return }
         isProcessingFrame = true
         defer { isProcessingFrame = false }
+
+        guard !cameraFrame.isLowLightEnhanced else {
+            isTooDark = true
+            matchStreak = 0
+            poseHoldStartedAt = nil
+            return
+        }
+        isTooDark = false
 
         let pipeline = self.pipeline
         let minimumWidth = enrollmentMinimumFaceWidth
@@ -889,28 +890,20 @@ final class OnboardingController {
         }
     }
 
+    /// A directional pose matches when the head has turned far enough *in that direction*, measured the same way the
+    /// progress ring measures it.
+    ///
+    /// This used to test yaw and pitch independently, which quietly made the four diagonals 1.41x harder than the ring
+    /// implied: a perfect 45-degree turn puts 0.707 on each axis and fills the ring to 100%, but each axis still had to
+    /// reach 1.0 on its own, so the user had to keep turning past the point where the UI said they were done, with no
+    /// feedback explaining why. Cardinal poses were unaffected, which is why only the diagonals felt impossible.
     private func poseMatches(yaw: Float, pitch: Float, pose: EnrollmentPose, widened: Bool) -> Bool {
-        let factor = (widened ? stallWidenFactor : 1.0) * pose.matchLeniency
-        return yawMatches(yaw, band: pose.yawBand, factor: factor)
-            && pitchMatches(pitch, band: pose.pitchBand, factor: factor)
-    }
-
-    private func yawMatches(_ yaw: Float, band: EnrollmentPose.YawBand, factor: Float) -> Bool {
-        switch band {
-        case .none: return abs(yaw) < yawCenterTolerance * factor
-        case .left: return yaw > yawInnerThreshold / factor && yaw < yawOuterCap
-        case .right: return yaw < -yawInnerThreshold / factor && yaw > -yawOuterCap
-        }
-    }
-
-    /// Confirmed empirically: Vision reports negative pitch for "looking up" and positive
-    /// for "looking down" — the opposite of the initial guess.
-    private func pitchMatches(_ pitch: Float, band: EnrollmentPose.PitchBand, factor: Float) -> Bool {
-        switch band {
-        case .none: return abs(pitch) < pitchCenterTolerance * factor
-        case .up: return pitch < -pitchInnerThreshold / factor && pitch > -pitchOuterCap
-        case .down: return pitch > pitchInnerThreshold / factor && pitch < pitchOuterCap
-        }
+        EnrollmentPoseGeometry.matches(
+            yaw: yaw,
+            pitch: pitch,
+            compassAngle: pose.compassAngle,
+            factor: matchFactor(for: pose, widened: widened)
+        )
     }
 
     /// Runs the camera-complete sequence (instructions fade, preview fades, checkmark

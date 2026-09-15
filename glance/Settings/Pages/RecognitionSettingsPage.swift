@@ -56,6 +56,12 @@ struct RecognitionSettingsPage: View {
 
     private var unlockedState: some View {
         VStack(alignment: .leading, spacing: 20) {
+            // Every control below tunes a model that isn't running. Shown here rather than only in Face Lab, which is
+            // hidden behind five clicks on the About page — an affected user has no reason to know it exists.
+            if coordinator.pipeline.usingFallbackEmbedder {
+                SettingsCaption(text: "ArcFace didn’t start (\(coordinator.pipeline.fallbackReason ?? "unknown reason")), so glance fell back to Vision’s feature print — an embedder the code itself calls too thin to gate unlock on. Guided setup can’t capture a face at all, and any face enrolled while ArcFace was working won’t match, because the two produce unrelated embeddings. Reinstalling glance is the usual fix.")
+            }
+
             SettingsGroup {
                 SettingsOptionSliderRowContent(
                     title: "Match confidence",
@@ -132,75 +138,5 @@ struct RecognitionSettingsPage: View {
             sessionError = pocController.sessionError
             isUnlocking = false
         }
-    }
-}
-
-/// The three selectable points on the "Match confidence" slider — named
-/// rather than exposing the raw cosine-similarity threshold directly.
-private enum MatchConfidenceLevel: Int, CaseIterable {
-    case lessStrict, standard, moreStrict
-
-    var title: String {
-        switch self {
-        case .lessStrict: return "Less strict"
-        case .standard: return "Default"
-        case .moreStrict: return "More strict"
-        }
-    }
-
-    var threshold: Float {
-        switch self {
-        case .lessStrict: return 0.58
-        case .standard: return 0.63
-        case .moreStrict: return 0.68
-        }
-    }
-
-    /// Position in `allCases` — same role as `AutoLockInterval.sliderIndex`.
-    var sliderIndex: Double {
-        Double(Self.allCases.firstIndex(of: self) ?? 0)
-    }
-
-    static func from(sliderIndex: Double) -> Self {
-        let clamped = Int(sliderIndex.rounded())
-        return allCases.indices.contains(clamped) ? allCases[clamped] : .standard
-    }
-
-    static func nearest(to threshold: Float) -> Self {
-        allCases.min { abs($0.threshold - threshold) < abs($1.threshold - threshold) } ?? .standard
-    }
-}
-
-/// The three selectable points on the "Detection distance" slider.
-private enum DetectionDistanceLevel: Int, CaseIterable {
-    case close, standard, far
-
-    var title: String {
-        switch self {
-        case .close: return "Close"
-        case .standard: return "Default"
-        case .far: return "Far"
-        }
-    }
-
-    var minimumFaceWidth: Float {
-        switch self {
-        case .close: return 0.23
-        case .standard: return 0.19
-        case .far: return 0.15
-        }
-    }
-
-    var sliderIndex: Double {
-        Double(Self.allCases.firstIndex(of: self) ?? 0)
-    }
-
-    static func from(sliderIndex: Double) -> Self {
-        let clamped = Int(sliderIndex.rounded())
-        return allCases.indices.contains(clamped) ? allCases[clamped] : .standard
-    }
-
-    static func nearest(to width: Float) -> Self {
-        allCases.min { abs($0.minimumFaceWidth - width) < abs($1.minimumFaceWidth - width) } ?? .standard
     }
 }

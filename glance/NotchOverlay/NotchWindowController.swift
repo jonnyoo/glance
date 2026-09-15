@@ -153,9 +153,9 @@ final class NotchWindowController {
 
     private func windowIfNeeded() -> NotchWindow {
         if let window { return window }
-        // Never resized afterward (see NotchWindow.swift), so a style change
-        // mid-session keeps whatever margin it was created with.
-        let size = NotchGeometry.windowSize(for: currentGeometry.style)
+        // Never resized afterward (see NotchWindow.swift), so it's sized for both
+        // styles up front rather than whichever one the screen has right now.
+        let size = NotchGeometry.maxWindowSize
         let rect = NSRect(x: 0, y: 0, width: size.width, height: size.height)
         let newWindow = NotchWindow(contentRect: rect)
         newWindow.contentView = contentView
@@ -164,7 +164,15 @@ final class NotchWindowController {
     }
 
     private func reposition(_ window: NotchWindow) {
-        guard let screen = NotchGeometry.preferredScreen() else { return }
+        // Only reached once something decided to show the panel (the lock-screen path already bailed on a missing
+        // pinned display). Returning here left a panel the user opened at its creation origin (0,0) or on the display
+        // that just went away; the same order as `currentGeometry`'s `forMainScreen()` keeps position and shape on one
+        // real screen.
+        guard let screen = NotchGeometry.preferredScreen()
+            ?? NSScreen.screens.first(where: { $0.isBuiltIn })
+            ?? NSScreen.main
+            ?? NSScreen.screens.first
+        else { return }
         let screenFrame = screen.frame
         let size = window.frame.size
         window.setFrameOrigin(NSPoint(

@@ -189,12 +189,20 @@ struct NotchGeometry {
         }
     }
 
-    /// Floor for a physical notch's measured width — the auxiliary-area arithmetic
-    /// below can come up implausibly small on odd display configurations.
-    private static let minimumNotchWidth: CGFloat = 200
+    /// What the window and the SwiftUI root are actually sized to. The target screen can
+    /// switch between notched and notchless mid-session while the window can't be resized,
+    /// so both styles must fit one envelope. Sizing for just the current style left the
+    /// notch floating below the top edge (a notch root centered in a taller pill window),
+    /// or the pill clipped the other way round.
+    static var maxWindowSize: CGSize {
+        let notch = windowSize(for: .notch)
+        let pill = windowSize(for: .pill)
+        return CGSize(width: max(notch.width, pill.width), height: max(notch.height, pill.height))
+    }
 
+    /// Only a last resort — callers should prefer `preferredScreen()`.
     static func forMainScreen() -> NotchGeometry {
-        guard let screen = NSScreen.main else {
+        guard let screen = NSScreen.screens.first(where: { $0.isBuiltIn }) ?? NSScreen.main else {
             return NotchGeometry(closedSize: pillClosedSize, isPhysicalNotch: false)
         }
         return forScreen(screen)
@@ -207,9 +215,11 @@ struct NotchGeometry {
 
         // Width derived from the menu-bar areas flanking the notch — nil/empty on
         // displays without one, hence the safeAreaInsets check above.
-        let leftPadding = screen.auxiliaryTopLeftArea?.width ?? 0
-        let rightPadding = screen.auxiliaryTopRightArea?.width ?? 0
-        let width = max(screen.frame.width - leftPadding - rightPadding, minimumNotchWidth)
+        let width = DisplayMath.notchWidth(
+            screenWidth: screen.frame.width,
+            leftAreaWidth: screen.auxiliaryTopLeftArea?.width,
+            rightAreaWidth: screen.auxiliaryTopRightArea?.width
+        )
         let height = screen.safeAreaInsets.top
 
         return NotchGeometry(closedSize: CGSize(width: width, height: height), isPhysicalNotch: true)
@@ -217,28 +227,64 @@ struct NotchGeometry {
 
     /// Picks the screen the overlay should show on. If a display is pinned
     /// (`GlanceSettings.preferredDisplayID`), it's used only if still connected — no
-    /// fallback. Otherwise: the physical notch if any display has one, else the primary screen.
+    /// fallback. Otherwise: the physical notch if any display has one, else the built-in display.
+    /// Only built-in panels have a notch, so unpinned this is the built-in display whenever
+    /// one is connected, whichever camera is selected.
     @MainActor
     static func preferredScreen() -> NSScreen? {
         if let targetID = GlanceSettings.shared.preferredDisplayID {
-            return NSScreen.screens.first { $0.stableDisplayID == targetID }
+            let pinned = NSScreen.screens.first { $0.matches(displayID: targetID) }
+            // A choice saved as a raw display number only holds until the next reboot or replug renumbers displays.
+            // Rewrite it to the UUID while it still names the display the user picked, which the saved name vouches
+            // for. Deferred because this also runs during SwiftUI layout.
+            if let pinned, let persistentID = pinned.stableDisplayID, persistentID != targetID,
+               (GlanceSettings.shared.preferredDisplayName ?? pinned.localizedName) == pinned.localizedName {
+                Task { @MainActor in
+                    guard GlanceSettings.shared.preferredDisplayID == targetID else { return }
+                    GlanceSettings.shared.preferredDisplayID = persistentID
+                }
+            }
+            return pinned
         }
-        return NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main
+        if let notched = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) {
+            return notched
+        }
+        // The built-in display, not `NSScreen.main`. `main` is the screen holding the key window, so on a notchless
+        // MacBook with an external monitor the unlock overlay follows whatever the user last clicked, and it changes
+        // between runs.
+        return NSScreen.screens.first { $0.isBuiltIn } ?? NSScreen.main
     }
 }
 
 extension NSScreen {
-    /// Stable enough to persist a user's display choice across launches — the only
-    /// per-display identity AppKit exposes.
-    var stableDisplayID: String? {
-        guard let number = deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
-            return nil
-        }
-        return String(number)
+    private var displayNumber: CGDirectDisplayID? {
+        deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
     }
 
-    /// True for the Mac's own display (vs. an external monitor) — used to pin the Face
-    /// Unlock panel there while the built-in camera is selected.
+    private var displayUUID: String? {
+        guard let number = displayNumber, let uuid = CGDisplayCreateUUIDFromDisplayID(number)?.takeRetainedValue() else {
+            return nil
+        }
+        return CFUUIDCreateString(nil, uuid) as String
+    }
+
+    /// What to persist for a user's display choice. Prefers the display's UUID: the
+    /// `NSScreenNumber` AppKit exposes is reassigned across reboots and replugs, which
+    /// left a connected monitor reading "(disconnected)" and Face Unlock silently off.
+    var stableDisplayID: String? {
+        guard let number = displayNumber else { return nil }
+        return DisplayMath.persistentID(uuid: displayUUID, number: number)
+    }
+
+    /// Compare saved display ids through this, never with `==` on `stableDisplayID`:
+    /// choices saved before UUIDs hold the raw display number.
+    func matches(displayID: String) -> Bool {
+        guard let number = displayNumber else { return false }
+        return DisplayMath.savedID(displayID, matchesUUID: displayUUID, number: number)
+    }
+
+    /// True for the Mac's own display (vs. an external monitor) — where the Face Unlock
+    /// panel goes when no display is pinned.
     var isBuiltIn: Bool {
         guard let number = deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
             return false

@@ -8,6 +8,8 @@
 
 import SwiftUI
 import AppKit
+import AVFoundation
+import Combine
 
 // MARK: - 1. Intro
 
@@ -235,8 +237,25 @@ struct SelectCameraStepView: View {
         .background(GlanceTheme.panel)
         .onAppear {
             controller.refreshCameraDevices()
-            controller.applyDisplayPinForCameraSelection()
+            controller.clearLegacyBuiltInDisplayPin()
         }
+        // The list is a snapshot, and there's no refresh button here, so follow hot-plugs
+        // (USB, dock, Continuity Camera) for as long as this step is on screen. The list only, not
+        // clearLegacyBuiltInDisplayPin(): that check is about which screens are connected, not
+        // cameras, and it already ran on appear and runs again on every pick, so a camera
+        // arriving or leaving gives it nothing new to act on.
+        .onReceive(cameraHotPlugs) { _ in
+            controller.refreshCameraDevices()
+        }
+    }
+
+    /// AVFoundation doesn't promise these arrive on the main thread; the controller is main-actor state.
+    private var cameraHotPlugs: AnyPublisher<Notification, Never> {
+        let center = NotificationCenter.default
+        return center.publisher(for: AVCaptureDevice.wasConnectedNotification)
+            .merge(with: center.publisher(for: AVCaptureDevice.wasDisconnectedNotification))
+            .receive(on: DispatchQueue.main)
+            .eraseToAnyPublisher()
     }
 }
 
