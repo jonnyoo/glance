@@ -110,6 +110,32 @@ struct GeneralSettingsPage: View {
         }
 
         VStack(alignment: .leading, spacing: 8) {
+            SettingsSectionTitle(text: "Notch size")
+            SettingsGroup {
+                SettingsSteppedSliderRowContent(
+                    title: "Width",
+                    valueLabel: notchAdjustmentLabel(settings.notchWidthAdjustment),
+                    index: Binding(
+                        get: { Double(settings.notchWidthAdjustment - GlanceSettings.notchAdjustmentRange.lowerBound) },
+                        set: { settings.notchWidthAdjustment = GlanceSettings.notchAdjustmentRange.lowerBound + Int($0.rounded()) }
+                    ),
+                    stopCount: GlanceSettings.notchAdjustmentRange.count
+                )
+                SettingsGroupDivider()
+                SettingsSteppedSliderRowContent(
+                    title: "Height",
+                    valueLabel: notchAdjustmentLabel(settings.notchHeightAdjustment),
+                    index: Binding(
+                        get: { Double(settings.notchHeightAdjustment - GlanceSettings.notchAdjustmentRange.lowerBound) },
+                        set: { settings.notchHeightAdjustment = GlanceSettings.notchAdjustmentRange.lowerBound + Int($0.rounded()) }
+                    ),
+                    stopCount: GlanceSettings.notchAdjustmentRange.count
+                )
+            }
+            SettingsCaption(text: "Fine-tune the overlay to match your Mac's physical notch. Has no effect on displays without one.")
+        }
+
+        VStack(alignment: .leading, spacing: 8) {
             SettingsSectionTitle(text: "Animation")
             SettingsGroup {
                 SettingsRowContent(title: "Show animation") {
@@ -122,6 +148,12 @@ struct GeneralSettingsPage: View {
                 )
             }
         }
+    }
+
+    /// "Default" at zero, otherwise a signed point offset (e.g. "+6pt", "-3pt").
+    private func notchAdjustmentLabel(_ value: Int) -> String {
+        guard value != 0 else { return "Default" }
+        return "\(value > 0 ? "+" : "")\(value)pt"
     }
 
     /// Shown while "On space" is selected but Input Monitoring isn't granted.
