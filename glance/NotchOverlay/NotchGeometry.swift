@@ -193,6 +193,7 @@ struct NotchGeometry {
     /// below can come up implausibly small on odd display configurations.
     private static let minimumNotchWidth: CGFloat = 200
 
+    @MainActor
     static func forMainScreen() -> NotchGeometry {
         guard let screen = NSScreen.main else {
             return NotchGeometry(closedSize: pillClosedSize, isPhysicalNotch: false)
@@ -200,17 +201,21 @@ struct NotchGeometry {
         return forScreen(screen)
     }
 
+    @MainActor
     static func forScreen(_ screen: NSScreen) -> NotchGeometry {
         guard screen.safeAreaInsets.top > 0 else {
             return NotchGeometry(closedSize: pillClosedSize, isPhysicalNotch: false)
         }
 
         // Width derived from the menu-bar areas flanking the notch — nil/empty on
-        // displays without one, hence the safeAreaInsets check above.
+        // displays without one, hence the safeAreaInsets check above. `notchWidthAdjustment`
+        // is a user-supplied correction (Settings → General → Notch size) for displays
+        // where this measurement comes out visibly mismatched.
         let leftPadding = screen.auxiliaryTopLeftArea?.width ?? 0
         let rightPadding = screen.auxiliaryTopRightArea?.width ?? 0
-        let width = max(screen.frame.width - leftPadding - rightPadding, minimumNotchWidth)
-        let height = screen.safeAreaInsets.top
+        let measuredWidth = screen.frame.width - leftPadding - rightPadding
+        let width = max(measuredWidth + CGFloat(GlanceSettings.shared.notchWidthAdjustment), minimumNotchWidth)
+        let height = max(screen.safeAreaInsets.top + CGFloat(GlanceSettings.shared.notchHeightAdjustment), 1)
 
         return NotchGeometry(closedSize: CGSize(width: width, height: height), isPhysicalNotch: true)
     }

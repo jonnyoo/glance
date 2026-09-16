@@ -113,6 +113,8 @@ final class GlanceSettings {
         static let hasCompletedOnboarding = "GlanceSettings.hasCompletedOnboarding"
         static let onboardingResumeStep = "GlanceSettings.onboardingResumeStep"
         static let hasAcknowledgedSecurityNotice = "GlanceSettings.hasAcknowledgedSecurityNotice"
+        static let notchWidthAdjustment = "GlanceSettings.notchWidthAdjustment"
+        static let notchHeightAdjustment = "GlanceSettings.notchHeightAdjustment"
     }
 
     @ObservationIgnored private let defaults = UserDefaults.standard
@@ -252,6 +254,35 @@ final class GlanceSettings {
         didSet { defaults.set(hasAcknowledgedSecurityNotice, forKey: Key.hasAcknowledgedSecurityNotice) }
     }
 
+    /// Manual correction added on top of the auto-measured physical notch width —
+    /// the safe-area/auxiliary-area math can come up slightly off on some
+    /// displays. Has no effect in pill style. See `NotchGeometry.forScreen(_:)`.
+    var notchWidthAdjustment: Int {
+        didSet {
+            let clamped = min(max(notchWidthAdjustment, Self.notchAdjustmentRange.lowerBound),
+                               Self.notchAdjustmentRange.upperBound)
+            guard clamped == notchWidthAdjustment else {
+                notchWidthAdjustment = clamped
+                return
+            }
+            defaults.set(notchWidthAdjustment, forKey: Key.notchWidthAdjustment)
+        }
+    }
+    /// Manual correction added on top of the measured notch height (`safeAreaInsets.top`).
+    var notchHeightAdjustment: Int {
+        didSet {
+            let clamped = min(max(notchHeightAdjustment, Self.notchAdjustmentRange.lowerBound),
+                               Self.notchAdjustmentRange.upperBound)
+            guard clamped == notchHeightAdjustment else {
+                notchHeightAdjustment = clamped
+                return
+            }
+            defaults.set(notchHeightAdjustment, forKey: Key.notchHeightAdjustment)
+        }
+    }
+
+    static let notchAdjustmentRange = -20...20
+
     private init() {
         // Enabled by default — onboarding already enrolled a face and set a
         // password specifically to use Face Unlock.
@@ -316,6 +347,13 @@ final class GlanceSettings {
         onboardingResumeStep = defaults.string(forKey: Key.onboardingResumeStep)
             .flatMap(OnboardingStep.init(rawValue:))
         hasAcknowledgedSecurityNotice = defaults.object(forKey: Key.hasAcknowledgedSecurityNotice) as? Bool ?? false
+
+        notchWidthAdjustment = (defaults.object(forKey: Key.notchWidthAdjustment) as? Int)
+            .map { min(max($0, Self.notchAdjustmentRange.lowerBound), Self.notchAdjustmentRange.upperBound) }
+            ?? 0
+        notchHeightAdjustment = (defaults.object(forKey: Key.notchHeightAdjustment) as? Int)
+            .map { min(max($0, Self.notchAdjustmentRange.lowerBound), Self.notchAdjustmentRange.upperBound) }
+            ?? 0
 
         // Push into the nonisolated mirror immediately, or FaceRecognitionPipeline
         // would keep its own default until the slider is first touched.
