@@ -29,15 +29,17 @@ enum ScanMedia: Equatable {
 
 struct ScanAnimationView: NSViewRepresentable {
     let media: ScanMedia
+    /// Read in the caller's body, so a change in Settings re-renders whatever overlay is on screen.
+    var color: UnlockAnimationColor = GlanceSettings.shared.unlockAnimationColor
 
     func makeNSView(context: Context) -> ScanAnimationHostView {
         let view = ScanAnimationHostView()
-        view.apply(media: media)
+        view.apply(media: media, color: color)
         return view
     }
 
     func updateNSView(_ nsView: ScanAnimationHostView, context: Context) {
-        nsView.apply(media: media)
+        nsView.apply(media: media, color: color)
     }
 }
 
@@ -46,6 +48,7 @@ final class ScanAnimationHostView: NSView {
     private let playerLayer = AVPlayerLayer()
     private let stillImageLayer = CALayer()
     private var currentMedia: ScanMedia?
+    private var currentColor: UnlockAnimationColor?
     private var readyObservation: NSKeyValueObservation?
     private var fallbackRevealWorkItem: DispatchWorkItem?
 
@@ -55,9 +58,6 @@ final class ScanAnimationHostView: NSView {
         layer = CALayer()
 
         stillImageLayer.contentsGravity = .resizeAspect
-        if let still = Self.loadStillFromBundle() {
-            stillImageLayer.contents = still
-        }
         layer?.addSublayer(stillImageLayer)
 
         playerLayer.videoGravity = .resizeAspect
@@ -78,9 +78,13 @@ final class ScanAnimationHostView: NSView {
         CATransaction.commit()
     }
 
-    func apply(media: ScanMedia) {
-        guard media != currentMedia else { return }
+    func apply(media: ScanMedia, color: UnlockAnimationColor) {
+        guard media != currentMedia || color != currentColor else { return }
+        if color != currentColor {
+            stillImageLayer.contents = Self.loadStillFromBundle().map { AnimationTint.apply(color, to: $0) }
+        }
         currentMedia = media
+        currentColor = color
         readyObservation = nil
         fallbackRevealWorkItem?.cancel()
 
@@ -97,7 +101,9 @@ final class ScanAnimationHostView: NSView {
         }
 
         teardownPlayer()
-        let newPlayer = AVPlayer(url: url)
+        let item = AVPlayerItem(url: url)
+        item.videoComposition = AnimationTint.videoComposition(for: item.asset, color: color)
+        let newPlayer = AVPlayer(playerItem: item)
         // This can play at the lock screen — never make noise.
         newPlayer.isMuted = true
         // Leaves the player paused on its final frame rather than rewinding.

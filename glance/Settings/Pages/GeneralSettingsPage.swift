@@ -120,6 +120,16 @@ struct GeneralSettingsPage: View {
                     selection: $settings.unlockAnimationStyle,
                     isEnabled: settings.showUnlockAnimation
                 )
+                SettingsGroupDivider()
+                SettingsRowContent(title: "Color") {
+                    SettingsMenuPickerPill(label: settings.unlockAnimationColor.title) {
+                        ForEach(UnlockAnimationColor.allCases) { color in
+                            Button(color.title) { settings.unlockAnimationColor = color }
+                        }
+                    }
+                }
+                .disabled(!settings.showUnlockAnimation)
+                .opacity(settings.showUnlockAnimation ? 1 : 0.4)
             }
         }
     }

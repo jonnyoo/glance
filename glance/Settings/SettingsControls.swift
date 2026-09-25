@@ -758,10 +758,12 @@ struct UnlockAnimationPicker: View {
 
 
 private struct UnlockStillThumbnail: View {
+    var color: UnlockAnimationColor = GlanceSettings.shared.unlockAnimationColor
+
     var body: some View {
         if let url = Bundle.main.url(forResource: "unlockstatic", withExtension: "png"),
            let nsImage = NSImage(contentsOf: url) {
-            Image(nsImage: nsImage)
+            Image(nsImage: AnimationTint.apply(color, to: nsImage))
                 .resizable()
                 .aspectRatio(contentMode: .fit)
         } else {

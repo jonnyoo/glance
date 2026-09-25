@@ -53,6 +53,31 @@ enum UnlockAnimationStyle: String, CaseIterable, Identifiable {
     static let selectableCases: [UnlockAnimationStyle] = [.minimal, .original]
 }
 
+/// Color of the notch overlay's scan/unlock artwork. The bundled media is drawn in blue; other colors are applied at
+/// render time by `AnimationTint`, so no extra video assets are needed.
+enum UnlockAnimationColor: String, CaseIterable, Identifiable {
+    case blue
+    case green
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .blue: return "Blue"
+        case .green: return "Green"
+        }
+    }
+
+    /// sRGB components to recolor the artwork to, or nil to show it as authored.
+    var tintRGB: (red: Double, green: Double, blue: Double)? {
+        switch self {
+        case .blue: return nil
+        // systemGreen (#34C759), the color of a successful unlock elsewhere in macOS.
+        case .green: return (0x34 / 255, 0xC7 / 255, 0x59 / 255)
+        }
+    }
+}
+
 /// What can prompt Face Unlock. Multi-select; at least one is always kept
 /// selected, since a Mac with none armed would never show the notch.
 enum UnlockTrigger: String, CaseIterable, Identifiable {
@@ -97,6 +122,7 @@ final class GlanceSettings {
         static let minimumFaceWidth = "GlanceSettings.minimumFaceWidth"
         static let unlockAnimationStyle = "GlanceSettings.unlockAnimationStyle"
         static let showUnlockAnimation = "GlanceSettings.showUnlockAnimation"
+        static let unlockAnimationColor = "GlanceSettings.unlockAnimationColor"
         /// Legacy bool key — read once during migration, then ignored.
         static let playUnlockAnimation = "GlanceSettings.playUnlockAnimation"
         static let unlockTriggers = "GlanceSettings.unlockTriggers"
@@ -149,6 +175,9 @@ final class GlanceSettings {
     }
     var showUnlockAnimation: Bool {
         didSet { defaults.set(showUnlockAnimation, forKey: Key.showUnlockAnimation) }
+    }
+    var unlockAnimationColor: UnlockAnimationColor {
+        didSet { defaults.set(unlockAnimationColor.rawValue, forKey: Key.unlockAnimationColor) }
     }
 
     /// What the overlay should actually render — the pick, or `.none` when
@@ -284,6 +313,8 @@ final class GlanceSettings {
         unlockAnimationStyle = storedStyle == .none ? .original : storedStyle
         showUnlockAnimation = defaults.object(forKey: Key.showUnlockAnimation) as? Bool
             ?? (storedStyle != .none)
+        unlockAnimationColor = defaults.string(forKey: Key.unlockAnimationColor)
+            .flatMap(UnlockAnimationColor.init(rawValue:)) ?? .blue
 
         // On wake/lock by default, not on space — `.onSpace` needs Input
         // Monitoring, which a fresh install shouldn't request unprompted.
