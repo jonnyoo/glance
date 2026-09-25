@@ -48,10 +48,36 @@ enum KeystrokeInjector {
         }
         let source = CGEventSource(stateID: .hidSystemState)
         try clearFocusedField(source: source)
-        for char in text {
-            try postUnicode(String(char), source: source)
+        for chunk in unicodeChunks(of: text) {
+            try postUnicode(chunk, source: source)
         }
         try postReturn(source: source)
+    }
+
+    /// A CGEvent carries at most 20 UTF-16 units of Unicode text (longer strings are truncated).
+    private nonisolated static let maxUnicodeUnitsPerEvent = 20
+
+    /// Packs the text into as few key events as possible — a typical password goes out as one event instead of one per
+    /// character, cutting injection from ~24ms per character to ~24ms total. Splits only on `Character` boundaries so a
+    /// surrogate pair or composed grapheme is never torn across two events.
+    private nonisolated static func unicodeChunks(of text: String) -> [String] {
+        var chunks: [String] = []
+        var current = ""
+        var currentUnits = 0
+        for char in text {
+            let units = char.utf16.count
+            if currentUnits + units > maxUnicodeUnitsPerEvent, !current.isEmpty {
+                chunks.append(current)
+                current = ""
+                currentUnits = 0
+            }
+            current.append(char)
+            currentUnits += units
+        }
+        if !current.isEmpty {
+            chunks.append(current)
+        }
+        return chunks
     }
 
     /// Wipes anything already typed into the focused field (e.g. a stray keypress
@@ -98,7 +124,7 @@ enum KeystrokeInjector {
         }
     }
 
-    /// Per-character Unicode injection — bypasses keyboard layout issues.
+    /// Unicode string injection (up to `maxUnicodeUnitsPerEvent` units) — bypasses keyboard layout issues.
     private nonisolated static func postUnicode(_ unicode: String, source: CGEventSource?) throws {
         let utf16 = Array(unicode.utf16)
         guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
