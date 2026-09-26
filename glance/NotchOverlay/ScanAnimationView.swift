@@ -19,9 +19,13 @@ enum ScanMedia: Equatable {
     case failure
 
     var videoResourceName: String? {
+        videoResourceName(color: GlanceSettings.shared.unlockAnimationColor)
+    }
+
+    func videoResourceName(color: UnlockAnimationColor) -> String? {
         switch self {
         case .idle: return nil
-        case .success: return "unlockanimation"
+        case .success: return color.videoResourceName
         case .failure: return "unsuccessfulunlockanimation"
         }
     }
@@ -29,15 +33,16 @@ enum ScanMedia: Equatable {
 
 struct ScanAnimationView: NSViewRepresentable {
     let media: ScanMedia
+    var color: UnlockAnimationColor = .original
 
     func makeNSView(context: Context) -> ScanAnimationHostView {
         let view = ScanAnimationHostView()
-        view.apply(media: media)
+        view.apply(media: media, color: color)
         return view
     }
 
     func updateNSView(_ nsView: ScanAnimationHostView, context: Context) {
-        nsView.apply(media: media)
+        nsView.apply(media: media, color: color)
     }
 }
 
@@ -46,6 +51,7 @@ final class ScanAnimationHostView: NSView {
     private let playerLayer = AVPlayerLayer()
     private let stillImageLayer = CALayer()
     private var currentMedia: ScanMedia?
+    private var currentColor: UnlockAnimationColor?
     private var readyObservation: NSKeyValueObservation?
     private var fallbackRevealWorkItem: DispatchWorkItem?
 
@@ -55,7 +61,9 @@ final class ScanAnimationHostView: NSView {
         layer = CALayer()
 
         stillImageLayer.contentsGravity = .resizeAspect
-        if let still = Self.loadStillFromBundle() {
+        let initialColor = GlanceSettings.shared.unlockAnimationColor
+        currentColor = initialColor
+        if let still = Self.loadStillFromBundle(color: initialColor) {
             stillImageLayer.contents = still
         }
         layer?.addSublayer(stillImageLayer)
@@ -78,13 +86,21 @@ final class ScanAnimationHostView: NSView {
         CATransaction.commit()
     }
 
-    func apply(media: ScanMedia) {
-        guard media != currentMedia else { return }
+    func apply(media: ScanMedia, color: UnlockAnimationColor = GlanceSettings.shared.unlockAnimationColor) {
+        let colorChanged = (color != currentColor)
+        if colorChanged {
+            currentColor = color
+            if let still = Self.loadStillFromBundle(color: color) {
+                stillImageLayer.contents = still
+            }
+        }
+
+        guard media != currentMedia || (colorChanged && media != .idle) else { return }
         currentMedia = media
         readyObservation = nil
         fallbackRevealWorkItem?.cancel()
 
-        guard let resource = media.videoResourceName else {
+        guard let resource = media.videoResourceName(color: color) else {
             teardownPlayer()
             playerLayer.isHidden = true
             stillImageLayer.isHidden = false
@@ -146,8 +162,9 @@ final class ScanAnimationHostView: NSView {
 
     /// The asset lives in Resources/ rather than an asset catalog, so
     /// `NSImage(named:)` won't find it — load by URL instead.
-    private static func loadStillFromBundle() -> NSImage? {
-        guard let url = Bundle.main.url(forResource: "unlockstatic", withExtension: "png") else { return nil }
+    private static func loadStillFromBundle(color: UnlockAnimationColor = .original) -> NSImage? {
+        let resourceName = color.stillResourceName
+        guard let url = Bundle.main.url(forResource: resourceName, withExtension: "png") else { return nil }
         return NSImage(contentsOf: url)
     }
 }

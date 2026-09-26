@@ -224,6 +224,7 @@ struct NotchOverlayView: View {
         if isMinimalScan {
             MinimalUnlockView(
                 media: controller.media,
+                color: controller.activeUnlockColor,
                 isUnlocked: isMinimalLockOpen,
                 // The notch's flare eats `topRadius` before any real black starts.
                 edgeInset: NotchGeometry.minimalContentEdgeInset
@@ -239,7 +240,7 @@ struct NotchOverlayView: View {
                 pulseOpacity: scanPulseOpacity
             )
         } else {
-            ScanAnimationView(media: controller.media)
+            ScanAnimationView(media: controller.media, color: controller.activeUnlockColor)
                 .padding(.leading, scanContentPaddingLeading)
                 .padding(.trailing, scanContentPaddingTrailing)
                 .padding(.top, scanContentPaddingTop)

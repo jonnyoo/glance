@@ -733,7 +733,7 @@ struct UnlockAnimationPicker: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white)
                 Spacer(minLength: 6)
-                UnlockStillThumbnail()
+                UnlockStillThumbnail(color: GlanceSettings.shared.unlockAnimationColor)
                     .frame(width: 18, height: 18)
             }
             .padding(.horizontal, 10)
@@ -742,9 +742,9 @@ struct UnlockAnimationPicker: View {
             .padding(.horizontal, 12)
         case .original:
             VStack {
-            UnlockStillThumbnail()
-                .padding(10)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                UnlockStillThumbnail(color: GlanceSettings.shared.unlockAnimationColor)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             // .padding(4)
             .background(Color.black, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
@@ -758,8 +758,11 @@ struct UnlockAnimationPicker: View {
 
 
 private struct UnlockStillThumbnail: View {
+    var color: UnlockAnimationColor = GlanceSettings.shared.unlockAnimationColor
+
     var body: some View {
-        if let url = Bundle.main.url(forResource: "unlockstatic", withExtension: "png"),
+        let resourceName = color.stillResourceName
+        if let url = Bundle.main.url(forResource: resourceName, withExtension: "png"),
            let nsImage = NSImage(contentsOf: url) {
             Image(nsImage: nsImage)
                 .resizable()
@@ -767,6 +770,59 @@ private struct UnlockStillThumbnail: View {
         } else {
             Color.clear
         }
+    }
+}
+
+/// Color picker for the unlock animation.
+struct UnlockAnimationColorPicker: View {
+    @Binding var selection: UnlockAnimationColor
+    var isEnabled: Bool = true
+
+    /// How long the live preview holds on the success animation before collapsing.
+    private static let previewHoldDuration: Duration = .seconds(1.5)
+
+    var body: some View {
+        SettingsLabeledOptionRow(
+            title: "Color",
+            subtitle: "The color of the unlock animation"
+        ) {
+            ForEach(UnlockAnimationColor.allCases) { color in
+                SettingsOptionTile(
+                    title: color.title,
+                    isSelected: selection == color,
+                    action: { selectAndPreview(color) },
+                    previewHeight: SettingsMetrics.unlockAnimationOptionPreviewSize.height,
+                    previewWidth: SettingsMetrics.unlockAnimationOptionPreviewSize.width
+                ) {
+                    preview(for: color)
+                }
+            }
+        }
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.4)
+    }
+
+    /// Picks the color tile (a re-tap replays the preview too) and plays the
+    /// real animation on the notch/pill with the selected color override.
+    private func selectAndPreview(_ color: UnlockAnimationColor) {
+        selection = color
+        NotchOverlayController.shared.present(colorOverride: color)
+        Task {
+            try? await Task.sleep(for: Self.previewHoldDuration)
+            NotchOverlayController.shared.finish(success: true)
+        }
+    }
+
+    @ViewBuilder
+    private func preview(for color: UnlockAnimationColor) -> some View {
+        VStack {
+            UnlockStillThumbnail(color: color)
+                .padding(10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(Color.black, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .frame(width: 50, height: 50)
+        .padding(.vertical, 10)
     }
 }
 
