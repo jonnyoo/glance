@@ -66,9 +66,10 @@ import AVFoundation
             try await colour("ordinary restart")
             for (index, delay) in [0, 2, 8].enumerated() {
                 let cycle = index + 1
+                let captureStarted = ContinuousClock.now
                 let infrared = try await InfraredServiceManager.capture(allowPermissionPrompt: false)
                 _ = try infrared.image()
-                print("PASS: IR capture \(cycle): \(infrared.frames ?? 0) complete frames")
+                print("PASS: IR capture \(cycle): \(infrared.frames ?? 0) complete frames in \(captureStarted.duration(to: .now))")
                 // Mirror the unlock cycle's final stop and later hover/retry.
                 camera.stop()
                 try await Task.sleep(for: .seconds(delay))

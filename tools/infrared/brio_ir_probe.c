@@ -22,7 +22,7 @@ static const uint8_t ir_guid[16] = {
 struct brio_ir_job {
     atomic_bool cancelled;
     pthread_mutex_t frame_lock;
-    unsigned frames, rejected;
+    unsigned frames, rejected, illuminated_frames;
     double brightest_mean, darkest_mean;
     uint8_t latest[PIXELS];
     FILE *output;
@@ -81,11 +81,25 @@ static void on_frame(uvc_frame_t *frame, void *user) {
             memcpy(job->latest, frame->data, PIXELS);
         }
         if (mean < job->darkest_mean) job->darkest_mean = mean;
+        // Exposure/readiness only, not a liveness or identity decision. Keep
+        // several illuminated samples rather than returning the first pulse.
+        if (mean >= 5.0) job->illuminated_frames++;
         job->frames++;
     } else {
         job->rejected++;
     }
     pthread_mutex_unlock(&job->frame_lock);
+}
+
+/* The camera alternates dark/illuminated frames. Once a short burst includes
+ * enough illuminated samples, more fixed waiting adds no authentication gate.
+ * Face alignment, identity matching and liveness are still checked by the app.
+ * Lock protects these fields against the streaming callback. */
+static int snapshot_ready(brio_ir_job *job) {
+    pthread_mutex_lock(&job->frame_lock);
+    int ready = job->frames >= 12 && job->illuminated_frames >= 3;
+    pthread_mutex_unlock(&job->frame_lock);
+    return ready;
 }
 
 /* A snapshot travels over stdout to the caller's memory only. */
@@ -242,9 +256,11 @@ static int run_probe(brio_ir_job *job, int argc, const char **argv) {
     stage = "start-ir";
     rc = uvc_start_streaming(handle, &control, on_frame, job, 0);
     if (rc) goto cleanup;
-    /* Five seconds, independent of whether any frames arrive. */
-    for (int tick = 0; tick < 50 && !is_cancelled(job); tick++) {
-        struct timespec delay = { .tv_sec = 0, .tv_nsec = 100000000 };
+    /* Bound a failed/dark stream to five seconds, but return an illuminated
+     * burst as soon as it is ready. Never reuse a previous job's frame. */
+    for (int tick = 0; tick < 100 && !is_cancelled(job); tick++) {
+        if (snapshot_ready(job)) break;
+        struct timespec delay = { .tv_sec = 0, .tv_nsec = 50000000 };
         nanosleep(&delay, NULL);
     }
     uvc_stop_streaming(handle);

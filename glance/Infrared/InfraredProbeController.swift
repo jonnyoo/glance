@@ -90,7 +90,7 @@ final class InfraredProbeController {
         generation = id
         service.refresh()
         status = capture
-            ? (service.available ? "Look at the BRIO. Capturing for five seconds…" : "Approve the macOS prompt, then look at the BRIO. Capturing for five seconds…")
+            ? (service.available ? "Look at the BRIO. Capturing infrared…" : "Approve the macOS prompt, then look at the BRIO. Capturing infrared…")
             : "Checking infrared hardware…"
         if purpose != .preview { comparisonStatus = "Capturing a new infrared scan…" }
         let process = InfraredProbeProcess()

@@ -490,7 +490,7 @@ final class FaceUnlockCoordinator {
                 guard !Task.isCancelled, generation == scanGeneration, isEnabled else { return .noResolution }
                 if infraredRequired {
                     return await confirmInfrared(for: readyMatch.identity, generation: generation, rgbThreshold: rgbThreshold,
-                        evidenceAt: min(frame.capturedAt, livenessConfirmedAt ?? frame.capturedAt))
+                        evidenceAt: min(frame.capturedAt, livenessConfirmedAt ?? frame.capturedAt), scanStarted: scanStarted)
                 }
                 statusMessage = "Recognized — unlocking…"
                 let livenessNote = livenessEnabled
@@ -517,7 +517,7 @@ final class FaceUnlockCoordinator {
     /// Stop AVFoundation before taking the BRIO's USB interfaces, then require
     /// a separate IR match. Missing hardware is a denial, never an RGB fallback.
     private func confirmInfrared(for identity: FaceIdentity, generation: Int, rgbThreshold: Float,
-                                 evidenceAt started: ContinuousClock.Instant) async -> ScanOutcome {
+                                 evidenceAt started: ContinuousClock.Instant, scanStarted: ContinuousClock.Instant) async -> ScanOutcome {
         let threshold = GlanceSettings.shared.infraredThreshold
         guard let enrollment = identity.infrared, enrollment.isUsable else {
             return .infraredFailed("Infrared enrollment required for this identity. Open Your Face settings.")
@@ -529,11 +529,16 @@ final class FaceUnlockCoordinator {
         await camera.stopAndWait()
         guard !Task.isCancelled, generation == scanGeneration else { return .noResolution }
         do {
+            let captureStarted = ContinuousClock.now
             let result = try await InfraredServiceManager.capture(allowPermissionPrompt: false)
+            let captureElapsed = captureStarted.duration(to: .now).components
+            let captureSeconds = Double(captureElapsed.seconds) + Double(captureElapsed.attoseconds) / 1e18
             let sample = try await infraredAnalyzer.sample(from: result.image(), captureID: UUID())
             let score = try enrollment.compare(sample)
-            lastCheckDetails = String(format: "Colour identity and Heavy liveness passed. IR centroid: %.3f; lowest reference: %.3f; required: %.3f.",
-                score.centroid, score.minimumReference, threshold)
+            let scanElapsed = scanStarted.duration(to: .now).components
+            let scanSeconds = Double(scanElapsed.seconds) + Double(scanElapsed.attoseconds) / 1e18
+            lastCheckDetails = String(format: "Colour identity and Heavy liveness passed. IR centroid: %.3f; lowest reference: %.3f; required: %.3f. IR capture: %.1fs; total face checks: %.1fs.",
+                score.centroid, score.minimumReference, threshold, captureSeconds, scanSeconds)
             let authorized: @MainActor @Sendable () -> Bool = { [weak self] in
                 guard let self else { return false }
                 service.refresh()

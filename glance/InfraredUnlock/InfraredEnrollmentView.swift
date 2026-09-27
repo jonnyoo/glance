@@ -21,7 +21,7 @@ private final class InfraredEnrollmentController {
         }
         isBusy = true
         image = nil
-        status = "Capturing infrared for five seconds…"
+        status = "Capturing infrared…"
         let id = UUID()
         generation = id
         operation = Task {

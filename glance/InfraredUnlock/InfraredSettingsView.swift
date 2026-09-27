@@ -32,7 +32,7 @@ struct InfraredSettingsView: View {
                         Text(settings.infraredThreshold, format: .number.precision(.fractionLength(2)))
                             .font(.caption.monospacedDigit())
                     }
-                    Text("Experimental: the threshold is not calibrated for infrared and is not a confidence percentage. The live-face check allows at least ten seconds to blink or turn your head; infrared adds about five seconds and interrupts BRIO video/audio. It does not provide Windows Hello-equivalent spoof protection.")
+                    Text("Experimental: the threshold is not calibrated for infrared and is not a confidence percentage. The live-face check allows at least ten seconds to blink or turn your head; infrared captures an illuminated burst (up to five seconds) and briefly interrupts BRIO video/audio. It does not provide Windows Hello-equivalent spoof protection.")
                         .font(.caption).foregroundStyle(.secondary)
                     if settings.requireInfrared {
                         Text("Last face-unlock check: \(coordinator.lastOutcome ?? coordinator.statusMessage)")

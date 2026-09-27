@@ -35,7 +35,7 @@ struct InfraredLabView: View {
                 HStack {
                     Button("Check camera") { controller.check() }
                         .disabled(controller.isBusy || !controller.helperAvailable)
-                    Button("Test infrared for 5 seconds") {
+                    Button("Test infrared") {
                         beforeCapture()
                         controller.capture()
                     }
@@ -52,7 +52,7 @@ struct InfraredLabView: View {
                     .textSelection(.enabled)
                 GroupBox("Compare faces — experimental") {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Capture three reference scans of one person, then compare a new scan. Each capture takes five seconds.")
+                        Text("Capture three reference scans of one person, then compare a new scan. Each capture stops when an illuminated burst is ready, within five seconds.")
                             .font(.caption)
                         HStack {
                             Button("Add reference scan (\(controller.referenceCount)/3)") {
