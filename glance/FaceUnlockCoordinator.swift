@@ -247,6 +247,11 @@ final class FaceUnlockCoordinator {
         statusMessage = "Starting camera…"
         lastOutcome = nil
         lastCheckDetails = nil
+        guard KeystrokeInjector.isAccessibilityTrusted() else {
+            statusMessage = "Accessibility permission required. Enable this app in System Settings → Privacy & Security → Accessibility."
+            lastOutcome = statusMessage
+            return
+        }
         let scanStarted = ContinuousClock.now
         await camera.start()
         guard generation == scanGeneration else { return }
@@ -257,7 +262,7 @@ final class FaceUnlockCoordinator {
             return
         }
 
-        // start() queues AVFoundation startup. Do not spend the liveness window
+        // Do not spend the liveness window
         // waiting for the first fresh frame; bound camera warmup separately.
         let warmupDeadline = ContinuousClock.now + .seconds(5)
         while camera.currentFrame.map({ $0.capturedAt >= scanStarted }) != true {
@@ -546,7 +551,9 @@ final class FaceUnlockCoordinator {
             }
             guard authorized() else { return .infraredFailed("Infrared check did not pass. Use your password or try again.") }
             let injected = await pocController.injectStoredPassword(requireAuthoritativeLock: true, authorization: authorized)
-            guard injected else { return .infraredFailed("Unlock interrupted. Use your password or try again.") }
+            guard injected else {
+                return .infraredFailed("Face checks passed. " + pocController.statusMessage)
+            }
             lastOutcome = "RGB identity and liveness plus same-identity infrared match passed."
             return .matched
         } catch {

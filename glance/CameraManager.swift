@@ -33,25 +33,28 @@ final class CameraManager: NSObject {
     private(set) var errorMessage: String?
 
     /// Exposed read-only so `CameraPreviewView` can attach a preview layer to the same session.
-    let session = AVCaptureSession()
-    private let videoOutput = AVCaptureVideoDataOutput()
+    private(set) var session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "com.jonathan.glance.camera.session")
 
-    /// Handed to the delegate outside the actor; only ever touched via `Task { @MainActor ... }`.
-    private let framePublisher = FramePublisher()
-
-    override init() {
-        super.init()
-        framePublisher.owner = self
-    }
+    private var generation: UInt64 = 0
+    // AVCaptureVideoDataOutput does not retain its delegate.
+    private var framePublisher: FramePublisher?
 
     func start() async {
+        generation &+= 1
+        let request = generation
+        isRunning = false
+        currentFrame = nil
+        // Enqueue retirement before any suspension. A concurrent stop/start
+        // cannot let this request's old session stop a newer request's camera.
+        retire(session)
         let status = AVCaptureDevice.authorizationStatus(for: .video)
         switch status {
         case .authorized:
             permission = .granted
         case .notDetermined:
             let granted = await AVCaptureDevice.requestAccess(for: .video)
+            guard generation == request, !Task.isCancelled else { return }
             permission = granted ? .granted : .denied
         default:
             permission = .denied
@@ -65,40 +68,73 @@ final class CameraManager: NSObject {
             return
         }
 
+        guard generation == request, !Task.isCancelled else { return }
         errorMessage = nil
-        configureSessionIfNeeded()
-        reconcileDeviceIfNeeded()
-
-        sessionQueue.async { [session] in
-            if !session.isRunning {
-                session.startRunning()
+        // Reattaching the USB driver completes before AVFoundation necessarily
+        // republishes the BRIO. Wait briefly for the selected device; never
+        // substitute another camera while it is absent.
+        let deviceDeadline = ContinuousClock.now + .seconds(5)
+        var selectedDevice = CameraDeviceCatalog.resolvedDevice()
+        while selectedDevice == nil && ContinuousClock.now < deviceDeadline {
+            do { try await Task.sleep(for: .milliseconds(200)) }
+            catch { return }
+            guard generation == request, !Task.isCancelled else { return }
+            selectedDevice = CameraDeviceCatalog.resolvedDevice()
+        }
+        guard generation == request, !Task.isCancelled else { return }
+        guard let device = selectedDevice else {
+            errorMessage = "The selected camera is unavailable. Reconnect it or choose a camera in Settings."
+            return
+        }
+        // USB IR capture detaches and reattaches the BRIO's drivers. Its
+        // uniqueID survives, but the old CMIO input/connection does not.
+        // Rebuild the entire stopped pipeline instead of reusing that input.
+        let replacement = AVCaptureSession()
+        let publisher = FramePublisher(owner: self, generation: request)
+        session = replacement
+        framePublisher = publisher
+        isRunning = true
+        let error: String? = await withCheckedContinuation { continuation in
+            sessionQueue.async { [sessionQueue] in
+                continuation.resume(returning: Self.configureAndStart(
+                    replacement, device: device, publisher: publisher, queue: sessionQueue))
             }
         }
-        isRunning = true
+        guard generation == request else { return }
+        if Task.isCancelled || error != nil {
+            stop()
+            errorMessage = error
+        }
     }
 
     func stop() {
-        sessionQueue.async { [session] in
-            if session.isRunning {
-                session.stopRunning()
-            }
-        }
+        generation &+= 1
         isRunning = false
         currentFrame = nil
+        retire(session)
+        framePublisher = nil
     }
 
-    /// USB capture takes the whole BRIO. Await the session queue before handing
-    /// it to the privileged helper; merely scheduling stopRunning is insufficient.
+    /// Drain and release AVFoundation's USB objects before the helper takes
+    /// the BRIO. A queued stop alone does not complete the handoff.
     func stopAndWait() async {
-        isRunning = false
-        currentFrame = nil
+        stop()
         await withCheckedContinuation { continuation in
-            sessionQueue.async { [session] in
-                if session.isRunning { session.stopRunning() }
-                continuation.resume()
-            }
+            sessionQueue.async { continuation.resume() }
         }
-        currentFrame = nil
+    }
+
+    private func retire(_ retired: AVCaptureSession) {
+        sessionQueue.async {
+            if retired.isRunning { retired.stopRunning() }
+            retired.beginConfiguration()
+            for output in retired.outputs {
+                (output as? AVCaptureVideoDataOutput)?.setSampleBufferDelegate(nil, queue: nil)
+                retired.removeOutput(output)
+            }
+            for input in retired.inputs { retired.removeInput(input) }
+            retired.commitConfiguration()
+        }
     }
 
     private func describe(_ status: AVAuthorizationStatus) -> String {
@@ -111,71 +147,48 @@ final class CameraManager: NSObject {
         }
     }
 
-    private var isConfigured = false
-    private var currentInput: AVCaptureDeviceInput?
-
-    private func configureSessionIfNeeded() {
-        guard !isConfigured else { return }
-        isConfigured = true
-
+    /// Configuration, start, stop and teardown all run on sessionQueue.
+    private nonisolated static func configureAndStart(
+        _ session: AVCaptureSession, device: AVCaptureDevice,
+        publisher: FramePublisher, queue: DispatchQueue
+    ) -> String? {
         session.beginConfiguration()
-        // `.high` doesn't guarantee the sensor's max resolution; macOS (unlike iOS) doesn't fight an explicitly-set
-        // `activeFormat`, so leaving this at `.high` and locking the format separately below is sufficient.
         session.sessionPreset = .high
-
-        videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
-        videoOutput.alwaysDiscardsLateVideoFrames = true
-        videoOutput.setSampleBufferDelegate(framePublisher, queue: sessionQueue)
-        if session.canAddOutput(videoOutput) {
-            session.addOutput(videoOutput)
-        }
-
-        session.commitConfiguration()
-    }
-
-    /// Called on every `start()` so a camera preference change in Settings takes effect without an app restart.
-    private func reconcileDeviceIfNeeded() {
-        guard let device = CameraDeviceCatalog.resolvedDevice() else {
-            errorMessage = "No camera device found."
-            return
-        }
-        guard device.uniqueID != currentInput?.device.uniqueID else { return }
-
-        session.beginConfiguration()
-        if let currentInput {
-            session.removeInput(currentInput)
-        }
-        if let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) {
-            session.addInput(input)
-            currentInput = input
-            selectHighestResolutionFormat(for: device)
-        } else {
-            currentInput = nil
-            errorMessage = "No camera device found."
-        }
-        session.commitConfiguration()
-    }
-
-    /// Highest resolution regardless of fps — Vision still works from the downscaled frame; this only affects
-    /// what `CameraFrame.source` (and therefore `renderCrop`) has to work with.
-    private func selectHighestResolutionFormat(for device: AVCaptureDevice) {
-        let best = device.formats.max { lhs, rhs in
-            let l = CMVideoFormatDescriptionGetDimensions(lhs.formatDescription)
-            let r = CMVideoFormatDescriptionGetDimensions(rhs.formatDescription)
-            return Int(l.width) * Int(l.height) < Int(r.width) * Int(r.height)
-        }
-        guard let best else { return }
+        let output = AVCaptureVideoDataOutput()
+        output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+        output.alwaysDiscardsLateVideoFrames = true
+        output.setSampleBufferDelegate(publisher, queue: queue)
         do {
-            try device.lockForConfiguration()
-            device.activeFormat = best
-            device.unlockForConfiguration()
+            let input = try AVCaptureDeviceInput(device: device)
+            guard session.canAddInput(input), session.canAddOutput(output) else {
+                session.commitConfiguration()
+                return "Could not connect to the selected camera."
+            }
+            session.addInput(input)
+            session.addOutput(output)
+            // Vision uses downscaled pixels; the native source retains detail
+            // for glare analysis. macOS respects the explicit activeFormat.
+            if let best = device.formats.max(by: { lhs, rhs in
+                let l = CMVideoFormatDescriptionGetDimensions(lhs.formatDescription)
+                let r = CMVideoFormatDescriptionGetDimensions(rhs.formatDescription)
+                return Int(l.width) * Int(l.height) < Int(r.width) * Int(r.height)
+            }) {
+                try device.lockForConfiguration()
+                device.activeFormat = best
+                device.unlockForConfiguration()
+            }
         } catch {
-            errorMessage = "Couldn't select the camera's highest-resolution format: \(error.localizedDescription)"
+            session.commitConfiguration()
+            return "Could not start the selected camera: " + error.localizedDescription
         }
+        session.commitConfiguration()
+        session.startRunning()
+        return session.isRunning ? nil : "The selected camera could not start. Try again."
     }
 
-    fileprivate func publish(frame: CameraFrame) {
-        guard isRunning else { return }
+    fileprivate func publish(frame: CameraFrame, generation: UInt64) {
+        // A callback queued before stop must never become a new scan's proof.
+        guard isRunning, self.generation == generation else { return }
         currentFrame = frame
     }
 
@@ -216,8 +229,15 @@ final class CameraManager: NSObject {
     private nonisolated static let cropRenderContext = CIContext()
 
     /// Sample-buffer callbacks arrive on `sessionQueue`, off the main actor; this delegate converts there, then hops back.
-    private final class FramePublisher: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
-        weak var owner: CameraManager?
+    nonisolated private final class FramePublisher: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
+        private weak var owner: CameraManager?
+        private let generation: UInt64
+
+        init(owner: CameraManager, generation: UInt64) {
+            self.owner = owner
+            self.generation = generation
+            super.init()
+        }
         private let ciContext = CIContext()
         /// Detection only needs a modest resolution; the live preview renders from the capture session directly and
         /// is unaffected. The undownscaled `source` is kept alongside for callers needing native pixels (`renderCrop`).
@@ -250,8 +270,8 @@ final class CameraManager: NSObject {
                 sourceSize: sourceExtent.size
             )
 
-            Task { @MainActor [weak owner] in
-                owner?.publish(frame: frame)
+            Task { @MainActor [weak owner, generation] in
+                owner?.publish(frame: frame, generation: generation)
             }
         }
     }
