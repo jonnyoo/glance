@@ -42,7 +42,7 @@ struct InfraredLabView: View {
                     .disabled(controller.isBusy || !controller.canCapture || (controller.service.available && !controller.service.enabled))
                     if controller.isBusy {
                         ProgressView().controlSize(.small)
-                        Button("Cancel") { controller.clear() }
+                        Button("Cancel") { controller.cancel() }
                     }
                     Spacer()
                 }
@@ -50,6 +50,43 @@ struct InfraredLabView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
+                GroupBox("Compare faces — experimental") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Capture three reference scans of one person, then compare a new scan. Each capture takes five seconds.")
+                            .font(.caption)
+                        HStack {
+                            Button("Add reference scan (\(controller.referenceCount)/3)") {
+                                beforeCapture()
+                                controller.captureReference()
+                            }
+                            .disabled(controller.referenceReady)
+                            Button("Compare new scan") {
+                                beforeCapture()
+                                controller.compare()
+                            }
+                            .disabled(!controller.referenceReady)
+                            Button("Clear reference") { controller.clearReference() }
+                                .disabled(controller.referenceCount == 0)
+                        }
+                        .disabled(controller.isBusy || !controller.canCapture || (controller.service.available && !controller.service.enabled))
+                        Text(controller.comparisonStatus).font(.caption).foregroundStyle(.secondary)
+                        if let latest = controller.lastComparison {
+                            Text("Similarity score: \(latest.centroid, specifier: "%.3f")")
+                                .font(.headline.monospacedDigit())
+                            Text("Across reference scans: \(latest.minimumReference, specifier: "%.3f") to \(latest.maximumReference, specifier: "%.3f")")
+                                .font(.caption.monospacedDigit())
+                        }
+                        let earlier = controller.lastComparison == nil ? controller.comparisons : Array(controller.comparisons.dropFirst())
+                        if !earlier.isEmpty {
+                            Text("Earlier scores: " + earlier.map { String(format: "%.3f", $0.centroid) }.joined(separator: " · "))
+                                .font(.caption.monospacedDigit())
+                        }
+                        Text("Higher scores mean more similar face features. This is not a confidence percentage or an unlock check. Infrared accuracy and spoof resistance are unverified. References stay in memory until cleared or this panel closes.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(4)
+                }
                 ZStack {
                     RoundedRectangle(cornerRadius: 10).fill(.black)
                     if let image = controller.image {

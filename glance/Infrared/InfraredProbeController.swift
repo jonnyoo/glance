@@ -15,6 +15,14 @@ final class InfraredProbeController {
     private var operation: Task<Void, Never>?
     private var generation = UUID()
     let service = InfraredServiceManager()
+    private let analyzer = InfraredFaceAnalyzer()
+    private var reference = InfraredReference()
+    private(set) var comparisonStatus = "Capture three reference scans of the same person."
+    private(set) var lastComparison: InfraredSimilarity?
+    private(set) var comparisons: [InfraredSimilarity] = []
+    var referenceCount: Int { reference.count }
+    var referenceReady: Bool { reference.isComplete }
+    private enum CapturePurpose { case preview, reference, comparison }
 
     var helperAvailable: Bool { Self.helperURL != nil }
 
@@ -26,6 +34,28 @@ final class InfraredProbeController {
 
     func check() { run(capture: false) }
     func capture() { run(capture: true) }
+    func captureReference() { run(capture: true, purpose: .reference) }
+    func compare() { run(capture: true, purpose: .comparison) }
+
+    func clearReference() {
+        guard !isBusy else { return }
+        reference.clear()
+        comparisons = []
+        lastComparison = nil
+        comparisonStatus = "Reference cleared. Capture three scans of the same person."
+    }
+
+    func cancel() {
+        generation = UUID()
+        operation?.cancel()
+        operation = nil
+        image = nil
+        statistics = nil
+        lastComparison = nil
+        isBusy = false
+        status = "IR test cancelled."
+        comparisonStatus = "Capture cancelled. Reference scans were kept."
+    }
 
     func clear() {
         generation = UUID()
@@ -33,19 +63,27 @@ final class InfraredProbeController {
         operation = nil
         image = nil
         statistics = nil
+        lastComparison = nil
         canCapture = false
         isBusy = false
         status = "Check whether the connected BRIO exposes its infrared sensor."
+        reference.clear()
+        comparisons = []
+        lastComparison = nil
+        comparisonStatus = "Capture three reference scans of the same person."
     }
 
-    private func run(capture: Bool) {
+    private func run(capture: Bool, purpose: CapturePurpose = .preview) {
         guard !isBusy else { return }
+        if purpose == .reference && reference.isComplete { return }
+        if purpose == .comparison && !reference.isComplete { return }
         guard let helper = Self.helperURL else {
             status = InfraredProbeError.helperMissing.localizedDescription
             return
         }
         image = nil
         statistics = nil
+        lastComparison = nil
         isBusy = true
         if !capture { canCapture = false }
         let id = UUID()
@@ -54,6 +92,7 @@ final class InfraredProbeController {
         status = capture
             ? (service.available ? "Look at the BRIO. Capturing for five seconds…" : "Approve the macOS prompt, then look at the BRIO. Capturing for five seconds…")
             : "Checking infrared hardware…"
+        if purpose != .preview { comparisonStatus = "Capturing a new infrared scan…" }
         let process = InfraredProbeProcess()
         operation = Task {
             do {
@@ -77,6 +116,7 @@ final class InfraredProbeController {
                 }
                 if capture {
                     let captured = try result.image()
+                    image = captured
                     let faces = try await Task.detached {
                         let request = VNDetectFaceRectanglesRequest()
                         try VNImageRequestHandler(cgImage: captured, options: [:]).perform([request])
@@ -84,12 +124,34 @@ final class InfraredProbeController {
                     }.value
                     try Task.checkCancellation()
                     guard generation == id else { return }
-                    image = captured
                     let mean = result.mean ?? 0
                     statistics = "\(result.frames ?? 0) IR frames · \(result.rejected ?? 0) rejected · 340 × 340 · \(faces) face(s) detected"
                     status = mean < 5
                         ? "IR capture worked, but the image is very dark. Check the cover and lighting."
                         : "IR capture worked. Showing the brightest frame from this test. Face detection is not proof of identity or liveness."
+                    if purpose != .preview {
+                        comparisonStatus = "Aligning the face and measuring its features…"
+                        do {
+                            let sample = try await analyzer.sample(from: captured, captureID: id)
+                            try Task.checkCancellation()
+                            guard generation == id else { return }
+                            if purpose == .reference {
+                                try reference.add(sample)
+                                comparisonStatus = reference.isComplete
+                                    ? "Reference ready. Compare a fresh scan to measure similarity."
+                                    : "Reference scan \(reference.count) of 3 captured. Keep the same person in view for the next scan."
+                            } else {
+                                let score = try reference.compare(sample)
+                                lastComparison = score
+                                comparisons.insert(score, at: 0)
+                                comparisons = Array(comparisons.prefix(5))
+                                comparisonStatus = "Comparison complete. This score is a measurement, not an identity or liveness decision."
+                            }
+                        } catch {
+                            guard generation == id else { return }
+                            comparisonStatus = error.localizedDescription
+                        }
+                    }
                 } else {
                     canCapture = result.irDescriptor == true
                     status = canCapture
@@ -100,6 +162,7 @@ final class InfraredProbeController {
                 guard generation == id else { return }
                 image = nil
                 status = error.localizedDescription
+                if purpose != .preview { comparisonStatus = "No comparison produced. " + error.localizedDescription }
             }
             guard generation == id else { return }
             isBusy = false

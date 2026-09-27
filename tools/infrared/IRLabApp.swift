@@ -11,9 +11,10 @@ struct IRLabApp: App {
                 InfraredLabView()
                     .padding(20)
             }
-            .frame(width: 620, height: 620)
+            .frame(minWidth: 640, idealWidth: 680, minHeight: 700, idealHeight: 820)
         }
-        .windowResizability(.contentSize)
+        .defaultSize(width: 680, height: 820)
+        .windowResizability(.contentMinSize)
     }
 }
 

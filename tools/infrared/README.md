@@ -35,6 +35,19 @@ To use the panel in Glance, build Glance normally, then copy `brio-ir-probe` int
 
 The standalone app is built for the current Mac architecture and ad-hoc signed by default for local development. The ZIP avoids iCloud/Finder metadata that can invalidate strict signing checks on a newly created app bundle in Documents.
 
+## Experimental IR face comparison
+
+The lab also measures how similar a fresh IR face scan is to three session-only IR reference scans. It uses the repository's existing `ArcFace.mlpackage`, compiled into the lab at build time. This is a diagnostic experiment: it does not load or modify Glance's enrolled identities, store templates, set a match threshold, check liveness, or authorize an unlock.
+
+1. Click **Check camera** with the helper enabled.
+2. Keep the same person in front of the BRIO and click **Add reference scan** three times. Each button press takes a separate five-second capture. The preview remains visible if a scan is unsuitable for comparison.
+3. Click **Compare new scan** for an independent capture. The panel shows cosine similarity to the normalized reference centroid and the minimum/maximum similarity to its individual scans. Scores range from −1 to 1 and are **not confidence percentages**. The latest five measurements remain visible for the session.
+4. **Clear reference** or close the panel to discard the reference and measurements. **Cancel** discards the current capture while keeping completed reference scans. Comparisons never train or modify the reference.
+
+Only a single detected face with five-point alignment is accepted. The model must return a finite, nonzero, 512-dimensional vector. Missing models, unaligned faces, multiple faces and malformed vectors produce an error; there is no fallback to a generic feature-print model. Samples have separate capture IDs and an IR-specific model identifier; the reference rejects reuse of a reference capture or comparison across models. A failed or cancelled scan cannot display an old score as the latest result.
+
+The existing model's performance on BRIO IR images is uncalibrated. Same-person scores alone do not measure false acceptance or presentation-attack resistance. Measurements with different people, photos/screens, pose changes and lighting changes are needed before choosing any authentication policy. The source model also has its own usage terms: [InsightFace model zoo](https://github.com/deepinsight/insightface/tree/master/model_zoo) describes the published weights as intended for non-commercial research. This local experiment does not establish production suitability.
+
 ## Optional signed camera service
 
 The lab can now package a root helper managed by `SMAppService`. This is still an experimental diagnostic, not a login service. Build with an Apple-issued signing identity and its matching team ID:
@@ -60,6 +73,16 @@ The service packaging currently targets the isolated lab. Shipping it inside Gla
 xcrun swiftc -parse-as-library glance/Infrared/InfraredProbeResult.swift tools/infrared/result_selftest.swift -o /absolute/path/to/ir-build/result-selftest
 /absolute/path/to/ir-build/result-selftest
 ```
+
+```sh
+xcrun swiftc -parse-as-library glance/Infrared/InfraredReference.swift \
+  tools/infrared/reference_selftest.swift -o /absolute/path/to/ir-build/reference-selftest
+/absolute/path/to/ir-build/reference-selftest
+```
+
+`model_selftest.swift`, run from a test bundle containing the compiled model, checks that model loading and inference produce a finite normalized 512-dimensional vector and that a blank image is rejected as a face. It does not open the camera.
+
+The reference tests cover incomplete enrollment, reused reference captures, different model identifiers, invalid vectors (including NaN and infinity), known cosine values, immutable comparison and clearing. `service/recognition_selftest.swift` runs an explicit four-capture BRIO experiment from a signed test bundle containing the compiled model. It reports numeric measurements without logging images or face vectors; a no-face or alignment failure is an unsuccessful measurement, not a match.
 
 `engine_selftest.c` checks independent capture state and cancellation before USB access. It can be compiled with AddressSanitizer and UndefinedBehaviorSanitizer against the generated `libbrio-ir.a`:
 

@@ -48,6 +48,10 @@ def main():
         executable.parent.mkdir(parents=True)
         resources.mkdir(parents=True)
         sources = sorted((ROOT / "glance/Infrared").glob("*.swift"))
+        sources += [ROOT / "glance" / name for name in (
+            "FaceEmbedder.swift", "ArcFaceEmbedder.swift", "FaceDetector.swift",
+            "FaceAligner.swift", "Liveness/LandmarkGeometry.swift")]
+        run("xcrun", "coremlcompiler", "compile", ROOT / "glance/Models/ArcFace.mlpackage", resources)
         run("xcrun", "swiftc", "-target", target, "-parse-as-library", "-swift-version", "5", "-O",
             *sources, HERE / "IRLabApp.swift", "-o", executable)
         shutil.copyfile(args.helper, resources / "brio-ir-probe")
@@ -57,7 +61,7 @@ def main():
             "CFBundleName": "Glance IR Lab",
             "CFBundleExecutable": "GlanceIRLab",
             "CFBundlePackageType": "APPL",
-            "CFBundleShortVersionString": "0.2.1",
+            "CFBundleShortVersionString": "0.3",
             "LSMinimumSystemVersion": minimum_macos,
             "NSHighResolutionCapable": True,
             "NSCameraUsageDescription": "Show a five-second infrared camera test when you request it.",
