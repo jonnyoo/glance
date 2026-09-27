@@ -746,16 +746,12 @@ final class OnboardingController {
     }
 
     private func resolveSelectedCameraDevice() -> AVCaptureDevice? {
-        if let id = GlanceSettings.shared.defaultCameraID {
-            return AVCaptureDevice(uniqueID: id)
-        }
-        return resolveDefaultCameraDevice()
+        CameraDeviceCatalog.device(preferredID: GlanceSettings.shared.defaultCameraID)
     }
 
     /// Same fallback `CameraDeviceCatalog.resolvedDevice()` uses once no override applies.
     private func resolveDefaultCameraDevice() -> AVCaptureDevice? {
-        AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
-            ?? AVCaptureDevice.default(for: .video)
+        CameraDeviceCatalog.device(preferredID: nil)
     }
 
     // MARK: - Guided enrollment

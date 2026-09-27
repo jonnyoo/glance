@@ -16,6 +16,7 @@ struct YourFaceSettingsPage: View {
     @State private var sessionError: String?
     @State private var isUnlocking = false
     @State private var identityPendingDeletion: FaceIdentity?
+    @State private var infraredIdentity: FaceIdentity?
     /// Surfaced when an encrypted write fails (realistically: the session
     /// lapsed between rendering and tapping). The store rolls back on
     /// failure, so the control snaps back on its own — this explains why.
@@ -69,6 +70,9 @@ struct YourFaceSettingsPage: View {
         }
         .animation(SettingsMetrics.stateTransitionAnimation, value: stateKind)
         .onAppear { store.reloadIfUnlocked() }
+        .sheet(item: $infraredIdentity) { identity in
+            InfraredEnrollmentView(identity: identity, environment: environment)
+        }
         // The enrollment flow runs in the notch, outside this view's
         // hierarchy, so nothing else prompts a re-check once it closes.
         .onChange(of: NotchOverlayController.shared.phase) { _, newPhase in
@@ -155,7 +159,12 @@ struct YourFaceSettingsPage: View {
                     canStartFlow: !enrollmentFlowIsRunning,
                     isEnabled: enabledBinding(for: identity),
                     recapture: { OnboardingController.startRecapture(of: identity) },
-                    delete: { identityPendingDeletion = identity }
+                    delete: { identityPendingDeletion = identity },
+                    infrared: { infraredIdentity = identity },
+                    removeInfrared: {
+                        do { try store.setInfrared(nil, for: identity); writeError = nil }
+                        catch { writeError = error.localizedDescription }
+                    }
                 )
             }
 
@@ -274,6 +283,8 @@ private struct IdentityCard: View {
     @Binding var isEnabled: Bool
     let recapture: () -> Void
     let delete: () -> Void
+    let infrared: () -> Void
+    let removeInfrared: () -> Void
 
     private var poorCount: Int {
         identity.samples.filter { $0.qualityTier == .poor }.count
@@ -324,6 +335,14 @@ private struct IdentityCard: View {
                         PillIconButton(systemImage: "trash", action: delete)
                             .help("Delete \(identity.name)")
                     }
+                }
+                HStack {
+                    Text(identity.infrared?.isUsable == true ? "Infrared enrolled" : "Infrared not enrolled")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button(identity.infrared == nil ? "Enroll infrared" : "Recapture infrared", action: infrared)
+                        .disabled(!canStartFlow || isStale)
+                    if identity.infrared != nil { Button("Remove infrared", action: removeInfrared) }
                 }
                 // Dimmed rather than hidden while switched off: the person
                 // is still enrolled, just not being matched against.

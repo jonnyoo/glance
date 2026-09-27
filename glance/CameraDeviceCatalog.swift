@@ -14,13 +14,27 @@ struct CameraDevice: Identifiable, Hashable {
 }
 
 enum CameraDeviceCatalog {
-    static func availableDevices() -> [CameraDevice] {
+    private static func discoveredDevices() -> [AVCaptureDevice] {
+        var types: [AVCaptureDevice.DeviceType] = [.builtInWideAngleCamera, .external]
+        if GlanceSettings.shared.allowContinuityCamera { types.append(.continuityCamera) }
         let discovery = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera],
-            mediaType: .video,
-            position: .unspecified
-        )
-        return discovery.devices.map { CameraDevice(id: $0.uniqueID, name: $0.localizedName) }
+            deviceTypes: types, mediaType: .video, position: .unspecified)
+        return discovery.devices.filter {
+            GlanceSettings.shared.allowContinuityCamera || !$0.isContinuityCamera
+        }
+    }
+
+    static func availableDevices() -> [CameraDevice] {
+        discoveredDevices().map { CameraDevice(id: $0.uniqueID, name: $0.localizedName) }
+    }
+
+    /// A saved choice must not silently fall back to a different camera while
+    /// USB IR capture temporarily removes the selected BRIO from macOS.
+    static func device(preferredID: String?) -> AVCaptureDevice? {
+        let devices = discoveredDevices()
+        if let preferredID { return devices.first { $0.uniqueID == preferredID } }
+        return devices.first { $0.deviceType == .builtInWideAngleCamera && !$0.isContinuityCamera }
+            ?? devices.first
     }
 
     /// True if the currently-active screen is the Mac's built-in display
@@ -40,10 +54,6 @@ enum CameraDeviceCatalog {
             ? (settings.builtInDisplayCameraID ?? settings.defaultCameraID)
             : (settings.externalDisplayCameraID ?? settings.defaultCameraID)
 
-        if let preferredID, let device = AVCaptureDevice(uniqueID: preferredID) {
-            return device
-        }
-        return AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
-            ?? AVCaptureDevice.default(for: .video)
+        return device(preferredID: preferredID)
     }
 }

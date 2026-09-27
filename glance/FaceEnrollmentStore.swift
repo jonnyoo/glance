@@ -47,6 +47,7 @@ struct FaceIdentity: Codable, Identifiable, Equatable {
     var createdAt: Date
     /// Turning off keeps the enrollment intact but excludes it from `activeIdentities`, which unlock scores against.
     var isEnabled: Bool
+    var infrared: InfraredEnrollment?
 
     init(
         id: UUID,
@@ -55,7 +56,8 @@ struct FaceIdentity: Codable, Identifiable, Equatable {
         modelIdentifier: String,
         embeddingDimension: Int,
         createdAt: Date,
-        isEnabled: Bool = true
+        isEnabled: Bool = true,
+        infrared: InfraredEnrollment? = nil
     ) {
         self.id = id
         self.name = name
@@ -64,6 +66,7 @@ struct FaceIdentity: Codable, Identifiable, Equatable {
         self.embeddingDimension = embeddingDimension
         self.createdAt = createdAt
         self.isEnabled = isEnabled
+        self.infrared = infrared
     }
 
     /// Hand-written so `isEnabled` defaults to `true` when absent — a synthesized decoder would throw on a missing
@@ -77,6 +80,7 @@ struct FaceIdentity: Codable, Identifiable, Equatable {
         embeddingDimension = try container.decode(Int.self, forKey: .embeddingDimension)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+        infrared = try container.decodeIfPresent(InfraredEnrollment.self, forKey: .infrared)
     }
 
     /// The single vector actually compared against at recognition time.
@@ -142,6 +146,8 @@ final class FaceEnrollmentStore {
     /// `isLocked = true`) if the session isn't unlocked yet.
     func reloadIfUnlocked() {
         guard SecureCredentialManager.isSessionUnlocked else {
+            identities = []
+            hasLoadedSuccessfully = false
             isLocked = true
             return
         }
@@ -153,6 +159,7 @@ final class FaceEnrollmentStore {
             // Deliberately not `(try? load()) ?? []` — a store we couldn't read isn't an empty store, and the next
             // write must not persist an empty array over a file that still holds every sample.
             identities = []
+            hasLoadedSuccessfully = false
             loadFailure = error.localizedDescription
         }
         isLocked = false
@@ -162,21 +169,24 @@ final class FaceEnrollmentStore {
     /// are discarded first, since mixing them would corrupt the template.
     @discardableResult
     func addSample(name: String, embedding: [Float], embedder: FaceEmbedder, pose: String? = nil, quality: Float? = nil) throws -> Bool {
+        guard hasLoadedSuccessfully else { throw FaceEnrollmentStoreError.storeUnreadable }
+        var updated = identities
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
 
         let sample = FaceSample(embedding: embedding, pose: pose, capturedAt: Date(), quality: quality)
 
-        if let index = identities.firstIndex(where: { $0.name == trimmed }) {
-            if identities[index].modelIdentifier != embedder.modelIdentifier {
-                identities[index].samples = [sample]
+        if let index = updated.firstIndex(where: { $0.name == trimmed }) {
+            if updated[index].modelIdentifier != embedder.modelIdentifier {
+                updated[index].samples = [sample]
             } else {
-                identities[index].samples.append(sample)
+                updated[index].samples.append(sample)
             }
-            identities[index].modelIdentifier = embedder.modelIdentifier
-            identities[index].embeddingDimension = embedder.embeddingDimension
+            updated[index].infrared = nil
+            updated[index].modelIdentifier = embedder.modelIdentifier
+            updated[index].embeddingDimension = embedder.embeddingDimension
         } else {
-            identities.append(FaceIdentity(
+            updated.append(FaceIdentity(
                 id: UUID(),
                 name: trimmed,
                 samples: [sample],
@@ -185,7 +195,8 @@ final class FaceEnrollmentStore {
                 createdAt: Date()
             ))
         }
-        try persist()
+        try SecureFaceStore.save(updated)
+        identities = updated
         return true
     }
 
@@ -198,6 +209,7 @@ final class FaceEnrollmentStore {
         samples: [FaceSample],
         embedder: FaceEmbedder
     ) throws -> FaceIdentity? {
+        guard hasLoadedSuccessfully else { throw FaceEnrollmentStoreError.storeUnreadable }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !samples.isEmpty else { return nil }
 
@@ -207,6 +219,7 @@ final class FaceEnrollmentStore {
         if let existingID, let index = updated.firstIndex(where: { $0.id == existingID }) {
             updated[index].name = trimmed
             updated[index].samples = samples
+            updated[index].infrared = nil
             updated[index].modelIdentifier = embedder.modelIdentifier
             updated[index].embeddingDimension = embedder.embeddingDimension
             committed = updated[index]
@@ -253,8 +266,10 @@ final class FaceEnrollmentStore {
     }
 
     func delete(_ identity: FaceIdentity) throws {
-        identities.removeAll { $0.id == identity.id }
-        try persist()
+        guard hasLoadedSuccessfully else { throw FaceEnrollmentStoreError.storeUnreadable }
+        let updated = identities.filter { $0.id != identity.id }
+        try SecureFaceStore.save(updated)
+        identities = updated
     }
 
     /// Removes the file outright (rather than writing an empty array) — the teardown path when the session key
@@ -264,6 +279,19 @@ final class FaceEnrollmentStore {
         SecureFaceStore.deleteAll()
         loadFailure = nil
         hasLoadedSuccessfully = true
+    }
+
+    /// Compare the original identity snapshot after async capture, then commit
+    /// atomically. A recapture/deletion/session change cannot attach stale IR.
+    func setInfrared(_ enrollment: InfraredEnrollment?, for original: FaceIdentity) throws {
+        guard hasLoadedSuccessfully, SecureCredentialManager.isSessionUnlocked,
+              let index = identities.firstIndex(where: { $0.id == original.id }),
+              identities[index] == original else { throw FaceEnrollmentStoreError.storeUnreadable }
+        if let enrollment, !enrollment.isUsable { throw InfraredReferenceError.invalidEmbedding }
+        var updated = identities
+        updated[index].infrared = enrollment
+        try SecureFaceStore.save(updated)
+        identities = updated
     }
 
     private func persist() throws {

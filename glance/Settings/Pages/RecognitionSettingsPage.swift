@@ -91,6 +91,7 @@ struct RecognitionSettingsPage: View {
                     )
                 }
             }
+            InfraredSettingsView(coordinator: coordinator)
         }
     }
 

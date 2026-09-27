@@ -12,6 +12,7 @@ import Foundation
 @MainActor
 final class LivenessAnalyzer {
     private let windowDuration: TimeInterval
+    private let skipAbstainingGeometry: Bool
 
     /// Read fresh on every `observe()`, not captured at init, so a mid-scan Settings change takes effect immediately.
     var modeProvider: () -> LivenessMode = { .light }
@@ -27,8 +28,11 @@ final class LivenessAnalyzer {
     /// counts, yaw range) — the numbers behind the flat-vs-3D cue's level.
     private(set) var lastGeometry = GeometryLivenessResult.empty
 
-    init(windowDuration: TimeInterval = 2.0) {
+    /// Opt in for unlock to skip pair diagnostics when geometry cannot vote.
+    /// The default preserves Face Lab's full diagnostic readout.
+    init(windowDuration: TimeInterval = 2.0, skipAbstainingGeometry: Bool = false) {
         self.windowDuration = windowDuration
+        self.skipAbstainingGeometry = skipAbstainingGeometry
     }
 
     func reset() {
@@ -50,7 +54,7 @@ final class LivenessAnalyzer {
         evaluator.tuning = tuningProvider()
         evaluator.enabledCues = enabledCuesProvider()
 
-        let geometry = GeometryLiveness.evaluate(frames)
+        let geometry = GeometryLiveness.evaluate(frames, skipAbstainingPairs: skipAbstainingGeometry)
         lastGeometry = geometry
 
         let readings = LivenessCues.readings(window: frames, geometry: geometry)

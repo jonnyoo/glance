@@ -23,7 +23,9 @@ nonisolated enum SecureFaceStore {
     /// Distinct filename/extension so plaintext can never be mistaken for ciphertext.
     private static let fileURL: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let directory = appSupport.appendingPathComponent("glance", isDirectory: true)
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.jonathan.glance"
+        let directoryName = bundleID == "com.jonathan.glance" ? "glance" : bundleID
+        let directory = appSupport.appendingPathComponent(directoryName, isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory.appendingPathComponent("face-identities.enc")
     }()
@@ -36,7 +38,8 @@ nonisolated enum SecureFaceStore {
     /// Throws `.sessionLocked` rather than returning an empty array, so callers can distinguish "nothing enrolled" from "enrolled, but locked".
     static func load() throws -> [FaceIdentity] {
         guard SecureCredentialManager.isSessionUnlocked else { throw SecureFaceStoreError.sessionLocked }
-        guard let ciphertext = try? Data(contentsOf: fileURL) else { return [] }
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
+        let ciphertext = try Data(contentsOf: fileURL)
         let plaintext = try SecureCredentialManager.decrypt(ciphertext)
         return try JSONDecoder().decode([FaceIdentity].self, from: plaintext)
     }

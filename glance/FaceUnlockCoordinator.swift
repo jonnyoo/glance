@@ -33,13 +33,17 @@ final class FaceUnlockCoordinator {
     }
     /// Shares its setting with NotchOverlayController's scanning timeout, so the background loop stops in step with the UI collapsing.
     private var scanWindowDuration: TimeInterval {
-        TimeInterval(GlanceSettings.shared.faceDetectionSeconds)
+        let configured = TimeInterval(GlanceSettings.shared.faceDetectionSeconds)
+        return GlanceSettings.shared.requireInfrared ? max(configured, 10) : configured
     }
     /// Requires several consecutive below-threshold frames so a single bad-angle read doesn't trigger the failure animation.
     private let wrongFaceStreakThreshold = 6
 
     private(set) var statusMessage = "Idle"
     private(set) var lastOutcome: String?
+    /// Numeric diagnostics for the latest scan only; no images or embeddings.
+    private(set) var lastCheckDetails: String?
+    private var diagnosticGeneration = 0
 
     private var hasArmedForCurrentLock = false
     /// One-shot per lock session — an auto-retry that could itself auto-retry would loop the camera for the whole lock session.
@@ -68,6 +72,9 @@ final class FaceUnlockCoordinator {
         self.matchThreshold = GlanceSettings.shared.matchThreshold
         spaceKeyMonitor.onSpaceKeyDown = { [weak self] in self?.handleSpaceKeyPress() }
         observeLockAndWakeEvents()
+        NotificationCenter.default.addObserver(forName: .secureCredentialSessionDidChange, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.disarmOverlay() }
+        }
     }
 
     /// Re-subscribes on every change — `withObservationTracking` only fires once per registration.
@@ -80,10 +87,25 @@ final class FaceUnlockCoordinator {
             _ = lockMonitor.eventCount
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
-                self?.observeLockAndWakeEvents()
-                // Brief settle delay: CGSession's reported state can lag the true state right after wake.
-                try? await Task.sleep(nanoseconds: 300_000_000)
-                self?.evaluateTrigger()
+                guard let self else { return }
+                self.observeLockAndWakeEvents()
+                let event = self.lockMonitor.eventCount
+                // Start immediately when CGSession already confirms the lock.
+                // If its state is still settling after wake, retry the same
+                // event once; a newer event owns its own evaluation.
+                await LockTriggerRetry.evaluate(event: event,
+                    currentEvent: { self.lockMonitor.eventCount },
+                    isArmed: { self.hasArmedForCurrentLock },
+                    attempt: { self.evaluateTrigger() },
+                    stopRequested: self.lockMonitor.lastEvent == .screenUnlocked || self.lockMonitor.lastEvent == .willSleep,
+                    stop: {
+                        self.hasArmedForCurrentLock = false
+                        self.hasAutoRetriedForCurrentLock = false
+                        self.lastArmedAt = nil
+                        self.disarmOverlay(reason: self.lockMonitor.lastEvent == .willSleep
+                            ? "Face check stopped because the Mac is going to sleep."
+                            : "Face check stopped when the screen unlocked.")
+                    })
             }
         }
     }
@@ -127,13 +149,9 @@ final class FaceUnlockCoordinator {
         // must stay false, or a later selected signal could never fire (nothing else calls arm() to reset it).
         guard showsUI || shouldAutoScan else { return }
 
+        guard arm(autoScan: shouldAutoScan) else { return }
         hasArmedForCurrentLock = true
         lastArmedAt = .now
-        Task { [weak self] in
-            // arm() only shows a small closed notch silhouette, so this only needs a brief buffer past the login window's entrance.
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            await self?.arm(autoScan: shouldAutoScan)
-        }
     }
 
     /// Whether the last arm was recent enough to be part of the same wake burst rather than a new one.
@@ -151,7 +169,11 @@ final class FaceUnlockCoordinator {
         }
     }
 
-    private func disarmOverlay() {
+    private func disarmOverlay(reason: String? = nil) {
+        if scanTask != nil, lastOutcome == nil, let reason {
+            lastOutcome = reason
+            statusMessage = reason
+        }
         scanTask?.cancel()
         scanTask = nil
         // Bumping makes any cycle still suspended at `await camera.start()` inert, rather than resuming and re-showing the overlay.
@@ -199,17 +221,19 @@ final class FaceUnlockCoordinator {
             // Closed pill/notch already up — expand and scan, like a hover retry.
             startScanCycle()
         } else {
-            Task { [weak self] in await self?.arm(autoScan: true) }
+            arm(autoScan: true)
         }
     }
 
     /// Either way the overlay still arms — a deselected trigger only skips the automatic scan, leaving hover-to-start available.
-    private func arm(autoScan: Bool) async {
-        guard LockMonitor.isScreenActuallyLocked() else { return }
+    @discardableResult
+    private func arm(autoScan: Bool) -> Bool {
+        guard isEnabled, !lockMonitor.isSleeping,
+              SecureCredentialManager.isSessionUnlocked, LockMonitor.isScreenActuallyLocked() else { return false }
         guard showsUI else {
             // Headless: evaluateTrigger() already guaranteed autoScan is true here, so this is just "start scanning."
             startScanCycle()
-            return
+            return true
         }
         NotchOverlayController.shared.arm { [weak self] in
             self?.startScanCycle()
@@ -217,6 +241,7 @@ final class FaceUnlockCoordinator {
         if autoScan {
             startScanCycle()
         }
+        return true
     }
 
     /// Called on arm, and again whenever the overlay hover-activates.
@@ -236,6 +261,16 @@ final class FaceUnlockCoordinator {
     private func runScanCycle(generation: Int) async {
         guard LockMonitor.isScreenActuallyLocked() else { return }
 
+        diagnosticGeneration = generation
+        statusMessage = "Starting camera…"
+        lastOutcome = nil
+        lastCheckDetails = nil
+        guard KeystrokeInjector.isAccessibilityTrusted() else {
+            statusMessage = "Accessibility permission required. Enable this app in System Settings → Privacy & Security → Accessibility."
+            lastOutcome = statusMessage
+            return
+        }
+        let scanStarted = ContinuousClock.now
         await camera.start()
         guard generation == scanGeneration else { return }
 
@@ -245,15 +280,38 @@ final class FaceUnlockCoordinator {
             return
         }
 
+        // Do not spend the liveness window
+        // waiting for the first fresh frame; bound camera warmup separately.
+        let warmupDeadline = ContinuousClock.now + .seconds(5)
+        while camera.currentFrame.map({ $0.capturedAt >= scanStarted }) != true {
+            guard !Task.isCancelled, generation == scanGeneration, isEnabled,
+                  LockMonitor.isScreenActuallyLocked() else {
+                if generation == scanGeneration { camera.stop() }
+                return
+            }
+            guard ContinuousClock.now < warmupDeadline else {
+                camera.stop()
+                statusMessage = "The camera did not provide a fresh frame. Try again."
+                lastOutcome = statusMessage
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+
         let showsUI = self.showsUI
         if showsUI {
-            NotchOverlayController.shared.beginScanning()
+            NotchOverlayController.shared.beginScanning(timeout: .seconds(scanWindowDuration))
         }
         statusMessage = "Looking for your face…"
+        lastOutcome = nil
+        lastCheckDetails = nil
 
         let outcome = await observeScanWindow(
-            deadline: Date().addingTimeInterval(scanWindowDuration),
-            requireOverlayScanning: showsUI
+            deadline: ContinuousClock.now + .seconds(scanWindowDuration),
+            requireOverlayScanning: showsUI,
+            generation: generation,
+            scanStarted: scanStarted,
+            cameraReadyAt: .now
         )
 
         // A newer cycle now owns the camera and overlay — leave both alone, and leave the auto-retry one-shot unspent.
@@ -285,6 +343,14 @@ final class FaceUnlockCoordinator {
             } else {
                 scheduleAutoRetryIfEnabled(after: headlessRetryDelay)
             }
+        case .livenessUnconfirmed:
+            statusMessage = "Face recognized, but the live-face check did not finish. Blink or gently turn your head and try again."
+            lastOutcome = statusMessage
+            if showsUI { NotchOverlayController.shared.finish(success: false) }
+        case .infraredFailed(let reason):
+            statusMessage = reason
+            lastOutcome = reason
+            if showsUI { NotchOverlayController.shared.finish(success: false) }
         case .noResolution:
             statusMessage = "No face detected."
             if showsUI {
@@ -319,33 +385,43 @@ final class FaceUnlockCoordinator {
         case consistentlyWrongFace
         /// A deny cue (glare, device rectangle) fired — actively rejected as a spoof regardless of match. Same failure path as `.consistentlyWrongFace`.
         case spoofSuspected
+        case livenessUnconfirmed
         case noResolution
+        case infraredFailed(String)
     }
 
-    /// Recognition and liveness run concurrently and each latches when it succeeds, so unlock fires the moment the second lands;
-    /// liveness never fails the scan by staying undecided, it just keeps scanning until `deadline`.
+    /// Only frames matching the same continuously observed identity contribute to liveness.
+    /// Undecided liveness keeps scanning until `deadline`; required IR runs after both RGB gates pass.
     /// `requireOverlayScanning` bails early once the overlay's own timeout collapses the UI — only applied when there is an
     /// overlay, since headlessly `phase` never becomes `.scanning` at all.
-    private func observeScanWindow(deadline: Date, requireOverlayScanning: Bool) async -> ScanOutcome {
-        let livenessEnabled = GlanceSettings.shared.livenessChecksEnabled
-        let liveness = LivenessAnalyzer()
-        liveness.modeProvider = { GlanceSettings.shared.livenessMode }
+    private func observeScanWindow(deadline: ContinuousClock.Instant, requireOverlayScanning: Bool, generation: Int, scanStarted: ContinuousClock.Instant, cameraReadyAt: ContinuousClock.Instant) async -> ScanOutcome {
+        let rgbThreshold = matchThreshold
+        let infraredRequired = GlanceSettings.shared.requireInfrared
+        let configuredLiveness = GlanceSettings.shared.livenessChecksEnabled
+        let livenessEnabled = configuredLiveness || infraredRequired
+        let liveness = LivenessAnalyzer(skipAbstainingGeometry: true)
+        liveness.modeProvider = { infraredRequired ? .heavy : GlanceSettings.shared.livenessMode }
         var consecutiveWrongFaceFrames = 0
 
         /// Cleared the moment a detected face fails to match, so a latched match can't be handed to whoever steps in next.
         var readyMatch: ScoredIdentity?
+        var livenessIdentity: FaceIdentity?
+        var livenessConfirmedAt: ContinuousClock.Instant?
         /// Turning liveness off in Settings makes this half permanently ready.
         var livenessConfirmed = !livenessEnabled
         /// Last frame's selected face, passed back so `selectDominantFace` stays on the same person instead of flip-flopping.
         var lastFaceBoundingBox: CGRect?
         /// Cheap way to detect "no new camera frame yet" vs. "fresh frame" — without it a repeat frame would corrupt the liveness motion signal.
         var lastProcessedFrameID: UInt64?
+        var recognizedFace = false
 
-        while Date() < deadline, !Task.isCancelled,
+        while ContinuousClock.now < deadline, !Task.isCancelled,
               !requireOverlayScanning || NotchOverlayController.shared.phase == .scanning {
-            guard LockMonitor.isScreenActuallyLocked() else { return .noResolution }
+            guard LockMonitor.isScreenActuallyLocked(), isEnabled, generation == scanGeneration, matchThreshold == rgbThreshold,
+                  infraredRequired == GlanceSettings.shared.requireInfrared,
+                  configuredLiveness == GlanceSettings.shared.livenessChecksEnabled else { return .noResolution }
 
-            guard let frame = camera.currentFrame, frame.id != lastProcessedFrameID else {
+            guard let frame = camera.currentFrame, frame.id != lastProcessedFrameID, frame.capturedAt >= scanStarted else {
                 // 20ms keeps the liveness window's sample count high while staying close to the camera's native ~33ms cadence.
                 try? await Task.sleep(nanoseconds: 20_000_000)
                 continue
@@ -355,12 +431,17 @@ final class FaceUnlockCoordinator {
             let pipeline = self.pipeline
             let previousBoundingBox = lastFaceBoundingBox
             let outcome = await Task.detached(priority: .userInitiated) { () -> (FaceRecognitionResult, LivenessFrame)? in
-                guard let result = try? pipeline.recognize(in: frame.image, preferNear: previousBoundingBox) else { return nil }
+                guard let result = try? pipeline.recognize(in: frame.image, preferNear: previousBoundingBox, includeQuality: false) else { return nil }
                 let faceCrop = CameraManager.renderCrop(from: frame, imageRect: result.face.boundingBox)
                 return (result, LivenessFeatureExtractor.extract(from: result, frame: frame.image, faceCrop: faceCrop))
             }.value
 
             guard let (result, livenessFrame) = outcome else {
+                readyMatch = nil
+                livenessIdentity = nil
+                liveness.reset()
+                livenessConfirmedAt = nil
+                livenessConfirmed = !livenessEnabled
                 consecutiveWrongFaceFrames = 0
                 lastFaceBoundingBox = nil
                 try? await Task.sleep(nanoseconds: 20_000_000)
@@ -368,16 +449,39 @@ final class FaceUnlockCoordinator {
             }
             lastFaceBoundingBox = result.face.normalizedBoundingBox
 
-            // Fed regardless of match, so liveness stays a genuinely independent gate rather than one starved by recognition confidence.
+            let scored = pipeline.score(result.embedding, against: FaceEnrollmentStore.shared.activeIdentities)
+            let matched = pipeline.bestMatch(in: scored, threshold: rgbThreshold)
+            // Evidence belongs to one continuously observed identity, never a
+            // previous face or a bystander who supplied a liveness cue.
+            if matched?.identity != livenessIdentity || matched == nil {
+                liveness.reset()
+                livenessConfirmedAt = nil
+                livenessConfirmed = !livenessEnabled
+                livenessIdentity = matched?.identity
+            }
             var confirmingCue: LivenessCue?
-            if livenessEnabled {
+            if livenessEnabled, matched != nil {
+                lastCheckDetails = "Colour face matched."
+                if let glare = livenessFrame.glare {
+                    let reading = LivenessCues.glossGlare(livenessFrame)
+                    lastCheckDetails = String(format: "Colour face matched. Bright pixels: %.2f%%; concentration: %.2f%%; glare score: %.3f (limit %.3f).",
+                        glare.specularFraction * 100, glare.specularClusterRatio * 100,
+                        reading.level, LivenessTuning.default.glossLevel)
+                }
                 let snapshot = liveness.observe(livenessFrame)
+                let blink = snapshot.cueStates[.blink]?.reading ?? .none
+                let depth = snapshot.cueStates[.depthPose]?.reading ?? .none
+                let shape = snapshot.cueStates[.flatVs3D]?.reading ?? .none
+                lastCheckDetails = (lastCheckDetails ?? "Colour face matched.") + String(format:
+                    " Live-face frames: %d; blink: %.2f; head-depth: %.2f (confidence %.2f); 3D shape: %.2f (confidence %.2f).",
+                    snapshot.frameCount, blink.level, depth.level, depth.confidence, shape.level, shape.confidence)
                 switch snapshot.decision {
                 case .denied:
                     // Overrides everything, including a match and any confirmation that already happened.
                     lastOutcome = snapshot.decision.denialReason
                     return .spoofSuspected
                 case .confirmed(let cue):
+                    if !livenessConfirmed { livenessConfirmedAt = frame.capturedAt }
                     livenessConfirmed = true
                     confirmingCue = cue
                 case .pending:
@@ -385,11 +489,8 @@ final class FaceUnlockCoordinator {
                 }
             }
 
-            // `activeIdentities`, not `identities`: someone switched off on the Your Face page stays enrolled but must not unlock.
-            let scored = pipeline.score(result.embedding, against: FaceEnrollmentStore.shared.activeIdentities)
-            let matched = pipeline.bestMatch(in: scored, threshold: matchThreshold)
-
             if let matched {
+                recognizedFace = true
                 consecutiveWrongFaceFrames = 0
                 readyMatch = matched
             } else {
@@ -401,17 +502,103 @@ final class FaceUnlockCoordinator {
             }
 
             if let readyMatch, livenessConfirmed {
+                guard !Task.isCancelled, generation == scanGeneration, isEnabled else { return .noResolution }
+                if infraredRequired {
+                    return await confirmInfrared(for: readyMatch.identity, generation: generation, rgbThreshold: rgbThreshold,
+                        evidenceAt: min(frame.capturedAt, livenessConfirmedAt ?? frame.capturedAt), scanStarted: scanStarted, cameraReadyAt: cameraReadyAt)
+                }
                 statusMessage = "Recognized — unlocking…"
                 let livenessNote = livenessEnabled
                     ? (confirmingCue.map { "live via \($0.title)" } ?? "liveness clear")
                     : "liveness off"
                 lastOutcome = "Matched \(readyMatch.identity.name) at \(String(format: "%.3f", readyMatch.centroidSimilarity)), \(livenessNote)."
-                await pocController.injectStoredPassword(requireAuthoritativeLock: true)
-                return .matched
+                let injected = await pocController.injectStoredPassword(requireAuthoritativeLock: true) { [weak self] in
+                    guard let self else { return false }
+                    return !Task.isCancelled && generation == self.scanGeneration && self.isEnabled && self.matchThreshold == rgbThreshold
+                        && !GlanceSettings.shared.requireInfrared
+                        && configuredLiveness == GlanceSettings.shared.livenessChecksEnabled
+                        && FaceEnrollmentStore.shared.activeIdentities.contains(readyMatch.identity)
+                }
+                return injected ? .matched : .noResolution
             }
 
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
-        return .noResolution
+        return recognizedFace && livenessEnabled && !livenessConfirmed ? .livenessUnconfirmed : .noResolution
     }
+    private let infraredAnalyzer = InfraredFaceAnalyzer()
+
+    private static func seconds(_ duration: Duration) -> Double {
+        let parts = duration.components
+        return Double(parts.seconds) + Double(parts.attoseconds) / 1e18
+    }
+
+    /// RGB identity + heavy liveness have succeeded for this exact snapshot.
+    /// Stop AVFoundation before taking the BRIO's USB interfaces, then require
+    /// a separate IR match. Missing hardware is a denial, never an RGB fallback.
+    private func confirmInfrared(for identity: FaceIdentity, generation: Int, rgbThreshold: Float,
+                                 evidenceAt started: ContinuousClock.Instant, scanStarted: ContinuousClock.Instant, cameraReadyAt: ContinuousClock.Instant) async -> ScanOutcome {
+        let colourFinishedAt = ContinuousClock.now
+        let threshold = GlanceSettings.shared.infraredThreshold
+        guard let enrollment = identity.infrared, enrollment.isUsable else {
+            return .infraredFailed("Infrared enrollment required for this identity. Open Your Face settings.")
+        }
+        let service = InfraredServiceManager()
+        guard service.enabled else { return .infraredFailed("Infrared camera helper is unavailable or not approved.") }
+        if showsUI { NotchOverlayController.shared.beginScanning(timeout: .seconds(15)) }
+        statusMessage = "Checking infrared — keep looking at the BRIO…"
+        await camera.stopAndWait()
+        guard !Task.isCancelled, generation == scanGeneration else { return .noResolution }
+        do {
+            // Loading Core ML is independent of USB capture; overlap the cold
+            // load rather than putting it on the path after the image arrives.
+            async let prepared: Void = infraredAnalyzer.prepare()
+            let captureStarted = ContinuousClock.now
+            let result = try await InfraredServiceManager.capture(allowPermissionPrompt: false)
+            let captureElapsed = captureStarted.duration(to: .now).components
+            let captureSeconds = Double(captureElapsed.seconds) + Double(captureElapsed.attoseconds) / 1e18
+            let analysisStarted = ContinuousClock.now
+            try await prepared
+            let sample = try await infraredAnalyzer.sample(from: result.image(), captureID: UUID())
+            let analysisSeconds = Self.seconds(analysisStarted.duration(to: .now))
+            let score = try enrollment.compare(sample)
+            let scanElapsed = scanStarted.duration(to: .now).components
+            let scanSeconds = Double(scanElapsed.seconds) + Double(scanElapsed.attoseconds) / 1e18
+            lastCheckDetails = String(format: "Colour identity and Heavy liveness passed. IR centroid: %.3f; lowest reference: %.3f; required: %.3f. IR capture: %.1fs; total face checks: %.1fs.",
+                score.centroid, score.minimumReference, threshold, captureSeconds, scanSeconds)
+            let authorized: @MainActor @Sendable () -> Bool = { [weak self] in
+                guard let self else { return false }
+                let elapsed = started.duration(to: .now).components
+                let seconds = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
+                return !Task.isCancelled && GlanceSettings.shared.requireInfrared
+                    && threshold == GlanceSettings.shared.infraredThreshold
+                    && self.isEnabled && self.matchThreshold == rgbThreshold
+                    && InfraredUnlockPolicy.permits(score: score, threshold: threshold, elapsed: seconds,
+                        sameIdentityAndEnrollment: FaceEnrollmentStore.shared.activeIdentities.contains(identity),
+                        sameScan: generation == self.scanGeneration,
+                        sessionUnlocked: SecureCredentialManager.isSessionUnlocked,
+                        screenLocked: LockMonitor.isScreenActuallyLocked(), sleeping: self.lockMonitor.isSleeping,
+                        livenessConfirmed: true, helperEnabled: service.isCurrentlyEnabled())
+            }
+            guard authorized() else { return .infraredFailed("Infrared check did not pass. Use your password or try again.") }
+            let injectionStarted = ContinuousClock.now
+            let injected = await pocController.injectStoredPassword(requireAuthoritativeLock: true, authorization: authorized)
+            if diagnosticGeneration == generation {
+                lastCheckDetails = (lastCheckDetails ?? "") + String(format:
+                    " Camera startup: %.2fs; colour/liveness: %.2fs; camera handoff: %.2fs; IR analysis: %.2fs; password submission: %.2fs; total to submission: %.2fs.",
+                    Self.seconds(scanStarted.duration(to: cameraReadyAt)),
+                    Self.seconds(cameraReadyAt.duration(to: colourFinishedAt)), Self.seconds(colourFinishedAt.duration(to: captureStarted)), analysisSeconds,
+                    Self.seconds(injectionStarted.duration(to: .now)), Self.seconds(scanStarted.duration(to: .now)))
+            }
+            guard injected else {
+                return .infraredFailed("Face checks passed. " + pocController.statusMessage)
+            }
+            lastOutcome = "RGB identity and liveness plus same-identity infrared match passed."
+            return .matched
+        } catch {
+            if Task.isCancelled { return .noResolution }
+            return .infraredFailed("Infrared check failed: " + error.localizedDescription)
+        }
+    }
+
 }

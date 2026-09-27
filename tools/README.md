@@ -63,3 +63,9 @@ python tools/convert_arcface.py --onnx-path /path/to/w600k_mbf.onnx
 If you ever swap in a different ArcFace variant (e.g. `w600k_r50` via
 `--variant w600k_r50`), this contract stays the same — only the file size
 and latency change.
+
+# Experimental BRIO infrared capture
+
+See [infrared/README.md](infrared/README.md) for the optional BRIO USB capture
+helper, the Face Lab IR panel, and the isolated Glance IR Lab test app. This
+prototype captures real IR frames on macOS; it does not enable IR face unlock.

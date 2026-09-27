@@ -34,7 +34,7 @@ enum KeychainError: LocalizedError {
 }
 
 enum KeychainManager {
-    nonisolated static let service = "com.jonathan.glance"
+    nonisolated static let service = Bundle.main.bundleIdentifier ?? "com.jonathan.glance"
 
     /// Attributes-only existence check — never prompts, even for access-controlled items.
     nonisolated static func exists(account: String) -> Bool {

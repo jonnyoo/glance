@@ -17,6 +17,7 @@ struct CameraPreviewView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: PreviewHostView, context: Context) {
+        nsView.updateSession(session)
         nsView.updateFaceBoxes(faces)
     }
 }
@@ -49,6 +50,10 @@ final class PreviewHostView: NSView {
         // Mirror horizontally at the layer level — the capture connection's isVideoMirrored had no effect here.
         previewLayer.setAffineTransform(CGAffineTransform(scaleX: -1, y: 1))
         CATransaction.commit()
+    }
+
+    func updateSession(_ session: AVCaptureSession) {
+        if previewLayer.session !== session { previewLayer.session = session }
     }
 
     func updateFaceBoxes(_ faces: [DetectedFace]) {
