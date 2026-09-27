@@ -14,6 +14,7 @@ final class InfraredProbeController {
     private(set) var canCapture = false
     private var operation: Task<Void, Never>?
     private var generation = UUID()
+    let service = InfraredServiceManager()
 
     var helperAvailable: Bool { Self.helperURL != nil }
 
@@ -49,18 +50,25 @@ final class InfraredProbeController {
         if !capture { canCapture = false }
         let id = UUID()
         generation = id
+        service.refresh()
         status = capture
-            ? "Approve the macOS prompt, then look at the BRIO. Capturing for five seconds…"
+            ? (service.available ? "Look at the BRIO. Capturing for five seconds…" : "Approve the macOS prompt, then look at the BRIO. Capturing for five seconds…")
             : "Checking infrared hardware…"
         let process = InfraredProbeProcess()
         operation = Task {
             do {
-                let result = try await withTaskCancellationHandler {
-                    try await Task.detached {
-                        try process.run(helper: helper, capture: capture)
-                    }.value
-                } onCancel: {
-                    process.cancel()
+                let result: InfraredProbeResult
+                if capture && service.available {
+                    guard service.enabled else {
+                        throw InfraredProbeError.execution("Enable and approve the camera helper before testing infrared.")
+                    }
+                    result = try await InfraredServiceManager.capture()
+                } else {
+                    result = try await withTaskCancellationHandler {
+                        try await Task.detached {
+                            try process.run(helper: helper, capture: capture)
+                        }.value
+                    } onCancel: { process.cancel() }
                 }
                 try Task.checkCancellation()
                 guard generation == id else { return }
@@ -85,7 +93,7 @@ final class InfraredProbeController {
                 } else {
                     canCapture = result.irDescriptor == true
                     status = canCapture
-                        ? "BRIO infrared sensor found. Testing it temporarily takes over the camera and microphone and asks for administrator approval."
+                        ? (service.available ? "BRIO infrared sensor found. Testing briefly interrupts its video and audio." : "BRIO infrared sensor found. Testing it temporarily takes over the camera and microphone and asks for administrator approval.")
                         : "No supported BRIO infrared sensor was found."
                 }
             } catch {

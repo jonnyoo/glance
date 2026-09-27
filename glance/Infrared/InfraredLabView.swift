@@ -2,6 +2,7 @@ import SwiftUI
 
 struct InfraredLabView: View {
     var beforeCapture: () -> Void = {}
+    @Environment(\.scenePhase) private var scenePhase
     @State private var controller = InfraredProbeController()
 
     var body: some View {
@@ -9,6 +10,28 @@ struct InfraredLabView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Test the Logitech BRIO's infrared sensor. This test does not enable IR face unlock.")
                     .font(.callout)
+                if controller.service.available {
+                    Text("Enable the camera helper once to test without repeated administrator prompts. You can disable it here when finished.")
+                        .font(.caption)
+                    HStack {
+                        if controller.service.registered {
+                            Button("Disable camera helper") {
+                                Task { await controller.service.disable() }
+                            }
+                        } else {
+                            Button("Enable camera helper") { controller.service.enable() }
+                        }
+                        if controller.service.needsApproval {
+                            Button("Open System Settings") { controller.service.openSettings() }
+                        }
+                        Text(controller.service.enabled ? "Enabled" : (controller.service.needsApproval ? "Awaiting approval" : "Disabled"))
+                            .font(.caption)
+                    }
+                    .disabled(controller.isBusy)
+                    if !controller.service.message.isEmpty {
+                        Text(controller.service.message).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 HStack {
                     Button("Check camera") { controller.check() }
                         .disabled(controller.isBusy || !controller.helperAvailable)
@@ -16,8 +39,11 @@ struct InfraredLabView: View {
                         beforeCapture()
                         controller.capture()
                     }
-                    .disabled(controller.isBusy || !controller.canCapture)
-                    if controller.isBusy { ProgressView().controlSize(.small) }
+                    .disabled(controller.isBusy || !controller.canCapture || (controller.service.available && !controller.service.enabled))
+                    if controller.isBusy {
+                        ProgressView().controlSize(.small)
+                        Button("Cancel") { controller.clear() }
+                    }
                     Spacer()
                 }
                 Text(controller.helperAvailable ? controller.status : "The optional IR helper is not included in this build.")
@@ -52,6 +78,9 @@ struct InfraredLabView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(8)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { controller.service.refresh() }
         }
         .onDisappear { controller.clear() }
     }

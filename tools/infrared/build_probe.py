@@ -5,6 +5,9 @@ Requires Xcode command-line tools, git, and a Homebrew libusb installation.
 Build products and a pinned libuvc checkout stay in the specified directory.
 """
 import argparse
+import json
+import platform
+import re
 from pathlib import Path
 import subprocess
 import shutil
@@ -27,7 +30,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("build_directory", type=Path)
     parser.add_argument("--libusb-prefix", type=Path, default=Path("/opt/homebrew"))
+    parser.add_argument("--deployment-target", default=platform.mac_ver()[0],
+                        help="Minimum macOS version (defaults to this Mac)")
     args = parser.parse_args()
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){0,2}", args.deployment_target) or int(args.deployment_target.split(".")[0]) < 15:
+        parser.error("The deployment target must be macOS 15 or newer")
     build = args.build_directory.resolve()
     build.mkdir(parents=True, exist_ok=True)
     source = build / "libuvc"
@@ -65,17 +72,32 @@ def main():
     library = usb / "lib/libusb-1.0.a"
     if not library.is_file():
         raise RuntimeError(f"Static libusb library missing: {library}")
+    version = lambda value: tuple((list(map(int, value.split("."))) + [0, 0])[:3])
+    load_commands = subprocess.check_output(["xcrun", "otool", "-l", str(library)], text=True)
+    dependencies = re.findall(r"\bminos\s+([0-9.]+)", load_commands)
+    if any(version(item) > version(args.deployment_target) for item in dependencies):
+        raise RuntimeError("libusb targets a newer macOS release; rebuild libusb or increase --deployment-target")
     sources = [source / "src" / (name + ".c") for name in
                ("ctrl", "ctrl-gen", "device", "diag", "frame", "init", "stream", "misc")]
-    run("xcrun", "clang", "-O2", "-Wall", "-I" + str(source / "include"),
+    run("xcrun", "clang", "-mmacosx-version-min=" + args.deployment_target, "-O2", "-Wall", "-I" + str(source / "include"),
         "-I" + str(usb / "include/libusb-1.0"), HERE / "brio_ir_probe.c", *sources,
         library, "-framework", "IOKit", "-framework", "CoreFoundation",
         "-framework", "Security", "-lobjc", "-o", build / "brio-ir-probe")
+    # Link the same engine into the signed service, with no child-process launch.
+    objects = []
+    for index, item in enumerate([HERE / "brio_ir_probe.c", *sources]):
+        obj = build / f"ir-engine-{index}.o"
+        run("xcrun", "clang", "-mmacosx-version-min=" + args.deployment_target, "-O2", "-Wall", "-DBRIO_IR_EMBEDDED",
+            "-I" + str(source / "include"), "-I" + str(usb / "include/libusb-1.0"),
+            "-c", item, "-o", obj)
+        objects.append(obj)
+    run("xcrun", "libtool", "-static", "-o", build / "libbrio-ir.a", *objects, library)
     licenses = build / "Licenses"
     licenses.mkdir(exist_ok=True)
     shutil.copyfile(source / "LICENSE.txt", licenses / "libuvc-BSD.txt")
     shutil.copyfile(library.resolve().parent.parent / "COPYING", licenses / "libusb-LGPL.txt")
     run(build / "brio-ir-probe", "--selftest")
+    (build / "build-info.json").write_text(json.dumps({"minimum_macos": args.deployment_target}))
     print(f"Built {build / 'brio-ir-probe'}")
 
 

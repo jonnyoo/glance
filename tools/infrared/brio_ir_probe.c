@@ -2,6 +2,8 @@
  * Build with build_probe.py. Uses pinned libuvc with KSMedia L8_IR support.
  * --check only queries USB access; --capture requires explicit invocation.
  */
+#include "brio_ir_engine.h"
+#include <stdatomic.h>
 #include <libusb.h>
 #include <libuvc/libuvc.h>
 #include <pthread.h>
@@ -17,18 +19,45 @@ enum { WIDTH = 340, HEIGHT = 340, PIXELS = WIDTH * HEIGHT };
 static const uint8_t ir_guid[16] = {
     0x32,0,0,0,2,0,0x10,0,0x80,0,0,0xaa,0,0x38,0x9b,0x71
 };
+struct brio_ir_job {
+    atomic_bool cancelled;
+    pthread_mutex_t frame_lock;
+    unsigned frames, rejected;
+    double brightest_mean, darkest_mean;
+    uint8_t latest[PIXELS];
+    FILE *output;
+};
+/* CLI signal handlers never access a job owned by another thread. */
 static volatile sig_atomic_t interrupted = 0;
-static pthread_mutex_t frame_lock = PTHREAD_MUTEX_INITIALIZER;
-static unsigned frames = 0, rejected = 0;
-static double brightest_mean = -1, darkest_mean = 255;
-/* Brightest frame of this diagnostic run, not a live authentication sample. */
-static uint8_t latest[PIXELS];
+#ifndef BRIO_IR_EMBEDDED
+static void on_signal(int number) { (void)number; interrupted = 1; }
+#endif
+static void erase(void *memory, size_t size) {
+    volatile unsigned char *bytes = memory;
+    while (size--) *bytes++ = 0;
+}
 
-static void on_signal(int signal_number) { (void)signal_number; interrupted = 1; }
-
-static int fail(const char *stage, int code) {
-    /* Stage is always a fixed internal string, never device-supplied text. */
-    printf("{\"ok\":false,\"stage\":\"%s\",\"code\":%d}\n", stage, code);
+brio_ir_job *brio_ir_create(void) {
+    brio_ir_job *job = calloc(1, sizeof(*job));
+    if (!job) return NULL;
+    atomic_init(&job->cancelled, 0);
+    pthread_mutex_init(&job->frame_lock, NULL);
+    job->brightest_mean = -1;
+    job->darkest_mean = 255;
+    return job;
+}
+void brio_ir_cancel(brio_ir_job *job) { atomic_store(&job->cancelled, 1); }
+void brio_ir_destroy(brio_ir_job *job) {
+    if (!job) return;
+    pthread_mutex_destroy(&job->frame_lock);
+    erase(job, sizeof(*job));
+    free(job);
+}
+static int is_cancelled(brio_ir_job *job) {
+    return interrupted || atomic_load(&job->cancelled);
+}
+static int fail(brio_ir_job *job, const char *stage, int code) {
+    fprintf(job->output, "{\"ok\":false,\"stage\":\"%s\",\"code\":%d}\n", stage, code);
     return 1;
 }
 
@@ -40,36 +69,36 @@ static int valid_frame(const uvc_frame_t *frame) {
 }
 
 static void on_frame(uvc_frame_t *frame, void *user) {
-    (void)user;
-    pthread_mutex_lock(&frame_lock);
+    brio_ir_job *job = user;
+    pthread_mutex_lock(&job->frame_lock);
     if (valid_frame(frame)) {
         const uint8_t *pixels = frame->data;
         unsigned long total = 0;
         for (size_t i = 0; i < PIXELS; i++) total += pixels[i];
         double mean = (double)total / PIXELS;
-        if (mean > brightest_mean) {
-            brightest_mean = mean;
-            memcpy(latest, frame->data, PIXELS);
+        if (mean > job->brightest_mean) {
+            job->brightest_mean = mean;
+            memcpy(job->latest, frame->data, PIXELS);
         }
-        if (mean < darkest_mean) darkest_mean = mean;
-        frames++;
+        if (mean < job->darkest_mean) job->darkest_mean = mean;
+        job->frames++;
     } else {
-        rejected++;
+        job->rejected++;
     }
-    pthread_mutex_unlock(&frame_lock);
+    pthread_mutex_unlock(&job->frame_lock);
 }
 
 /* A snapshot travels over stdout to the caller's memory only. */
-static void base64(const uint8_t *data, size_t count) {
+static void base64(FILE *output, const uint8_t *data, size_t count) {
     static const char chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     for (size_t i = 0; i < count; i += 3) {
         uint32_t value = (uint32_t)data[i] << 16;
         if (i + 1 < count) value |= (uint32_t)data[i + 1] << 8;
         if (i + 2 < count) value |= data[i + 2];
-        putchar(chars[(value >> 18) & 63]);
-        putchar(chars[(value >> 12) & 63]);
-        putchar(i + 1 < count ? chars[(value >> 6) & 63] : '=');
-        putchar(i + 2 < count ? chars[value & 63] : '=');
+        fputc(chars[(value >> 18) & 63], output);
+        fputc(chars[(value >> 12) & 63], output);
+        fputc(i + 1 < count ? chars[(value >> 6) & 63] : '=', output);
+        fputc(i + 2 < count ? chars[value & 63] : '=', output);
     }
 }
 
@@ -117,7 +146,7 @@ static int check_device(libusb_context *usb, libusb_device **selected) {
     return supported ? 0 : LIBUSB_ERROR_NOT_SUPPORTED;
 }
 
-static int selftest(void) {
+static int selftest(brio_ir_job *job) {
     uint8_t pixels[PIXELS] = {0};
     uvc_frame_t frame = {0};
     frame.data = pixels; frame.data_bytes = PIXELS;
@@ -135,35 +164,35 @@ static int selftest(void) {
     if (valid_frame(&frame)) return 1;
     frame.width = WIDTH;
     memset(pixels, 180, sizeof(pixels));
-    on_frame(&frame, NULL);
+    on_frame(&frame, job);
     memset(pixels, 1, sizeof(pixels));
-    on_frame(&frame, NULL);
-    if (frames != 2 || brightest_mean != 180 || darkest_mean != 1 || latest[0] != 180) return 1;
+    on_frame(&frame, job);
+    if (job->frames != 2 || job->brightest_mean != 180 || job->darkest_mean != 1 || job->latest[0] != 180) return 1;
     frame.data_bytes--;
-    on_frame(&frame, NULL);
-    if (frames != 2 || rejected != 1 || latest[0] != 180) return 1;
+    on_frame(&frame, job);
+    if (job->frames != 2 || job->rejected != 1 || job->latest[0] != 180) return 1;
     puts("IR frame validation and illuminated-frame selection passed");
     return 0;
 }
 
-int main(int argc, char **argv) {
-    if (argc == 2 && strcmp(argv[1], "--selftest") == 0) return selftest();
+static int run_probe(brio_ir_job *job, int argc, const char **argv) {
+    if (argc == 2 && strcmp(argv[1], "--selftest") == 0) return selftest(job);
     int snapshot = argc == 2 && strcmp(argv[1], "--snapshot") == 0;
     int capture = snapshot || (argc == 2 && strcmp(argv[1], "--capture") == 0);
     if (!capture && !(argc == 2 && strcmp(argv[1], "--check") == 0)) {
         fprintf(stderr, "Usage: brio-ir-probe --check | --capture | --snapshot | --selftest\n");
         return 2;
     }
-    signal(SIGINT, on_signal); signal(SIGTERM, on_signal);
+    if (is_cancelled(job)) return fail(job, "cancelled", UVC_ERROR_TIMEOUT);
     libusb_context *usb = NULL;
     libusb_device *selected = NULL;
     int rc = libusb_init(&usb);
-    if (rc) return fail("usb-init", rc);
+    if (rc) return fail(job, "usb-init", rc);
     rc = check_device(usb, &selected);
     if (rc) {
         if (selected) libusb_unref_device(selected);
         libusb_exit(usb);
-        return fail("ir-descriptor", rc);
+        return fail(job, "ir-descriptor", rc);
     }
     if (!capture) {
         libusb_device_handle *handle = NULL;
@@ -175,7 +204,7 @@ int main(int argc, char **argv) {
             if (!rc) libusb_release_interface(handle, 2);
             libusb_close(handle);
         }
-        printf("{\"ok\":true,\"irDescriptor\":true,\"width\":340,\"height\":340,"
+        fprintf(job->output, "{\"ok\":true,\"irDescriptor\":true,\"width\":340,\"height\":340,"
                "\"driverActive\":%d,\"claimCode\":%d}\n", active, rc);
         libusb_unref_device(selected); libusb_exit(usb);
         return 0;
@@ -183,7 +212,7 @@ int main(int argc, char **argv) {
     libusb_unref_device(selected);
     libusb_exit(usb);
     /* No implicit privilege elevation or driver detachment from --check. */
-    if (geteuid() != 0) return fail("administrator-required", LIBUSB_ERROR_ACCESS);
+    if (geteuid() != 0) return fail(job, "administrator-required", LIBUSB_ERROR_ACCESS);
 
     uvc_context_t *context = NULL;
     uvc_device_t *device = NULL;
@@ -195,6 +224,7 @@ int main(int argc, char **argv) {
     stage = "find-brio";
     rc = uvc_find_device(context, &device, 0x046d, 0x085e, NULL);
     if (rc) goto cleanup;
+    if (is_cancelled(job)) { stage = "cancelled"; rc = UVC_ERROR_TIMEOUT; goto cleanup; }
     stage = "take-camera";
     rc = uvc_open(device, &handle);
     if (rc) goto cleanup;
@@ -208,40 +238,69 @@ int main(int argc, char **argv) {
         control.dwFrameInterval != 333333) {
         stage = "unexpected-ir-format"; rc = UVC_ERROR_INVALID_MODE; goto cleanup;
     }
+    if (is_cancelled(job)) { stage = "cancelled"; rc = UVC_ERROR_TIMEOUT; goto cleanup; }
     stage = "start-ir";
-    rc = uvc_start_streaming(handle, &control, on_frame, NULL, 0);
+    rc = uvc_start_streaming(handle, &control, on_frame, job, 0);
     if (rc) goto cleanup;
     /* Five seconds, independent of whether any frames arrive. */
-    for (int tick = 0; tick < 50 && !interrupted; tick++) {
+    for (int tick = 0; tick < 50 && !is_cancelled(job); tick++) {
         struct timespec delay = { .tv_sec = 0, .tv_nsec = 100000000 };
         nanosleep(&delay, NULL);
     }
     uvc_stop_streaming(handle);
-    stage = interrupted ? "cancelled" : "no-valid-ir-frames";
-    if (interrupted || frames == 0) rc = UVC_ERROR_TIMEOUT;
+    stage = is_cancelled(job) ? "cancelled" : "no-valid-ir-frames";
+    if (is_cancelled(job) || job->frames == 0) rc = UVC_ERROR_TIMEOUT;
 
 cleanup:
     /* libuvc releases interfaces and reattaches the original drivers. */
     if (handle) uvc_close(handle);
     if (device) uvc_unref_device(device);
     if (context) uvc_exit(context);
-    if (rc) return fail(stage, rc);
+    if (rc) return fail(job, stage, rc);
     unsigned long total = 0;
     unsigned min = 255, max = 0;
     for (size_t i = 0; i < PIXELS; i++) {
-        unsigned p = latest[i]; total += p;
+        unsigned p = job->latest[i]; total += p;
         if (p < min) min = p;
         if (p > max) max = p;
     }
-    printf("{\"ok\":true,\"frames\":%u,\"rejected\":%u,\"width\":340,\"height\":340,"
+    fprintf(job->output, "{\"ok\":true,\"frames\":%u,\"rejected\":%u,\"width\":340,\"height\":340,"
            "\"min\":%u,\"max\":%u,\"mean\":%.3f,\"darkestMean\":%.3f",
-           frames, rejected, min, max, (double)total / PIXELS, darkest_mean);
+           job->frames, job->rejected, min, max, (double)total / PIXELS, job->darkest_mean);
     if (snapshot) {
-        printf(",\"pixels\":\"");
-        base64(latest, PIXELS);
-        putchar('"');
+        fprintf(job->output, ",\"pixels\":\"");
+        base64(job->output, job->latest, PIXELS);
+        fputc('"', job->output);
     }
-    puts("}");
-    memset(latest, 0, sizeof(latest));
+    fputs("}\n", job->output);
+    memset(job->latest, 0, sizeof(job->latest));
     return 0;
 }
+
+/* A job is single-use. The caller must join capture before destroying it.
+ * Cancellation may run concurrently; no paths or executables cross this API. */
+char *brio_ir_snapshot(brio_ir_job *job, size_t *length) {
+    char *data = NULL;
+    *length = 0;
+    job->output = open_memstream(&data, length);
+    if (!job->output) return NULL;
+    const char *arguments[] = { "brio-ir-probe", "--snapshot" };
+    run_probe(job, 2, arguments);
+    fclose(job->output);
+    job->output = NULL;
+    return data;
+}
+void brio_ir_free_response(char *data, size_t length) {
+    if (data) { erase(data, length); free(data); }
+}
+#ifndef BRIO_IR_EMBEDDED
+int main(int argc, const char **argv) {
+    signal(SIGINT, on_signal); signal(SIGTERM, on_signal);
+    brio_ir_job *job = brio_ir_create();
+    if (!job) return 1;
+    job->output = stdout;
+    int result = run_probe(job, argc, argv);
+    brio_ir_destroy(job);
+    return result;
+}
+#endif
