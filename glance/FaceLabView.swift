@@ -49,6 +49,7 @@ struct FaceLabView: View {
                 modelStatusSection
                 sessionLockSection
                 previewSection
+                InfraredLabView(beforeCapture: { controller.stop() })
                 detectionSection
                 livenessSection
                 enrollSection
