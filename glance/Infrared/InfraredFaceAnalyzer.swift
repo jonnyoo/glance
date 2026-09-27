@@ -24,9 +24,17 @@ nonisolated enum InfraredFaceAnalysisError: LocalizedError {
 actor InfraredFaceAnalyzer {
     private var model: ArcFaceEmbedder?
 
+    /// May run while USB capture is in flight. This only loads the model;
+    /// it never produces or reuses identity evidence.
+    func prepare() throws {
+        try Task.checkCancellation()
+        if model == nil { model = try ArcFaceEmbedder() }
+        try Task.checkCancellation()
+    }
+
     func sample(from image: CGImage, captureID: UUID) throws -> InfraredFaceSample {
         try Task.checkCancellation()
-        let faces = try FaceDetector.detectFaces(in: image)
+        let faces = try FaceDetector.detectFaces(in: image, includeQuality: false)
         guard faces.count == 1, let face = faces.first else {
             throw InfraredFaceAnalysisError.faceCount(faces.count)
         }
@@ -42,7 +50,7 @@ actor InfraredFaceAnalyzer {
         guard let rgb = context.makeImage(), let aligned = FaceAligner.align(face, from: rgb),
               aligned.tier == .fivePoint else { throw InfraredFaceAnalysisError.alignment }
         try Task.checkCancellation()
-        if model == nil { model = try ArcFaceEmbedder() }
+        try prepare()
         guard let model else { throw ArcFaceEmbedderError.modelNotFound }
         let embedding = try model.embedding(for: aligned.image)
         try Task.checkCancellation()

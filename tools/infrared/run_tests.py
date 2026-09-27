@@ -14,11 +14,12 @@ cases = {
     "enrollment": [IR + "InfraredReference.swift", IR + "InfraredEnrollment.swift", "glance/FaceEmbedder.swift",
                    "glance/FaceEnrollmentStore.swift", TESTS + "enrollment_selftest.swift"],
     "injection": ["glance/KeystrokeInjector.swift", TESTS + "injection_selftest.swift"],
+    "trigger": ["glance/LockTriggerRetry.swift", TESTS + "trigger_selftest.swift"],
     "liveness": ["glance/Liveness/" + name + ".swift" for name in
                  ("LandmarkGeometry", "GeometryLiveness", "GlareCue", "LivenessCues", "LivenessScoring", "LivenessAnalyzer")]
                  + ["tools/liveness_selftest.swift"],
 }
-cases["glare-crop"] = ["glance/CameraManager.swift", "glance/Liveness/GlareCueExtractor.swift"] + cases["liveness"][:-1] + [TESTS + "glare_crop_selftest.swift"]
+cases["glare-crop"] = ["glance/CameraManager.swift", "glance/Liveness/GlareCueExtractor.swift", "glance/Liveness/GlareFaceRegion.swift"] + cases["liveness"][:-1] + [TESTS + "glare_crop_selftest.swift"]
 
 with tempfile.TemporaryDirectory(prefix="glance-ir-tests-") as output:
     for name, sources in cases.items():

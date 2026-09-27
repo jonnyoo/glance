@@ -32,8 +32,9 @@ struct DetectedFace {
 /// Pure, synchronous, CPU-bound work — `nonisolated` so it can run on a
 /// background task despite the project's default main-actor isolation.
 nonisolated enum FaceDetector {
-    /// Runs face-rectangle, capture-quality, and landmarks detection on a single frame.
-    static func detectFaces(in image: CGImage) throws -> [DetectedFace] {
+    /// Capture quality is needed by enrollment/UI, but does not participate in
+    /// identity or liveness decisions. Unlock callers can omit that request.
+    static func detectFaces(in image: CGImage, includeQuality: Bool = true) throws -> [DetectedFace] {
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
 
         let rectanglesRequest = VNDetectFaceRectanglesRequest()
@@ -43,13 +44,15 @@ nonisolated enum FaceDetector {
 
         // Chained to the rectangles results (via `inputFaceObservations`) rather than run independently, so results
         // correspond 1:1 in order — avoids the fragility of matching back via boundingBox float equality.
-        let qualityRequest = VNDetectFaceCaptureQualityRequest()
         let landmarksRequest = VNDetectFaceLandmarksRequest()
-        qualityRequest.inputFaceObservations = faceObservations
         landmarksRequest.inputFaceObservations = faceObservations
-        try handler.perform([qualityRequest, landmarksRequest])
+        let qualityRequest = includeQuality ? VNDetectFaceCaptureQualityRequest() : nil
+        qualityRequest?.inputFaceObservations = faceObservations
+        var requests: [VNRequest] = [landmarksRequest]
+        if let qualityRequest { requests.insert(qualityRequest, at: 0) }
+        try handler.perform(requests)
 
-        let qualityResults = qualityRequest.results ?? []
+        let qualityResults = qualityRequest?.results ?? []
         let landmarkResults = landmarksRequest.results ?? []
         let imageSize = CGSize(width: image.width, height: image.height)
 

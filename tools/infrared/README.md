@@ -28,7 +28,7 @@ Logitech BRIO USB `046d:085e`, firmware `0317`, USB 3 connection, macOS 27.0 (`2
 
 Direct USB capture using libusb and a narrowly patched libuvc received 128–129 complete frames over five seconds. The BRIO alternates dark and illuminated frames. The diagnostic selects the brightest complete frame for its preview; this is **not** a liveness algorithm. No vendor extension controls or firmware changes are used.
 
-macOS owns this camera through its USB video driver. The test uses administrator authorization (either per test or through the optional approved helper), temporarily takes the entire BRIO (including normal video/audio) away from that driver, captures for five seconds, then releases it and reattaches the drivers. The BRIO was visible again through the macOS camera API after testing. Full recording/audio functionality after recovery still needs a manual check.
+macOS owns this camera through its USB video driver. The test uses administrator authorization (either per test or through the optional approved helper), temporarily takes the entire BRIO (including normal video/audio) away from that driver, captures a bounded burst (up to five seconds), then releases it and reattaches the drivers. The BRIO was visible again through the macOS camera API after testing. Full recording/audio functionality after recovery still needs a manual check.
 
 ## Build and run
 
@@ -167,9 +167,9 @@ libuvc is BSD-licensed (Ken Tossell and contributors). Its complete license is i
 
 ### Lock-screen glare regression
 
-The first integrated lock test correctly matched the colour face but was rejected by the existing glare cue before IR capture. A controlled BRIO lock-screen comparison measured 37 face frames: the old 15%-padded crop crossed the glare gate in 26 frames, whereas a face-only crop crossed it in none. At the strongest old-crop reading, its glare score was 0.168 versus 0.0026 for the face-only crop from that same frame. The crop now excludes surrounding background; the glare formula/threshold, full-frame device detector, Heavy liveness and IR match requirement are unchanged. The signed corrected build is installed for another complete unlock test. This regression fix does not establish presentation-attack resistance.
+The first integrated lock test correctly matched the colour face but was rejected by the existing glare cue before IR capture. A controlled BRIO lock-screen comparison measured 37 face frames: the old 15%-padded crop crossed the glare gate in 26 frames, whereas a face-only crop crossed it in none. At the strongest old-crop reading, its glare score was 0.168 versus 0.0026 for the face-only crop from that same frame. The crop now excludes surrounding background; the glare formula/threshold, full-frame device detector, Heavy liveness and IR match requirement are unchanged. A later corrected build completed a real lock-screen unlock as recorded below. This regression fix does not establish presentation-attack resistance.
 
-The tester confirmed the crop fix removed the glare rejection (score 0.000) while retaining a colour identity match. The next attempt timed out awaiting positive liveness. Camera warmup is now separately bounded, the IR-required live-face stage gets at least ten seconds, and in-memory diagnostics include the continuous matched-frame count and live-face cue readings. Evidence expiry remains 15 monotonic seconds after the relevant RGB/liveness evidence, and no match or liveness threshold was reduced. Complete IR-assisted unlocking still needs confirmation.
+The tester confirmed the crop fix removed the glare rejection (score 0.000) while retaining a colour identity match. The next attempt timed out awaiting positive liveness. Camera warmup is now separately bounded, the IR-required live-face stage gets at least ten seconds, and in-memory diagnostics include the continuous matched-frame count and live-face cue readings. Evidence expiry remains 15 monotonic seconds after the relevant RGB/liveness evidence, and no match or liveness threshold was reduced. Subsequent camera and permission fixes enabled the confirmed IR-assisted unlock described below.
 
 ### Camera handoff regression
 
@@ -191,4 +191,40 @@ Native sanitizer tests cover insufficient bursts, dark frames, malformed bright 
 
 The faster signed helper measured 1.151s, 1.057s and 1.107s for three real BRIO captures (12 complete frames each), down from roughly 5.6s with the fixed five-second collection window. All three actual BRIO colour restarts and interrupted-start recovery passed. These numbers measure IR capture/USB handoff, not the entire liveness/unlock flow.
 
-The tester also confirmed a faster successful lock-screen unlock using the existing RGB and IR enrollment. Full face-check timing is awaiting the in-app readout; production biometric/PAD validation remains outstanding.
+The tester also confirmed a faster successful lock-screen unlock using the existing RGB and IR enrollment. The in-app readout showed 1.1s IR capture and 2.9s total face checks. This excludes the old 550ms automatic-trigger delay and password submission; production biometric/PAD validation remains outstanding.
+
+
+### Further latency work
+
+The latest development build removes the fixed 250ms pre-arm wait and evaluates the authoritative lock state immediately. If the lock is still settling after wake, it permits one 300ms retry for the same unhandled event. It never delays a confirmed lock, rearms an already-handled event from a late retry, or acts on a superseding event. Unlock/sleep notifications cancel and reset the prior lock immediately, even while CGSession still reports the previous state; they only stop work and never authorize a scan. This prevents a rapid lock→unlock→lock from being mistaken for an already-handled lock. A camera-free regression exercises the production retry code, including that observed sequence, sleep and cancellation.
+
+IR model loading runs concurrently with USB capture. Unlock detection omits Vision's capture-quality request, which no identity/liveness decision consumes; enrollment and diagnostic callers keep it by default. Geometry can skip homography diagnostics below the unchanged yaw gate, where the original algorithm necessarily abstains. Full diagnostic calculation remains the Face Lab default. Service configuration/handles are retained, but OS approval is queried afresh before each authorization check. No score threshold, liveness cue, evidence lifetime, per-character authorization gate or keyboard pacing changed.
+
+Measurements on the test Mac:
+
+| Measurement | Result and scope |
+| --- | --- |
+| Actual BRIO RGB startup | First frame 1.512/1.307/1.276s; native callback pixels 1920×1080 |
+| Limit format selection to 1080p (test only) | 1.387/1.265/1.257s; same callback dimensions; not enough evidence to change production resolution |
+| Detect with/without capture-quality request | 12 paired fresh-frame comparisons had identical boxes, pose, landmarks and aligned pixels; alternating order, warm means 5.6/5.3ms |
+| Geometry diagnostics below yaw gate | Synthetic 20-frame window: 0.720ms full vs 0.003ms skipped; not a full-unlock speedup |
+| IR model cold load | Separate process: 0.746s first load, ~0.015s repeats; actual in-app overlap saving is not yet established |
+
+`service/face_detection_selftest.swift` reproduces the BRIO-only paired detection check without saving images or accessing enrollment. Build it using the signing/package setup of the handoff test. The expanded liveness tests verify identical cue readings and per-frame decisions for both geometry paths across yaw boundaries, missing yaw, noisy/planar/live/still landmarks, blink confirmation, denial overrides and rolling-window expiry. All eight offline suites and the signed universal Release package pass.
+
+Recognition now reports camera startup, colour/liveness, camera handoff, IR capture/analysis, password submission and total scan-to-submission time. Submission completion is not an authoritative macOS unlock acknowledgment. The first timing retest uncovered an unlock-notification/CGSession lag: one lock ended during camera startup, and a rapid second lock was incorrectly suppressed as already handled. The corrected build subsequently completed a real lock-screen unlock. Its stage readout was 1.45s camera startup, 1.77s colour/liveness, 0.14s handoff, 1.1s IR capture, 0.01s IR analysis and 0.57s password submission, totalling 5.06s scan-to-submission. Startup and liveness dominate this run; a measured end-to-end speedup is not established.
+
+A bounded, isolated native RGB+IR experiment was tested on the same BRIO. Simultaneous YUYV 1080p/30 or 720p/30 with 340×340 IR returned IR but zero RGB frames. A 1080p RGB-only control succeeded (first frame ~1.2s). Starting RGB first yielded 12–13 frames, then stopped delivering image data when IR started. The final instrumented run recorded 32,544 successful but empty RGB isochronous packets after IR startup, with no payload bytes, parser rejections or transport errors. Thus this particular capture configuration does not support the proposed overlap; it does not prove every BRIO mode or firmware is incapable of concurrency. These diagnostics remained outside the shipped code, and the original lab/helper were restored. Production RGB capture settings are unchanged.
+
+AVFoundation preset/format-selection experiments continued to deliver 1920×1080 buffers at ~1.3s startup, including attempts to request 720p. Those results are not evidence about actual lower-resolution performance, and no resolution reduction was applied.
+
+
+### Face-outline background regression
+
+A later live test again stopped at the colour glare gate, before IR: 77 matched frames, glare score 0.051 against 0.040. Comparing old and optimized processing on 121 identical fresh BRIO frames produced zero liveness-snapshot differences, locating the problem in the existing appearance cue. A temporary in-memory diagnostic then showed its bright pixels on the wall beside the temple and below the jaw, still inside the detector's rectangular face bounds.
+
+`GlareFaceRegion` now builds a hull from the detected facial contour and extends its temples to the top of the face rectangle to retain forehead coverage. A small exterior margin tolerates landmark jitter. Glare counts only pixels inside that outline and normalizes by the retained area, so a highlight actually on the face is not diluted. Missing, malformed or undersized outlines retain the full rectangular check. Face Lab and unlock share this extraction; full-frame bezel detection, identity, Heavy liveness, glare thresholds and IR matching remain unchanged.
+
+On 69 paired fresh BRIO frames, the rectangular crop crossed the glare threshold in 50 frames (maximum 0.190); the outline crossed it in 0 (maximum 0.010). All other per-frame liveness cues were identical, including a detected blink. The temporary preview confirmed coverage of the forehead, cheeks and chin, with excluded background marked separately. No images were written to disk.
+
+Synthetic tests cover background beside the temple/below the jaw, preserved forehead/cheek/chin highlight rejection, contour traversal order and invalid-outline fallback. `service/glare_outline_selftest.swift` reproduces the live numeric comparison without accessing enrollment or credentials. All eight offline suites and the signed universal Release/package verification pass. The corrected build completed a real lock-screen unlock; its timing is recorded above. These genuine-user false-rejection tests do not establish spoof resistance.

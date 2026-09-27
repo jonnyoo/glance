@@ -15,16 +15,21 @@ final class InfraredServiceManager {
     var needsApproval: Bool { state == .requiresApproval }
     var registered: Bool { enabled || needsApproval }
 
-    nonisolated static var configuration: (name: String, requirement: String)? {
+    nonisolated static let configuration: (name: String, requirement: String)? = {
         guard let name = Bundle.main.object(forInfoDictionaryKey: "GlanceIRServiceName") as? String,
               let requirement = Bundle.main.object(forInfoDictionaryKey: "GlanceIRServiceRequirement") as? String,
               !name.isEmpty, !requirement.isEmpty else { return nil }
         return (name, requirement)
+    }()
+    private let service: SMAppService?
+    init() {
+        service = Self.configuration.map { SMAppService.daemon(plistName: $0.name + ".plist") }
+        refresh()
     }
-    private var service: SMAppService? {
-        Self.configuration.map { SMAppService.daemon(plistName: $0.name + ".plist") }
-    }
-    init() { refresh() }
+
+    /// Query the current OS approval on every authorization check. Only the
+    /// immutable service handle is retained; approval is never cached here.
+    func isCurrentlyEnabled() -> Bool { service?.status == .enabled }
     func refresh() {
         state = service?.status ?? .notFound
         if needsApproval {
