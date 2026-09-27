@@ -190,3 +190,5 @@ The initial prototype always captured for five seconds. The engine now finishes 
 Native sanitizer tests cover insufficient bursts, dark frames, malformed bright frames, illuminated-frame selection, state isolation and cancellation. Recognition diagnostics now include the IR request duration and total face-check duration so latency can be measured instead of inferred from a successful match.
 
 The faster signed helper measured 1.151s, 1.057s and 1.107s for three real BRIO captures (12 complete frames each), down from roughly 5.6s with the fixed five-second collection window. All three actual BRIO colour restarts and interrupted-start recovery passed. These numbers measure IR capture/USB handoff, not the entire liveness/unlock flow.
+
+The tester also confirmed a faster successful lock-screen unlock using the existing RGB and IR enrollment. Full face-check timing is awaiting the in-app readout; production biometric/PAD validation remains outstanding.
