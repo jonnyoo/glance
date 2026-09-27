@@ -18,10 +18,11 @@ cases = {
                  ("LandmarkGeometry", "GeometryLiveness", "GlareCue", "LivenessCues", "LivenessScoring", "LivenessAnalyzer")]
                  + ["tools/liveness_selftest.swift"],
 }
+cases["glare-crop"] = ["glance/CameraManager.swift", "glance/Liveness/GlareCueExtractor.swift"] + cases["liveness"][:-1] + [TESTS + "glare_crop_selftest.swift"]
 
 with tempfile.TemporaryDirectory(prefix="glance-ir-tests-") as output:
     for name, sources in cases.items():
         binary = str(Path(output) / name)
         subprocess.run(["xcrun", "swiftc", "-parse-as-library", *sources, "-o", binary], cwd=ROOT, check=True)
         subprocess.run([binary], cwd=ROOT, check=True)
-    print("All six offline regression suites passed.")
+    print(f"All {len(cases)} offline regression suites passed.")

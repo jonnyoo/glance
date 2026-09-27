@@ -93,7 +93,7 @@ Run all camera-free Swift regression suites with:
 python3 tools/infrared/run_tests.py
 ```
 
-They cover response/vector validation, encrypted-record payload migration, failed-save rollback, RGB recapture invalidation, stale identity rejection, session clearing, authorization expiry/revocation and cancellation during simulated password entry. The event tests use an in-memory sink: they never type into the running desktop or read the keychain. The existing liveness regression suite is included. Synthetic tests do not establish biometric accuracy.
+They cover response/vector validation, encrypted-record payload migration, failed-save rollback, RGB recapture invalidation, stale identity rejection, session clearing, authorization expiry/revocation and cancellation during simulated password entry. The event tests use an in-memory sink: they never type into the running desktop or read the keychain. The existing liveness regression suite is included. Synthetic tests do not establish biometric accuracy. The glare-crop regression uses synthetic highlights to verify that a bright patch outside the detected face is excluded while an identical patch inside it still triggers the existing glare threshold. Device/bezel detection continues to examine the full camera image.
 
 Local integrated builds passed unsigned for Apple Silicon and signed Release for both Apple Silicon and Intel. Execution on Intel hardware remains untested. The development app's nested signatures, camera entitlement, expanded XPC requirements and launch-daemon bundle path were checked. Release builds explicitly disable injected debug entitlements. Validate a finished signed bundle without launching it with:
 
@@ -164,3 +164,7 @@ libuvc is BSD-licensed (Ken Tossell and contributors). Its complete license is i
 - [KSMedia L8_IR identification](https://lkml.org/lkml/2018/3/21/202)
 - [Apple device capture requirements](https://developer.apple.com/documentation/iousbhost/iousbhostobjectinitoptions/devicecapture)
 - [libusb macOS access limitations](https://github.com/libusb/libusb/wiki/FAQ)
+
+### Lock-screen glare regression
+
+The first integrated lock test correctly matched the colour face but was rejected by the existing glare cue before IR capture. A controlled BRIO lock-screen comparison measured 37 face frames: the old 15%-padded crop crossed the glare gate in 26 frames, whereas a face-only crop crossed it in none. At the strongest old-crop reading, its glare score was 0.168 versus 0.0026 for the face-only crop from that same frame. The crop now excludes surrounding background; the glare formula/threshold, full-frame device detector, Heavy liveness and IR match requirement are unchanged. The signed corrected build is installed for another complete unlock test. This regression fix does not establish presentation-attack resistance.

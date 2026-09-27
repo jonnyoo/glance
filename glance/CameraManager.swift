@@ -179,8 +179,9 @@ final class CameraManager: NSObject {
         currentFrame = frame
     }
 
-    /// Renders a native-resolution crop of `imageRect` from `frame.source`, for spoof-cue extraction which
-    /// needs pixel detail (screen texture, moiré, gloss) the downscaled working frame throws away.
+    /// Renders the detected face at native resolution for glare analysis.
+    /// Background outside the face must not count as facial reflections.
+    /// DeviceBezelDetector independently examines the full camera frame.
     nonisolated static func renderCrop(from frame: CameraFrame, imageRect: CGRect, maxEdge: CGFloat = 448) -> CGImage? {
         let workingWidth = CGFloat(frame.image.width)
         let workingHeight = CGFloat(frame.image.height)
@@ -188,14 +189,11 @@ final class CameraManager: NSObject {
         let scaleX = frame.sourceSize.width / workingWidth
         let scaleY = frame.sourceSize.height / workingHeight
 
-        // Expand ~1.3x so device edges/bezels are captured for texture/moiré cues.
-        let expanded = imageRect.insetBy(dx: -imageRect.width * 0.15, dy: -imageRect.height * 0.15)
-
         // Flip from `imageRect`'s top-left/y-down space to Core Image's bottom-left/y-up (reverse of FaceDetector.convertToImageSpace).
-        let nativeX = expanded.origin.x * scaleX
-        let nativeWidth = expanded.width * scaleX
-        let nativeHeight = expanded.height * scaleY
-        let nativeY = frame.sourceSize.height - (expanded.origin.y + expanded.height) * scaleY
+        let nativeX = imageRect.origin.x * scaleX
+        let nativeWidth = imageRect.width * scaleX
+        let nativeHeight = imageRect.height * scaleY
+        let nativeY = frame.sourceSize.height - (imageRect.origin.y + imageRect.height) * scaleY
         var nativeRect = CGRect(x: nativeX, y: nativeY, width: nativeWidth, height: nativeHeight)
 
         let sourceExtent = CGRect(origin: .zero, size: frame.sourceSize)
