@@ -21,6 +21,7 @@ struct InfraredSettingsView: View {
                                 Button("Disable camera helper") { Task { await service.disable() } }
                             } else { Button("Enable camera helper") { service.enable() } }
                             if service.needsApproval { Button("Open System Settings") { service.openSettings() } }
+                            if !service.enabled { Button("Check approval") { service.refresh() } }
                             Text(service.enabled ? "Enabled" : "Not ready").font(.caption)
                         }
                         if !service.message.isEmpty { Text(service.message).font(.caption) }
@@ -41,5 +42,8 @@ struct InfraredSettingsView: View {
             }
         }
         .onChange(of: phase) { _, value in if value == .active { service.refresh() } }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            service.refresh()
+        }
     }
 }

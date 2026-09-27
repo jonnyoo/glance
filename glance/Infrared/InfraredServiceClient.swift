@@ -25,7 +25,14 @@ final class InfraredServiceManager {
         Self.configuration.map { SMAppService.daemon(plistName: $0.name + ".plist") }
     }
     init() { refresh() }
-    func refresh() { state = service?.status ?? .notFound }
+    func refresh() {
+        state = service?.status ?? .notFound
+        if needsApproval {
+            message = "Approve the camera helper in System Settings → Login Items & Extensions, then return here."
+        } else if enabled {
+            message = "Camera helper enabled. It captures only during infrared enrollment, checks or tests."
+        }
+    }
     func enable() {
         do {
             try service?.register()
@@ -33,7 +40,13 @@ final class InfraredServiceManager {
             message = needsApproval
                 ? "Approve the camera helper in System Settings → Login Items & Extensions."
                 : "Camera helper enabled. It captures only during infrared enrollment, checks or tests."
-        } catch { message = error.localizedDescription; refresh() }
+        } catch {
+            // Registration can throw EPERM after successfully recording a
+            // daemon that still needs user approval. The resulting service
+            // state, rather than that generic error, tells the user what to do.
+            refresh()
+            if !needsApproval && !enabled { message = error.localizedDescription }
+        }
     }
     func disable() async {
         do {

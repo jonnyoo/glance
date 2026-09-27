@@ -77,6 +77,7 @@ struct InfraredEnrollmentView: View {
                     if controller.service.needsApproval {
                         Button("Open System Settings") { controller.service.openSettings() }
                     }
+                    Button("Check approval") { controller.service.refresh() }
                 }
                 Text(controller.service.available ? controller.service.message : "This build does not include the signed infrared helper.")
                     .font(.caption)
@@ -113,6 +114,9 @@ struct InfraredEnrollmentView: View {
         }
         .padding(24).frame(width: 640)
         .onChange(of: scenePhase) { _, phase in if phase == .active { controller.service.refresh() } }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            controller.service.refresh()
+        }
         .onChange(of: FaceEnrollmentStore.shared.isLocked) { _, locked in
             if locked { controller.clear(); dismiss() }
         }
