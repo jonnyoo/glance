@@ -101,7 +101,7 @@ Local integrated builds passed unsigned for Apple Silicon and signed Release for
 python3 tools/infrared/verify_app.py /absolute/path/to/glance.app
 ```
 
-For a Debug development build only, add `--allow-debug`. This also checks the provisioned keychain group and app identity, matching app/helper/probe architectures and bundled source/licenses. The camera-only development package from the initial integration was rejected by the added keychain check after the tester found the setup error; a properly provisioned rebuild and setup retest are required. Earlier live lab tests below exercise the shared capture service, not the complete new lock-screen flow.
+For a Debug development build only, add `--allow-debug`. This also checks the provisioned keychain group and app identity, matching app/helper/probe architectures and bundled source/licenses. The camera-only development package from the initial integration was rejected by the added keychain check after the tester found the setup error; the corrected, automatically provisioned universal build passed package verification and a macOS protected-keychain lookup for a random nonexistent test item (no credential reads or writes). User setup retest is pending. Earlier live lab tests below exercise the shared capture service, not the complete new lock-screen flow.
 
 
 ```sh
@@ -144,7 +144,7 @@ Do these with a disposable development enrollment, only one running unlock app a
 
 | Test | Required result | Current evidence |
 | --- | --- | --- |
-| Protected-keychain setup | Session key can be stored/read with local user authentication | Initial camera-only development package failed; provisioned rebuild pending |
+| Protected-keychain setup | Session key can be stored/read with local user authentication | Camera-only package rejected; provisioned rebuild and read-only entitlement check pass; user setup retest pending |
 | Three IR scans and encrypted save/reload | Same identity retains usable IR enrollment after relaunch | Automated serialization/store tests pass; user test pending |
 | Genuine lock-screen unlock | Fresh RGB + Heavy liveness + IR pass, exactly one password submission | Pending |
 | Missing/disconnected BRIO or disabled helper | No password submission, clear error, manual login works | Policy tests pass; hardware test pending |
