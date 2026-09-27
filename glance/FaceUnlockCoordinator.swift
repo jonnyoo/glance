@@ -42,6 +42,8 @@ final class FaceUnlockCoordinator {
 
     private(set) var statusMessage = "Idle"
     private(set) var lastOutcome: String?
+    /// Numeric diagnostics for the latest scan only; no images or embeddings.
+    private(set) var lastCheckDetails: String?
 
     private var hasArmedForCurrentLock = false
     /// One-shot per lock session — an auto-retry that could itself auto-retry would loop the camera for the whole lock session.
@@ -257,6 +259,7 @@ final class FaceUnlockCoordinator {
         }
         statusMessage = "Looking for your face…"
         lastOutcome = nil
+        lastCheckDetails = nil
 
         let outcome = await observeScanWindow(
             deadline: Date().addingTimeInterval(scanWindowDuration),
@@ -294,6 +297,10 @@ final class FaceUnlockCoordinator {
             } else {
                 scheduleAutoRetryIfEnabled(after: headlessRetryDelay)
             }
+        case .livenessUnconfirmed:
+            statusMessage = "Face recognized, but the live-face check did not finish. Blink or gently turn your head and try again."
+            lastOutcome = statusMessage
+            if showsUI { NotchOverlayController.shared.finish(success: false) }
         case .infraredFailed(let reason):
             statusMessage = reason
             lastOutcome = reason
@@ -332,6 +339,7 @@ final class FaceUnlockCoordinator {
         case consistentlyWrongFace
         /// A deny cue (glare, device rectangle) fired — actively rejected as a spoof regardless of match. Same failure path as `.consistentlyWrongFace`.
         case spoofSuspected
+        case livenessUnconfirmed
         case noResolution
         case infraredFailed(String)
     }
@@ -361,6 +369,7 @@ final class FaceUnlockCoordinator {
         var lastFaceBoundingBox: CGRect?
         /// Cheap way to detect "no new camera frame yet" vs. "fresh frame" — without it a repeat frame would corrupt the liveness motion signal.
         var lastProcessedFrameID: UInt64?
+        var recognizedFace = false
 
         while Date() < deadline, !Task.isCancelled,
               !requireOverlayScanning || NotchOverlayController.shared.phase == .scanning {
@@ -408,6 +417,12 @@ final class FaceUnlockCoordinator {
             }
             var confirmingCue: LivenessCue?
             if livenessEnabled, matched != nil {
+                if let glare = livenessFrame.glare {
+                    let reading = LivenessCues.glossGlare(livenessFrame)
+                    lastCheckDetails = String(format: "Colour face matched. Bright pixels: %.2f%%; concentration: %.2f%%; glare score: %.3f (limit %.3f).",
+                        glare.specularFraction * 100, glare.specularClusterRatio * 100,
+                        reading.level, LivenessTuning.default.glossLevel)
+                }
                 let snapshot = liveness.observe(livenessFrame)
                 switch snapshot.decision {
                 case .denied:
@@ -424,6 +439,7 @@ final class FaceUnlockCoordinator {
             }
 
             if let matched {
+                recognizedFace = true
                 wrongFaceStartedAt = nil
                 readyMatch = matched
             } else {
@@ -459,7 +475,7 @@ final class FaceUnlockCoordinator {
 
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
-        return .noResolution
+        return recognizedFace && livenessEnabled && !livenessConfirmed ? .livenessUnconfirmed : .noResolution
     }
     private let infraredAnalyzer = InfraredFaceAnalyzer()
 
@@ -482,6 +498,8 @@ final class FaceUnlockCoordinator {
             let result = try await InfraredServiceManager.capture(allowPermissionPrompt: false)
             let sample = try await infraredAnalyzer.sample(from: result.image(), captureID: UUID())
             let score = try enrollment.compare(sample)
+            lastCheckDetails = String(format: "Colour identity and Heavy liveness passed. IR centroid: %.3f; lowest reference: %.3f; required: %.3f.",
+                score.centroid, score.minimumReference, threshold)
             let authorized: @MainActor @Sendable () -> Bool = { [weak self] in
                 guard let self else { return false }
                 service.refresh()

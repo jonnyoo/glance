@@ -37,6 +37,9 @@ struct InfraredSettingsView: View {
                     if settings.requireInfrared {
                         Text("Last face-unlock check: \(coordinator.lastOutcome ?? coordinator.statusMessage)")
                             .font(.caption).textSelection(.enabled)
+                        if let details = coordinator.lastCheckDetails {
+                            Text(details).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                        }
                     }
                 }.padding(14)
             }
