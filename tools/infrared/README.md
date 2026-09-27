@@ -18,7 +18,7 @@ Install the signed app in `/Applications`, complete normal Glance setup, then:
 
 RGB recapture invalidates that identity's IR enrollment. Removing or disabling an identity, changing its enrollment, cancelling/superseding a scan, locking the credential session or exceeding the 15-second monotonic evidence window prevents password entry. Authorization is checked again after credential decryption and before each character and Return. Evidence and liveness cannot be carried over from a different recognized identity.
 
-For an isolated development variant, override `PRODUCT_BUNDLE_IDENTIFIER` and `PRODUCT_NAME`, and use suitable signing entitlements for your team. Alternate bundle identifiers have separate keychain services and encrypted enrollment directories and do not start the production updater. Do not run two copies with face unlock enabled during a lock-screen test.
+For an isolated development variant, override `PRODUCT_BUNDLE_IDENTIFIER` and `PRODUCT_NAME`, and retain **`glance/glance.entitlements`**. Its keychain group expands to the actual bundle identifier. Do not substitute `IRLab.entitlements`: those camera-only entitlements are sufficient for diagnostics but cause “A required entitlement is not present” when Glance accesses its protected session key. Xcode must have a signed-in developer account and a matching macOS provisioning profile (automatic signing can create one). A valid app signature alone does not prove protected keychain access works. Alternate bundle identifiers have separate keychain services and encrypted enrollment directories and do not start the production updater. Do not run two copies with face unlock enabled during a lock-screen test.
 
 Distribution still uses the maintainer's existing signing/notarization process. The app includes native licenses and `InfraredSources.zip` with corresponding source, build scripts and native relinkable objects. Disable the helper before removing the app. The helper starts only for requests and never receives credentials.
 
@@ -101,7 +101,7 @@ Local integrated builds passed unsigned for Apple Silicon and signed Release for
 python3 tools/infrared/verify_app.py /absolute/path/to/glance.app
 ```
 
-For a Debug development build only, add `--allow-debug`. This also checks matching app/helper/probe architectures and bundled source/licenses. Earlier live lab tests below exercise the shared capture service, not the complete new lock-screen flow.
+For a Debug development build only, add `--allow-debug`. This also checks the provisioned keychain group and app identity, matching app/helper/probe architectures and bundled source/licenses. The camera-only development package from the initial integration was rejected by the added keychain check after the tester found the setup error; a properly provisioned rebuild and setup retest are required. Earlier live lab tests below exercise the shared capture service, not the complete new lock-screen flow.
 
 
 ```sh
@@ -144,6 +144,7 @@ Do these with a disposable development enrollment, only one running unlock app a
 
 | Test | Required result | Current evidence |
 | --- | --- | --- |
+| Protected-keychain setup | Session key can be stored/read with local user authentication | Initial camera-only development package failed; provisioned rebuild pending |
 | Three IR scans and encrypted save/reload | Same identity retains usable IR enrollment after relaunch | Automated serialization/store tests pass; user test pending |
 | Genuine lock-screen unlock | Fresh RGB + Heavy liveness + IR pass, exactly one password submission | Pending |
 | Missing/disconnected BRIO or disabled helper | No password submission, clear error, manual login works | Policy tests pass; hardware test pending |
