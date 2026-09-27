@@ -57,7 +57,7 @@ def main():
             "CFBundleName": "Glance IR Lab",
             "CFBundleExecutable": "GlanceIRLab",
             "CFBundlePackageType": "APPL",
-            "CFBundleShortVersionString": "0.2",
+            "CFBundleShortVersionString": "0.2.1",
             "LSMinimumSystemVersion": minimum_macos,
             "NSHighResolutionCapable": True,
             "NSCameraUsageDescription": "Show a five-second infrared camera test when you request it.",
@@ -101,10 +101,17 @@ def main():
         shutil.copyfile(HERE / "README.md", resources / "README.md")
         shutil.copytree(args.helper.resolve().parent / "Licenses", resources / "Licenses")
         run("codesign", "--force", "--sign", identity, *signing, resources / "brio-ir-probe")
-        run("codesign", "--force", "--sign", identity, *signing, app)
+        run("codesign", "--force", "--sign", identity, *signing,
+            "--entitlements", HERE / "IRLab.entitlements", app)
         run("codesign", "--verify", "--deep", "--strict", app)
         if args.sign_identity:
             run("codesign", "--verify", "-R", "=" + requirement(info["CFBundleIdentifier"]), app)
+        # A valid signature alone is insufficient: hardened runtime otherwise
+        # denies camera consent before macOS can show its permission prompt.
+        entitlements = subprocess.check_output(
+            ["codesign", "-d", "--entitlements", "-", "--xml", str(app)], stderr=subprocess.DEVNULL)
+        if plistlib.loads(entitlements).get("com.apple.security.device.camera") is not True:
+            raise RuntimeError("Signed lab is missing its camera entitlement")
         # ZIP excludes extended attributes and preserves executable mode bits.
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zipped:
             for path in app.rglob("*"):
