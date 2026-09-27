@@ -102,6 +102,8 @@ final class GlanceSettings {
 
     private enum Key {
         static let isFaceUnlockEnabled = "GlanceSettings.isFaceUnlockEnabled"
+        static let requireInfrared = "GlanceSettings.requireInfrared"
+        static let infraredThreshold = "GlanceSettings.infraredThreshold"
         static let matchThreshold = "GlanceSettings.matchThreshold"
         static let livenessChecksEnabled = "GlanceSettings.livenessChecksEnabled"
         static let livenessMode = "GlanceSettings.livenessMode"
@@ -134,6 +136,13 @@ final class GlanceSettings {
 
     var isFaceUnlockEnabled: Bool {
         didSet { defaults.set(isFaceUnlockEnabled, forKey: Key.isFaceUnlockEnabled) }
+    }
+    /// Additional check, never an RGB/liveness replacement. Opt-in on upgrade.
+    var requireInfrared: Bool {
+        didSet { defaults.set(requireInfrared, forKey: Key.requireInfrared) }
+    }
+    var infraredThreshold: Double {
+        didSet { defaults.set(infraredThreshold, forKey: Key.infraredThreshold) }
     }
     var matchThreshold: Float {
         didSet { defaults.set(matchThreshold, forKey: Key.matchThreshold) }
@@ -285,6 +294,8 @@ final class GlanceSettings {
     private init() {
         // Enabled by default — onboarding already enrolled a face and set a
         // password specifically to use Face Unlock.
+        requireInfrared = defaults.object(forKey: Key.requireInfrared) as? Bool ?? false
+        infraredThreshold = defaults.object(forKey: Key.infraredThreshold) as? Double ?? InfraredUnlockPolicy.defaultThreshold
         isFaceUnlockEnabled = defaults.object(forKey: Key.isFaceUnlockEnabled) as? Bool ?? true
         // Matches `MatchConfidenceLevel.standard` — see RecognitionSettingsPage.swift.
         matchThreshold = defaults.object(forKey: Key.matchThreshold) as? Float ?? 0.66

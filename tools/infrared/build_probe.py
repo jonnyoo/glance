@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the isolated IR probe; no installation or administrator access.
 
-Requires Xcode command-line tools, git, and a Homebrew libusb installation.
+Requires Xcode command-line tools and git. Builds pinned libusb by default.
 Build products and a pinned libuvc checkout stay in the specified directory.
 """
 import argparse
@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 import subprocess
 import shutil
+from build_libusb import build_libusb
 
 REVISION = "4e9fc773914377ec0bcf2f31621f56da5a0fa09f"
 HERE = Path(__file__).resolve().parent
@@ -29,7 +30,8 @@ def replace_once(text, old, new):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("build_directory", type=Path)
-    parser.add_argument("--libusb-prefix", type=Path, default=Path("/opt/homebrew"))
+    parser.add_argument("--libusb-prefix", type=Path, help="Optional existing static libusb installation")
+    parser.add_argument("--arch", choices=("arm64", "x86_64"), default=platform.machine())
     parser.add_argument("--deployment-target", default=platform.mac_ver()[0],
                         help="Minimum macOS version (defaults to this Mac)")
     args = parser.parse_args()
@@ -68,7 +70,7 @@ def main():
         template = template.replace(f"@libuvc_VERSION_{key}@", value)
     config.write_text(template.replace("@libuvc_VERSION@", "0.0.8")
                      .replace("#cmakedefine LIBUVC_HAS_JPEG 1", "/* JPEG disabled */"))
-    usb = args.libusb_prefix.resolve()
+    usb = args.libusb_prefix.resolve() if args.libusb_prefix else build_libusb(build / "libusb", args.arch, args.deployment_target)
     library = usb / "lib/libusb-1.0.a"
     if not library.is_file():
         raise RuntimeError(f"Static libusb library missing: {library}")
@@ -79,7 +81,7 @@ def main():
         raise RuntimeError("libusb targets a newer macOS release; rebuild libusb or increase --deployment-target")
     sources = [source / "src" / (name + ".c") for name in
                ("ctrl", "ctrl-gen", "device", "diag", "frame", "init", "stream", "misc")]
-    run("xcrun", "clang", "-mmacosx-version-min=" + args.deployment_target, "-O2", "-Wall", "-I" + str(source / "include"),
+    run("xcrun", "clang", "-arch", args.arch, "-mmacosx-version-min=" + args.deployment_target, "-O2", "-Wall", "-I" + str(source / "include"),
         "-I" + str(usb / "include/libusb-1.0"), HERE / "brio_ir_probe.c", *sources,
         library, "-framework", "IOKit", "-framework", "CoreFoundation",
         "-framework", "Security", "-lobjc", "-o", build / "brio-ir-probe")
@@ -87,7 +89,7 @@ def main():
     objects = []
     for index, item in enumerate([HERE / "brio_ir_probe.c", *sources]):
         obj = build / f"ir-engine-{index}.o"
-        run("xcrun", "clang", "-mmacosx-version-min=" + args.deployment_target, "-O2", "-Wall", "-DBRIO_IR_EMBEDDED",
+        run("xcrun", "clang", "-arch", args.arch, "-mmacosx-version-min=" + args.deployment_target, "-O2", "-Wall", "-DBRIO_IR_EMBEDDED",
             "-I" + str(source / "include"), "-I" + str(usb / "include/libusb-1.0"),
             "-c", item, "-o", obj)
         objects.append(obj)
@@ -96,8 +98,9 @@ def main():
     licenses.mkdir(exist_ok=True)
     shutil.copyfile(source / "LICENSE.txt", licenses / "libuvc-BSD.txt")
     shutil.copyfile(library.resolve().parent.parent / "COPYING", licenses / "libusb-LGPL.txt")
-    run(build / "brio-ir-probe", "--selftest")
-    (build / "build-info.json").write_text(json.dumps({"minimum_macos": args.deployment_target}))
+    if args.arch == platform.machine():
+        run(build / "brio-ir-probe", "--selftest")
+    (build / "build-info.json").write_text(json.dumps({"minimum_macos": args.deployment_target, "arch": args.arch}))
     print(f"Built {build / 'brio-ir-probe'}")
 
 

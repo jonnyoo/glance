@@ -56,11 +56,14 @@ final class UpdaterController {
     /// Safe to call even with a placeholder `SUPublicEDKey` — `SPUStandardUpdaterController` logs and alerts on a misconfigured
     /// Sparkle setup itself rather than throwing.
     func start() {
+        // Isolated development variants must not replace themselves with the production app.
+        guard Bundle.main.bundleIdentifier == "com.jonathan.glance" else { return }
         controller.startUpdater()
     }
 
     /// User-initiated "Check for Updates" — shows Sparkle's standard progress UI.
     func checkForUpdates() {
+        guard Bundle.main.bundleIdentifier == "com.jonathan.glance" else { return }
         controller.checkForUpdates(nil)
     }
 }

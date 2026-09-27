@@ -1,6 +1,26 @@
-# Experimental BRIO infrared capture
+# Experimental BRIO infrared unlock
 
-This is a working capture/diagnostic prototype for issue #46, **not IR authentication**. It adds an infrared panel to Face Lab and also runs as a separate **Glance IR Lab** app without configuring passwords or enrollment.
+This implements an **optional additional IR identity check** for issue #46, alongside the standalone Glance IR Lab diagnostic. The switch is off by default. With it enabled, Glance requires colour-camera recognition, Heavy liveness and a fresh IR match against the same identity's separate encrypted IR enrollment before typing the Mac password. Unavailable IR never falls back to colour-only unlock.
+
+**Integration is implemented; production biometric validation is not complete.** The existing ArcFace model has not been calibrated for BRIO infrared, and the current liveness checks are not validated presentation-attack detection. This does not establish Windows Hello-equivalent security. Keep #46 open until hardware lifecycle, genuine/impostor and spoof tests pass.
+
+## Integrated app build and setup
+
+Use the existing Glance Xcode scheme with Xcode 26+, Python 3 and your normal Apple-issued signing identity/team. The new build phase packages and signs the camera helper automatically for every requested architecture (`arm64` and/or `x86_64`). It derives the XPC identities from `PRODUCT_BUNDLE_IDENTIFIER` and `DEVELOPMENT_TEAM`; no contributor signing identity is embedded in source. The first signed build downloads pinned libusb/libuvc sources into DerivedData. No Homebrew installation or administrator build step is required. Unsigned builds omit the helper; `GLANCE_ENABLE_INFRARED=NO` explicitly excludes it from a signed build.
+
+Install the signed app in `/Applications`, complete normal Glance setup, then:
+
+1. In **Your Face**, choose **Enroll infrared** for an existing identity.
+2. Enable the camera helper, approve it in System Settings → General → Login Items & Extensions, and grant camera access if requested.
+3. Capture three separate five-second scans of that same person, then save. Features join the existing encrypted enrollment; preview images are never written to disk.
+4. In **Recognition**, enable **Require a BRIO infrared match**. Both centroid and minimum reference similarity must meet the configured threshold. The initial `0.70` is an engineering default, **not a measured security threshold or confidence percentage**.
+5. On a scan, Glance stops its colour camera before the root helper takes the BRIO. It requires Heavy liveness even if the ordinary liveness setting is disabled or Light. Missing enrollment/helper/camera, failed capture/alignment, low scores or expired evidence deny face unlock; manual Mac-password entry remains available.
+
+RGB recapture invalidates that identity's IR enrollment. Removing or disabling an identity, changing its enrollment, cancelling/superseding a scan, locking the credential session or exceeding the 15-second monotonic evidence window prevents password entry. Authorization is checked again after credential decryption and before each character and Return. Evidence and liveness cannot be carried over from a different recognized identity.
+
+For an isolated development variant, override `PRODUCT_BUNDLE_IDENTIFIER` and `PRODUCT_NAME`, and use suitable signing entitlements for your team. Alternate bundle identifiers have separate keychain services and encrypted enrollment directories and do not start the production updater. Do not run two copies with face unlock enabled during a lock-screen test.
+
+Distribution still uses the maintainer's existing signing/notarization process. The app includes native licenses and `InfraredSources.zip` with corresponding source, build scripts and native relinkable objects. Disable the helper before removing the app. The helper starts only for requests and never receives credentials.
 
 ## Hardware verified
 
@@ -12,7 +32,7 @@ macOS owns this camera through its USB video driver. The test uses administrator
 
 ## Build and run
 
-Requirements: macOS 15+, Xcode 26+, Python 3, git and Homebrew libusb with its static library. The scripts do not install dependencies or change system configuration.
+Requirements: macOS 15+, Xcode 26+, Python 3 and git. The scripts build pinned libusb locally and do not install global dependencies or change system configuration.
 
 From the repository root:
 
@@ -25,13 +45,11 @@ ditto -xk '/absolute/path/to/Glance IR Lab.zip' /absolute/path/to/test-folder
 open '/absolute/path/to/test-folder/Glance IR Lab.app'
 ```
 
-Builds target the current macOS version by default. To build for an earlier system, pass `--deployment-target 15.0` (or newer) to `build_probe.py` and use a libusb library built for that target or earlier. The lab inherits the probe's minimum OS version; the build rejects a newer libusb dependency.
-
-For Intel Homebrew, pass `--libusb-prefix /usr/local` to `build_probe.py`.
+Builds target the current macOS version by default. For an earlier system, pass `--deployment-target 15.0` (or newer); dependencies are built for that target. Use `--arch arm64` or `--arch x86_64` to select an architecture. The lab inherits the probe's minimum OS version. An existing static libusb can optionally be supplied with `--libusb-prefix /absolute/prefix`; its deployment target must not exceed the requested one.
 
 Click **Check camera**, then **Test infrared for 5 seconds**. Approve the macOS administrator prompt and look at the BRIO with the privacy cover open. The preview stays in memory. Closing the panel clears it. No photographs, enrollment templates or passwords are written or read. The optional `--snapshot` CLI mode returns pixel data over stdout; do not redirect that mode to a log if you want images to remain transient. `--capture` returns statistics only.
 
-To use the panel in Glance, build Glance normally, then copy `brio-ir-probe` into the built app's `Contents/Resources/` and sign the app for your development environment. The helper is optional and is not built/downloaded automatically by Xcode. Open Settings → About and click the app icon five times to reveal Face Lab. Stop other camera uses before testing. A production package would need a reviewed helper packaging/signing flow.
+In the integrated app, open Settings → About and click the app icon five times to reveal Face Lab. Signed builds now include the probe and service automatically. Stop other camera uses before running diagnostics.
 
 The standalone app is built for the current Mac architecture and ad-hoc signed by default for local development. The ZIP avoids iCloud/Finder metadata that can invalidate strict signing checks on a newly created app bundle in Documents.
 
@@ -63,11 +81,28 @@ Extract the app into `/Applications` before enabling it. Click **Enable camera h
 
 The signed build does not fall back to per-test administrator execution when its service is unavailable. The daemon starts on demand and opens the camera only for explicit requests; it does not scan continuously or handle credentials. It links the USB engine directly instead of launching another executable as root. Each capture has separate memory, a five-second frame collection window, cancellation, and a 20-second cancellation watchdog (the client times out at 25 seconds). USB driver cleanup still depends on libusb/macOS completing their operations; this is not a hard real-time termination guarantee.
 
-The listener authenticates the client's bundle identifier and signing team using macOS XPC code requirements. The client separately authenticates the helper. The daemon accepts only the current console user, checks that user during capture and before returning image data, permits one camera job at a time, and cancels a job if its connection closes. SIGTERM requests cancellation and lets USB cleanup finish. No file paths, shell commands, enrollment data, or passwords are accepted over XPC. The signing identity and team are build parameters, never personal values committed to the project. Hardware access at the login screen, fast user switching, sleep/wake and abrupt daemon termination still require validation before any unlock integration.
+The listener authenticates the client's bundle identifier and signing team using macOS XPC code requirements. The client separately authenticates the helper. The daemon accepts only the current console user, checks that user during capture and before returning image data, permits one camera job at a time, and cancels a job if its connection closes. SIGTERM requests cancellation and lets USB cleanup finish. No file paths, shell commands, enrollment data, or passwords are accepted over XPC. The signing identity and team are build parameters, never personal values committed to the project. Hardware access at the lock screen, fast user switching, sleep/wake and abrupt daemon termination still require end-to-end validation before production release.
 
-The service packaging currently targets the isolated lab. Shipping it inside Glance needs equivalent packaging with Glance's bundle identifier and the maintainer's signing identity, along with security review and distribution/notarization work.
+The integrated app uses the same service code with its own bundle/team requirements, generated by `build_xcode.py`. The standalone lab remains isolated and never authorizes unlocks.
 
 ## Validation
+
+Run all camera-free Swift regression suites with:
+
+```sh
+python3 tools/infrared/run_tests.py
+```
+
+They cover response/vector validation, encrypted-record payload migration, failed-save rollback, RGB recapture invalidation, stale identity rejection, session clearing, authorization expiry/revocation and cancellation during simulated password entry. The event tests use an in-memory sink: they never type into the running desktop or read the keychain. The existing liveness regression suite is included. Synthetic tests do not establish biometric accuracy.
+
+Local integrated builds passed unsigned for Apple Silicon and signed Release for both Apple Silicon and Intel. Execution on Intel hardware remains untested. The development app's nested signatures, camera entitlement, expanded XPC requirements and launch-daemon bundle path were checked. Release builds explicitly disable injected debug entitlements. Validate a finished signed bundle without launching it with:
+
+```sh
+python3 tools/infrared/verify_app.py /absolute/path/to/glance.app
+```
+
+For a Debug development build only, add `--allow-debug`. This also checks matching app/helper/probe architectures and bundled source/licenses. Earlier live lab tests below exercise the shared capture service, not the complete new lock-screen flow.
+
 
 ```sh
 xcrun swiftc -parse-as-library glance/Infrared/InfraredProbeResult.swift tools/infrared/result_selftest.swift -o /absolute/path/to/ir-build/result-selftest
@@ -88,7 +123,7 @@ The reference tests cover incomplete enrollment, reused reference captures, diff
 
 ```sh
 xcrun clang -O1 -g -fsanitize=address,undefined \
-  -I /absolute/path/to/ir-build/libuvc/include -I /opt/homebrew/include/libusb-1.0 \
+  -I /absolute/path/to/ir-build/libuvc/include -I /absolute/path/to/ir-build/libusb/installed/include/libusb-1.0 \
   tools/infrared/engine_selftest.c /absolute/path/to/ir-build/libbrio-ir.a \
   -framework IOKit -framework CoreFoundation -framework Security -lobjc \
   -o /absolute/path/to/ir-build/engine-selftest
@@ -103,19 +138,26 @@ The Swift parser rejects failed, oversized, incorrectly sized, missing and malfo
 
 The helper is statically linked to libusb and libuvc and loads only system libraries. `build_probe.py` fetches libuvc commit `4e9fc773914377ec0bcf2f31621f56da5a0fa09f` and adds an explicit KSMedia L8_IR format identifier plus a 1.5-second timeout for stream negotiation requests. It does not reinterpret ordinary grayscale as IR.
 
-## Remaining work for issue #46
+## Manual release acceptance
 
-- Validate the new opt-in signed service across locked sessions, sleep/wake, user switching, disconnection and installation/removal. The per-test build still installs no service; the signed lab registers one only after explicit enablement and macOS approval.
-- Establish colour/IR coexistence, or a secure sequential acquisition design. The current direct USB path takes the whole camera.
-- Validate an IR-compatible recognition and presentation-attack detection pipeline; choose enrollment storage, model provenance and thresholds based on measurements.
-- Bind fresh IR evidence to the same identity and scan, reject stale/disconnected/substituted sources, and refuse face unlock if an explicitly required IR check cannot run.
-- Test real users, printed photos, phone screens, video replays, masks, light/dark conditions, disconnection and sleep/wake.
+Do these with a disposable development enrollment, only one running unlock app and a known-working manual password fallback. Never put passwords, pictures or face vectors in logs/issues.
 
-The current unlock pipeline and liveness settings are unchanged. This diagnostic never grants an unlock.
+| Test | Required result | Current evidence |
+| --- | --- | --- |
+| Three IR scans and encrypted save/reload | Same identity retains usable IR enrollment after relaunch | Automated serialization/store tests pass; user test pending |
+| Genuine lock-screen unlock | Fresh RGB + Heavy liveness + IR pass, exactly one password submission | Pending |
+| Missing/disconnected BRIO or disabled helper | No password submission, clear error, manual login works | Policy tests pass; hardware test pending |
+| Cancel, disable identity/IR enrollment or change session during capture | No submission; helper cleans up | Policy/injection tests and lab cancellation pass; integrated test pending |
+| Wrong person, printed photo, phone display/video, varied light/pose | No false acceptance; record numerical genuine/impostor separation | Pending; no security threshold established |
+| Sleep/wake, fast user switching, lock during enrollment | Discard old evidence; correct console user only | Code gates implemented; system tests pending |
+| Repeated captures then normal camera and microphone use | Drivers return; ordinary recording/audio work | Camera re-enumeration passed; full recording/audio test pending |
+| Signed installation, approval, update, helper removal | Correct team restrictions; no orphaned running capture | Lab enable/signature/XPC rejection tests pass; release lifecycle pending |
+
+No claim of secure production readiness should be based solely on an IR preview, one successful face match or passing synthetic tests. Model usage terms also require the maintainer's review.
 
 ## Third-party licenses and references
 
-libuvc is BSD-licensed (Ken Tossell and contributors). Its complete license is in the downloaded checkout's `LICENSE.txt`. libusb is LGPL-2.1-or-later. When distributing a statically linked binary, include the corresponding source/build materials and licenses required for relinking; the local build script and pinned libuvc source are retained for that purpose. Do not ship this prototype as a signed production helper.
+libuvc is BSD-licensed (Ken Tossell and contributors). Its complete license is in the downloaded checkout's `LICENSE.txt`. libusb is LGPL-2.1-or-later. When distributing a statically linked binary, include the corresponding source/build materials and licenses required for relinking; the local build script and pinned libuvc source are retained for that purpose. Review the relinking materials and distribution requirements before a production release.
 
 - [Issue #46](https://github.com/jonnyoo/glance/issues/46)
 - [KSMedia L8_IR identification](https://lkml.org/lkml/2018/3/21/202)

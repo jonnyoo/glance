@@ -18,6 +18,7 @@ enum CameraPermission {
 /// `source` is a `CIImage` — a lazy recipe, not rendered pixels — so holding onto it costs nothing until `renderCrop` uses it.
 struct CameraFrame {
     let id: UInt64
+    let capturedAt: ContinuousClock.Instant
     let image: CGImage
     let source: CIImage
     let sourceSize: CGSize
@@ -83,6 +84,20 @@ final class CameraManager: NSObject {
             }
         }
         isRunning = false
+        currentFrame = nil
+    }
+
+    /// USB capture takes the whole BRIO. Await the session queue before handing
+    /// it to the privileged helper; merely scheduling stopRunning is insufficient.
+    func stopAndWait() async {
+        isRunning = false
+        currentFrame = nil
+        await withCheckedContinuation { continuation in
+            sessionQueue.async { [session] in
+                if session.isRunning { session.stopRunning() }
+                continuation.resume()
+            }
+        }
         currentFrame = nil
     }
 
@@ -160,6 +175,7 @@ final class CameraManager: NSObject {
     }
 
     fileprivate func publish(frame: CameraFrame) {
+        guard isRunning else { return }
         currentFrame = frame
     }
 
@@ -215,6 +231,7 @@ final class CameraManager: NSObject {
             didOutput sampleBuffer: CMSampleBuffer,
             from connection: AVCaptureConnection
         ) {
+            let capturedAt = ContinuousClock.now
             guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
             let sourceImage = CIImage(cvPixelBuffer: pixelBuffer)
             let sourceExtent = sourceImage.extent
@@ -229,6 +246,7 @@ final class CameraManager: NSObject {
             nextFrameID &+= 1
             let frame = CameraFrame(
                 id: nextFrameID,
+                capturedAt: capturedAt,
                 image: cgImage,
                 source: sourceImage,
                 sourceSize: sourceExtent.size

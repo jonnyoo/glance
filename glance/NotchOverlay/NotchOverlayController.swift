@@ -175,7 +175,7 @@ final class NotchOverlayController {
 
     /// Shows the idle still; auto-collapses silently (no failure animation) after
     /// `scanTimeoutDuration` if nothing resolves it.
-    func beginScanning() {
+    func beginScanning(timeout: Duration? = nil) {
         resolveTask?.cancel(); resolveTask = nil
         scanTimeoutTask?.cancel()
         geometry = windowController.currentGeometry
@@ -184,8 +184,9 @@ final class NotchOverlayController {
         phase = .scanning
         updateInteractivity()
 
+        let duration = timeout ?? scanTimeoutDuration
         scanTimeoutTask = Task { [weak self] in
-            try? await Task.sleep(for: self?.scanTimeoutDuration ?? .seconds(5))
+            try? await Task.sleep(for: duration)
             guard let self, !Task.isCancelled, self.phase == .scanning else { return }
             await self.collapse()
         }

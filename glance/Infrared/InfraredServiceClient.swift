@@ -7,7 +7,10 @@ import AVFoundation
 final class InfraredServiceManager {
     private(set) var state: SMAppService.Status = .notFound
     private(set) var message = ""
-    var available: Bool { Self.configuration != nil }
+    var available: Bool {
+        Self.configuration != nil && FileManager.default.isExecutableFile(atPath:
+            Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/GlanceIRService").path)
+    }
     var enabled: Bool { state == .enabled }
     var needsApproval: Bool { state == .requiresApproval }
     var registered: Bool { enabled || needsApproval }
@@ -28,8 +31,8 @@ final class InfraredServiceManager {
             try service?.register()
             refresh()
             message = needsApproval
-                ? "Approve Glance IR Lab in System Settings → Login Items & Extensions."
-                : "Camera helper enabled. It captures only when you request a test."
+                ? "Approve the camera helper in System Settings → Login Items & Extensions."
+                : "Camera helper enabled. It captures only during infrared enrollment, checks or tests."
         } catch { message = error.localizedDescription; refresh() }
     }
     func disable() async {
@@ -41,10 +44,15 @@ final class InfraredServiceManager {
     }
     func openSettings() { SMAppService.openSystemSettingsLoginItems() }
 
-    nonisolated static func capture() async throws -> InfraredProbeResult {
+    nonisolated static func capture(allowPermissionPrompt: Bool = true) async throws -> InfraredProbeResult {
         guard let config = configuration else { throw InfraredProbeError.helperMissing }
         // Consent is still required even though the USB engine runs as root.
-        guard await AVCaptureDevice.requestAccess(for: .video) else {
+        let authorized = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
+        let permitted: Bool
+        if authorized { permitted = true }
+        else if allowPermissionPrompt { permitted = await AVCaptureDevice.requestAccess(for: .video) }
+        else { permitted = false }
+        guard permitted else {
             throw InfraredProbeError.execution("Allow camera access in System Settings to run the IR test.")
         }
         let request = InfraredServiceRequest(name: config.name, requirement: config.requirement)
