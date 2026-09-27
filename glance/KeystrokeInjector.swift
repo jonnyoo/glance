@@ -27,6 +27,12 @@ enum KeystrokeError: LocalizedError {
 }
 
 enum KeystrokeInjector {
+    // Keep the clear-field commands at their existing pace. Use a shorter
+    // yield between Unicode event transitions; authorization still runs
+    // immediately before each key-down, never once for a batched password.
+    private static let characterPause: Duration = .milliseconds(4)
+    private static let controlPause: Duration = .milliseconds(12)
+
     /// Returns true if the app has Accessibility permission (no prompt).
     nonisolated static func isAccessibilityTrusted() -> Bool {
         return AXIsProcessTrusted()
@@ -65,26 +71,36 @@ enum KeystrokeInjector {
                     up.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: base)
                 }
             }
-            try await postPair(down: down, up: up, authorized: stillAuthorized, post: postEvent)
+            try await postPair(down: down, up: up, pause: characterPause, authorized: stillAuthorized, post: postEvent)
         }
         guard stillAuthorized() else { throw KeystrokeError.authorizationExpired }
-        try await postKey(0x24, source: source, authorized: stillAuthorized, post: postEvent)
+        try await postKey(0x24, source: source, finishesSubmission: true, authorized: stillAuthorized, post: postEvent)
     }
 
-    @MainActor private static func postPair(down: CGEvent, up: CGEvent, authorized: () -> Bool, post: (CGEvent) -> Void) async throws {
+    @MainActor private static func postPair(down: CGEvent, up: CGEvent, pause: Duration,
+                                           finishesSubmission: Bool = false, authorized: () -> Bool, post: (CGEvent) -> Void) async throws {
         try Task.checkCancellation()
         guard authorized() else { throw KeystrokeError.authorizationExpired }
         post(down)
         // Always release a posted key even if cancellation interrupts the delay.
         var released = false
         defer { if !released { post(up) } }
-        try await Task.sleep(for: .milliseconds(12))
+        do { try await Task.sleep(for: pause) }
+        catch {
+            // Return was already posted with fresh authorization. An unlock
+            // notification can cancel the scan during this yield; release
+            // the key and report submission, not a misleading interruption.
+            // This reports event submission, not macOS accepting a password.
+            if finishesSubmission { return }
+            throw error
+        }
         post(up)
         released = true
-        try await Task.sleep(for: .milliseconds(12))
+        if !finishesSubmission { try await Task.sleep(for: pause) }
     }
 
-    @MainActor private static func postKey(_ key: CGKeyCode, flags: CGEventFlags = [], source: CGEventSource?, authorized: () -> Bool, post: (CGEvent) -> Void) async throws {
+    @MainActor private static func postKey(_ key: CGKeyCode, flags: CGEventFlags = [], source: CGEventSource?,
+                                          finishesSubmission: Bool = false, authorized: () -> Bool, post: (CGEvent) -> Void) async throws {
         try Task.checkCancellation()
         guard authorized() else { throw KeystrokeError.authorizationExpired }
         var commandUp: CGEvent?
@@ -105,6 +121,7 @@ enum KeystrokeInjector {
             throw KeystrokeError.eventCreationFailed
         }
         down.flags = flags; up.flags = flags
-        try await postPair(down: down, up: up, authorized: authorized, post: post)
+        try await postPair(down: down, up: up, pause: controlPause, finishesSubmission: finishesSubmission,
+                           authorized: authorized, post: post)
     }
 }
