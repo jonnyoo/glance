@@ -33,7 +33,8 @@ final class FaceUnlockCoordinator {
     }
     /// Shares its setting with NotchOverlayController's scanning timeout, so the background loop stops in step with the UI collapsing.
     private var scanWindowDuration: TimeInterval {
-        TimeInterval(GlanceSettings.shared.faceDetectionSeconds)
+        let configured = TimeInterval(GlanceSettings.shared.faceDetectionSeconds)
+        return GlanceSettings.shared.requireInfrared ? max(configured, 10) : configured
     }
     /// A wake often catches the owner while they are still looking away from
     /// the camera. Require a sustained non-match rather than a few early
@@ -243,6 +244,9 @@ final class FaceUnlockCoordinator {
     private func runScanCycle(generation: Int) async {
         guard LockMonitor.isScreenActuallyLocked() else { return }
 
+        statusMessage = "Starting camera…"
+        lastOutcome = nil
+        lastCheckDetails = nil
         let scanStarted = ContinuousClock.now
         await camera.start()
         guard generation == scanGeneration else { return }
@@ -253,16 +257,34 @@ final class FaceUnlockCoordinator {
             return
         }
 
+        // start() queues AVFoundation startup. Do not spend the liveness window
+        // waiting for the first fresh frame; bound camera warmup separately.
+        let warmupDeadline = ContinuousClock.now + .seconds(5)
+        while camera.currentFrame.map({ $0.capturedAt >= scanStarted }) != true {
+            guard !Task.isCancelled, generation == scanGeneration, isEnabled,
+                  LockMonitor.isScreenActuallyLocked() else {
+                if generation == scanGeneration { camera.stop() }
+                return
+            }
+            guard ContinuousClock.now < warmupDeadline else {
+                camera.stop()
+                statusMessage = "The camera did not provide a fresh frame. Try again."
+                lastOutcome = statusMessage
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+
         let showsUI = self.showsUI
         if showsUI {
-            NotchOverlayController.shared.beginScanning()
+            NotchOverlayController.shared.beginScanning(timeout: .seconds(scanWindowDuration))
         }
         statusMessage = "Looking for your face…"
         lastOutcome = nil
         lastCheckDetails = nil
 
         let outcome = await observeScanWindow(
-            deadline: Date().addingTimeInterval(scanWindowDuration),
+            deadline: ContinuousClock.now + .seconds(scanWindowDuration),
             requireOverlayScanning: showsUI,
             generation: generation,
             scanStarted: scanStarted
@@ -348,7 +370,7 @@ final class FaceUnlockCoordinator {
     /// Undecided liveness keeps scanning until `deadline`; required IR runs after both RGB gates pass.
     /// `requireOverlayScanning` bails early once the overlay's own timeout collapses the UI — only applied when there is an
     /// overlay, since headlessly `phase` never becomes `.scanning` at all.
-    private func observeScanWindow(deadline: Date, requireOverlayScanning: Bool, generation: Int, scanStarted: ContinuousClock.Instant) async -> ScanOutcome {
+    private func observeScanWindow(deadline: ContinuousClock.Instant, requireOverlayScanning: Bool, generation: Int, scanStarted: ContinuousClock.Instant) async -> ScanOutcome {
         let rgbThreshold = matchThreshold
         let infraredRequired = GlanceSettings.shared.requireInfrared
         let configuredLiveness = GlanceSettings.shared.livenessChecksEnabled
@@ -371,7 +393,7 @@ final class FaceUnlockCoordinator {
         var lastProcessedFrameID: UInt64?
         var recognizedFace = false
 
-        while Date() < deadline, !Task.isCancelled,
+        while ContinuousClock.now < deadline, !Task.isCancelled,
               !requireOverlayScanning || NotchOverlayController.shared.phase == .scanning {
             guard LockMonitor.isScreenActuallyLocked(), isEnabled, generation == scanGeneration, matchThreshold == rgbThreshold,
                   infraredRequired == GlanceSettings.shared.requireInfrared,
@@ -417,6 +439,7 @@ final class FaceUnlockCoordinator {
             }
             var confirmingCue: LivenessCue?
             if livenessEnabled, matched != nil {
+                lastCheckDetails = "Colour face matched."
                 if let glare = livenessFrame.glare {
                     let reading = LivenessCues.glossGlare(livenessFrame)
                     lastCheckDetails = String(format: "Colour face matched. Bright pixels: %.2f%%; concentration: %.2f%%; glare score: %.3f (limit %.3f).",
@@ -424,6 +447,12 @@ final class FaceUnlockCoordinator {
                         reading.level, LivenessTuning.default.glossLevel)
                 }
                 let snapshot = liveness.observe(livenessFrame)
+                let blink = snapshot.cueStates[.blink]?.reading ?? .none
+                let depth = snapshot.cueStates[.depthPose]?.reading ?? .none
+                let shape = snapshot.cueStates[.flatVs3D]?.reading ?? .none
+                lastCheckDetails = (lastCheckDetails ?? "Colour face matched.") + String(format:
+                    " Live-face frames: %d; blink: %.2f; head-depth: %.2f (confidence %.2f); 3D shape: %.2f (confidence %.2f).",
+                    snapshot.frameCount, blink.level, depth.level, depth.confidence, shape.level, shape.confidence)
                 switch snapshot.decision {
                 case .denied:
                     // Overrides everything, including a match and any confirmation that already happened.
