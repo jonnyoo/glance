@@ -71,6 +71,7 @@ final class NotchOverlayController {
     /// Snapshotted from `GlanceSettings` when a cycle begins rather than read live,
     /// so a settings change mid-attempt can't resize the panel or change how it resolves.
     private(set) var activeUnlockStyle: UnlockAnimationStyle = .original
+    private(set) var activeUnlockColor: UnlockAnimationColor = .original
 
     /// What a hover-driven activation should do — set by `arm()` (persists
     /// across scan cycles) or by one-shot `present(onRetry:)` (single use).
@@ -180,6 +181,7 @@ final class NotchOverlayController {
         scanTimeoutTask?.cancel()
         geometry = windowController.currentGeometry
         activeUnlockStyle = GlanceSettings.shared.effectiveUnlockAnimationStyle
+        activeUnlockColor = GlanceSettings.shared.unlockAnimationColor
         content = .scan(.idle)
         phase = .scanning
         updateInteractivity()
@@ -216,13 +218,16 @@ final class NotchOverlayController {
     ///
     /// - Parameter styleOverride: forces `.minimal`/`.original` regardless of the saved
     ///   preference, for the Animation section's live preview.
-    func present(styleOverride: UnlockAnimationStyle? = nil, onRetry: (() -> Void)? = nil) {
+    /// - Parameter colorOverride: forces `.original`/`.green` regardless of the saved
+    ///   preference, for the Color section's live preview.
+    func present(styleOverride: UnlockAnimationStyle? = nil, colorOverride: UnlockAnimationColor? = nil, onRetry: (() -> Void)? = nil) {
         isArmed = false
         onActivate = onRetry
         resolveTask?.cancel(); resolveTask = nil
         scanTimeoutTask?.cancel(); scanTimeoutTask = nil
         geometry = windowController.currentGeometry
         activeUnlockStyle = styleOverride ?? GlanceSettings.shared.effectiveUnlockAnimationStyle
+        activeUnlockColor = colorOverride ?? GlanceSettings.shared.unlockAnimationColor
         primeWindowIfNeeded { [weak self] in
             guard let self else { return }
             content = .scan(.idle)
@@ -311,6 +316,7 @@ final class NotchOverlayController {
                 // Captures its own style here; the armed path doesn't need to since
                 // `onActivate()` routes through `beginScanning()`, which captures.
                 activeUnlockStyle = GlanceSettings.shared.effectiveUnlockAnimationStyle
+                activeUnlockColor = GlanceSettings.shared.unlockAnimationColor
                 content = .scan(.idle)
                 phase = .scanning
                 updateInteractivity()

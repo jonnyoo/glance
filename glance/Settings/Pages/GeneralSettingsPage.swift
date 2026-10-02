@@ -169,6 +169,11 @@ struct GeneralSettingsPage: View {
                         selection: $settings.unlockAnimationStyle,
                         isEnabled: settings.showUnlockAnimation
                     )
+                    SettingsGroupDivider()
+                    UnlockAnimationColorPicker(
+                        selection: $settings.unlockAnimationColor,
+                        isEnabled: settings.showUnlockAnimation
+                    )
                 }
             }
         }

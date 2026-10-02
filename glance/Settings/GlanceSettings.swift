@@ -64,6 +64,35 @@ enum UnlockAnimationStyle: String, CaseIterable, Identifiable {
     static let selectableCases: [UnlockAnimationStyle] = [.minimal, .original]
 }
 
+/// Color theme for the unlock animation.
+enum UnlockAnimationColor: String, CaseIterable, Identifiable {
+    case original
+    case green
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .original: return "Original"
+        case .green: return "Green"
+        }
+    }
+
+    var stillResourceName: String {
+        switch self {
+        case .original: return "unlockstatic"
+        case .green: return "unlockstatic_green"
+        }
+    }
+
+    var videoResourceName: String {
+        switch self {
+        case .original: return "unlockanimation"
+        case .green: return "unlockanimation_green"
+        }
+    }
+}
+
 /// What can prompt Face Unlock. Multi-select; at least one is always kept
 /// selected, since a Mac with none armed would never show the notch.
 enum UnlockTrigger: String, CaseIterable, Identifiable {
@@ -107,6 +136,7 @@ final class GlanceSettings {
         static let livenessMode = "GlanceSettings.livenessMode"
         static let minimumFaceWidth = "GlanceSettings.minimumFaceWidth"
         static let unlockAnimationStyle = "GlanceSettings.unlockAnimationStyle"
+        static let unlockAnimationColor = "GlanceSettings.unlockAnimationColor"
         static let showUnlockAnimation = "GlanceSettings.showUnlockAnimation"
         /// Legacy bool key — read once during migration, then ignored.
         static let playUnlockAnimation = "GlanceSettings.playUnlockAnimation"
@@ -161,6 +191,9 @@ final class GlanceSettings {
     /// Read `effectiveUnlockAnimationStyle`, not this, to decide what to show.
     var unlockAnimationStyle: UnlockAnimationStyle {
         didSet { defaults.set(unlockAnimationStyle.rawValue, forKey: Key.unlockAnimationStyle) }
+    }
+    var unlockAnimationColor: UnlockAnimationColor {
+        didSet { defaults.set(unlockAnimationColor.rawValue, forKey: Key.unlockAnimationColor) }
     }
     var showUnlockAnimation: Bool {
         didSet { defaults.set(showUnlockAnimation, forKey: Key.showUnlockAnimation) }
@@ -314,6 +347,13 @@ final class GlanceSettings {
         unlockAnimationStyle = storedStyle == .none ? .original : storedStyle
         showUnlockAnimation = defaults.object(forKey: Key.showUnlockAnimation) as? Bool
             ?? (storedStyle != .none)
+
+        if let raw = defaults.string(forKey: Key.unlockAnimationColor),
+           let color = UnlockAnimationColor(rawValue: raw) {
+            unlockAnimationColor = color
+        } else {
+            unlockAnimationColor = .original
+        }
 
         // On wake/lock by default, not on space — `.onSpace` needs Input
         // Monitoring, which a fresh install shouldn't request unprompted.
