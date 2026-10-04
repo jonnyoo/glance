@@ -125,6 +125,8 @@ final class GlanceSettings {
         static let hasCompletedOnboarding = "GlanceSettings.hasCompletedOnboarding"
         static let onboardingResumeStep = "GlanceSettings.onboardingResumeStep"
         static let hasAcknowledgedSecurityNotice = "GlanceSettings.hasAcknowledgedSecurityNotice"
+        static let isAppLockEnabled = "GlanceSettings.isAppLockEnabled"
+        static let lockedApps = "GlanceSettings.lockedApps"
     }
 
     @ObservationIgnored private let defaults = UserDefaults.standard
@@ -282,6 +284,19 @@ final class GlanceSettings {
         didSet { defaults.set(hasAcknowledgedSecurityNotice, forKey: Key.hasAcknowledgedSecurityNotice) }
     }
 
+    /// Master switch for App Lock, so it can be paused without emptying the list. Enforced by
+    /// `AppLockCoordinator`, not here.
+    var isAppLockEnabled: Bool {
+        didSet { defaults.set(isAppLockEnabled, forKey: Key.isAppLockEnabled) }
+    }
+    /// Which apps ask for a face before they can be used. Plain `UserDefaults`
+    /// rather than encrypted under the session key like enrolled faces: the
+    /// list has to be readable while the session is locked, or nothing could
+    /// be enforced until someone unlocked it.
+    var lockedApps: [LockedApp] {
+        didSet { defaults.set(try? JSONEncoder().encode(lockedApps), forKey: Key.lockedApps) }
+    }
+
     private init() {
         // Enabled by default — onboarding already enrolled a face and set a
         // password specifically to use Face Unlock.
@@ -348,6 +363,12 @@ final class GlanceSettings {
         onboardingResumeStep = defaults.string(forKey: Key.onboardingResumeStep)
             .flatMap(OnboardingStep.init(rawValue:))
         hasAcknowledgedSecurityNotice = defaults.object(forKey: Key.hasAcknowledgedSecurityNotice) as? Bool ?? false
+
+        // On by default, which does nothing until an app is added — adding
+        // one is the opt-in.
+        isAppLockEnabled = defaults.object(forKey: Key.isAppLockEnabled) as? Bool ?? true
+        lockedApps = defaults.data(forKey: Key.lockedApps)
+            .flatMap { try? JSONDecoder().decode([LockedApp].self, from: $0) } ?? []
 
         // Push into the nonisolated mirror immediately, or FaceRecognitionPipeline
         // would keep its own default until the slider is first touched.

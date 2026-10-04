@@ -162,6 +162,8 @@ struct SettingsWindowView: View {
                 YourFaceSettingsPage(environment: environment)
             case .password:
                 PasswordSettingsPage(pocController: environment.pocController)
+            case .appLock:
+                AppLockSettingsPage(pocController: environment.pocController)
             case .camera:
                 CameraSettingsPage(pocController: environment.pocController)
             case .recognition:

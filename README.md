@@ -71,6 +71,7 @@ Open the `.dmg` file and drag Glance to `/Applications`, then open it.
 | Feature | Description |
 |---|---|
 | **Face unlock** | Triggers on wake, on lock, or on pressing space at the lock screen. Pick any combination. |
+| **App Lock** | Pick apps that ask for your face every time you switch to them, and hide when you switch away. Touch ID or your password works as a fallback. |
 | **Multiple identities** | Enroll several people, or several versions of yourself — with glasses, a beard, different lighting. Toggle any of them off without deleting. |
 | **Liveness checks** | Watches for the motion and reflections that separate a real face from a photo. *Light* or *Heavy* strictness, or off. |
 | **Notch UI** | A closed pill that expands into a scan animation with success and failure states. Hover to retry — or turn animations off entirely and Glance stays invisible. |
@@ -109,6 +110,24 @@ Glance won't type your password simply because a face matches. An unlock require
 5. Accessibility permission is available to enter the password.
 
 Face recognition and liveness detection run independently and must both succeed before the password is entered. 
+
+### App Lock
+
+Settings → Apps lets you pick apps that need a face match before they can be used. When a locked app comes
+forward, Glance covers that app's windows — the rest of the screen stays usable — runs the same recognition and
+liveness checks as Face Unlock, and uncovers them once you're recognized. Switching to another app, locking the
+screen, or sleep relocks it and hides its windows, so it asks again next time. Opening Mission Control while a
+locked app is still waiting puts it away too: its window would be shown there in miniature, where the cover can't
+follow. If your face can't be checked — the session is locked, the room is too dark — Touch ID or your account
+password works instead, and the same prompt guards changes to the list.
+
+macOS gives a third-party app no way to truly lock another app, so this works by covering and hiding windows.
+That makes it a privacy convenience, not a security boundary:
+
+- It only holds while Glance is running — anyone able to quit Glance can open a locked app.
+- A locked app's windows can show for a frame or two before the cover goes up.
+- Only its windows are covered: its menu bar and Dock menu stay reachable while it waits.
+- Its notifications still appear; turn off notification previews in System Settings if that matters.
 
 ### Local by design
 

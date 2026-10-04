@@ -15,6 +15,8 @@ final class AppEnvironment {
     let faceUnlockCoordinator: FaceUnlockCoordinator
     /// Held, not just constructed — owns a repeating timer that would silently stop enforcing auto-lock if deallocated.
     let sessionAutoLocker: SessionAutoLocker
+    /// Held for the same reason as `sessionAutoLocker`: it owns the workspace observers that enforce App Lock.
+    let appLockCoordinator: AppLockCoordinator
     /// Constructed here (not started) so the About page and `AppDelegate` share one instance; `AppDelegate` calls `updater.start()`.
     let updater = UpdaterController()
 
@@ -24,5 +26,6 @@ final class AppEnvironment {
     init() {
         faceUnlockCoordinator = FaceUnlockCoordinator(pocController: pocController)
         sessionAutoLocker = SessionAutoLocker(pocController: pocController)
+        appLockCoordinator = AppLockCoordinator(pipeline: faceUnlockCoordinator.pipeline)
     }
 }
