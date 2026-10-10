@@ -17,7 +17,7 @@ struct IntroStepView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Glance")
+                Text("iFace")
                     .font(GlanceTheme.Font.title)
                     .foregroundStyle(GlanceTheme.textPrimary)
                 Text("Face Unlock for Mac")
@@ -68,13 +68,13 @@ struct PermissionsStepView: View {
 
             PermissionRow(
                 title: "Accessibility",
-                detail: "Allow Glance to unlock your Mac",
+                detail: "Allow iFace to unlock your Mac",
                 granted: controller.accessibilityGranted
             ) { controller.grantAccessibility() }
 
             PermissionRow(
                 title: "Camera",
-                detail: "Allow Glance to recognize your face",
+                detail: "Allow iFace to recognize your face",
                 granted: controller.cameraPermission == .granted
             ) { controller.grantCamera() }
 
@@ -108,7 +108,7 @@ struct SecurityNoticeStepView: View {
                 .padding(.top, 25)
                 .padding(.leading, 4)
 
-            Text("Glance is not as secure as Apple's FaceID or TouchID.")
+            Text("iFace is not as secure as Apple's FaceID or TouchID.")
                 .font(GlanceTheme.Font.title)
                 .foregroundStyle(GlanceTheme.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -433,7 +433,7 @@ struct PasswordStepView: View {
                 .foregroundStyle(GlanceTheme.textPrimary)
                 .padding(.leading, 4)
 
-            Text("Your password is required to unlock your Mac. It is encrypted and securely stored on your device. Glance works entirely offline, so your password never leaves your Mac.")
+            Text("Your password is required to unlock your Mac. It is encrypted and securely stored on your device. iFace works entirely offline, so your password never leaves your Mac.")
                 .font(GlanceTheme.Font.passwordCaption)
                 .foregroundStyle(GlanceTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

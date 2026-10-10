@@ -8,7 +8,7 @@ coremltools) and ~13MB of model weights from InsightFace's own hosting.
 ## Run it
 
 ```bash
-cd /Users/jonathanzhou/Documents/glance
+cd /Users/ankushkushwaha/Desktop/Projects/Glance
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r tools/requirements.txt

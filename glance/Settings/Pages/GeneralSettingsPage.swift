@@ -126,7 +126,7 @@ struct GeneralSettingsPage: View {
                 SettingsCaption(text: launchAtLoginError)
             }
             if hasInheritedXcodePermission {
-                SettingsCaption(text: "Running from Xcode — permission checks resolve against Xcode’s grants, not glance’s, so this reading is meaningless. Launch glance.app on its own to see the real state.")
+                SettingsCaption(text: "Running from Xcode — permission checks resolve against Xcode’s grants, not iFace’s, so this reading is meaningless. Launch iFace.app on its own to see the real state.")
             } else if needsInputMonitoring {
                 inputMonitoringNotice()
             }
@@ -187,7 +187,7 @@ struct GeneralSettingsPage: View {
     /// Shown while "On space" is selected but Input Monitoring isn't granted.
     private func inputMonitoringNotice() -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            SettingsCaption(text: "“On space” reads the keyboard directly to see the space key on the lock screen, which needs Accessibility — the same permission glance uses to type your password. Switch glance on under Privacy & Security → Accessibility, then quit and reopen glance.")
+            SettingsCaption(text: "“On space” reads the keyboard directly to see the space key on the lock screen, which needs Accessibility — the same permission iFace uses to type your password. Switch iFace on under Privacy & Security → Accessibility, then quit and reopen iFace.")
             Button("Open Accessibility settings") {
                 // Covers the rare install with no Accessibility grant at all.
                 SpaceKeyMonitor.requestInputMonitoringAccess()

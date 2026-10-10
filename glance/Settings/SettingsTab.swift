@@ -14,6 +14,7 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
     case password
     case camera
     case recognition
+    case appLock
     case about
     case debugFaceLab
 
@@ -26,6 +27,7 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
         case .password: return "Password"
         case .camera: return "Camera"
         case .recognition: return "Recognition"
+        case .appLock: return "App Lock"
         case .about: return "About"
         case .debugFaceLab: return "Face Lab"
         }
@@ -40,6 +42,7 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
         case .password: return .system("lock.fill")
         case .camera: return .system("video.fill")
         case .recognition: return .system("sparkle")
+        case .appLock: return .system("lock.shield.fill")
         case .about: return .system("info.circle.fill")
         case .debugFaceLab: return .system("flask")
         }

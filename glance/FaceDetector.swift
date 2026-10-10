@@ -32,8 +32,25 @@ struct DetectedFace {
 /// Pure, synchronous, CPU-bound work — `nonisolated` so it can run on a
 /// background task despite the project's default main-actor isolation.
 nonisolated enum FaceDetector {
-    /// Runs face-rectangle, capture-quality, and landmarks detection on a single frame.
-    static func detectFaces(in image: CGImage) throws -> [DetectedFace] {
+    /// Dedicated Vision queue kept for potential callers needing explicit dispatch; async API uses Task priority instead to avoid QoS inversions.
+    private static let visionQueue = DispatchQueue(label: "FaceDetector.VisionQueue", qos: .userInitiated)
+
+    /// Async variant that runs Vision requests at user-initiated priority without dispatch bridging to avoid QoS inversions.
+    static func detectFaces(in image: CGImage) async throws -> [DetectedFace] {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[DetectedFace], Error>) in
+            visionQueue.async {
+                do {
+                    let faces = try self._detectFacesSync(in: image)
+                    continuation.resume(returning: faces)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// Internal synchronous implementation that assumes it is already on an appropriate background queue.
+    private static func _detectFacesSync(in image: CGImage) throws -> [DetectedFace] {
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
 
         let rectanglesRequest = VNDetectFaceRectanglesRequest()
@@ -68,6 +85,11 @@ nonisolated enum FaceDetector {
         }
     }
 
+    /// Synchronous variant. Call from a background thread/task only; prefer the async API to avoid blocking higher-QoS threads.
+    static func detectFaces(in image: CGImage) throws -> [DetectedFace] {
+        try self._detectFacesSync(in: image)
+    }
+
     /// Vision's normalized rect has origin at bottom-left; `CGImage.cropping`
     /// expects pixel coordinates with origin at top-left. This flips the Y axis.
     static func convertToImageSpace(_ normalizedRect: CGRect, imageSize: CGSize) -> CGRect {
@@ -89,3 +111,4 @@ nonisolated enum FaceDetector {
         return image.cropping(to: padded)
     }
 }
+

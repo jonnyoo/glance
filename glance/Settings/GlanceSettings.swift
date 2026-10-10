@@ -125,6 +125,8 @@ final class GlanceSettings {
         static let hasCompletedOnboarding = "GlanceSettings.hasCompletedOnboarding"
         static let onboardingResumeStep = "GlanceSettings.onboardingResumeStep"
         static let hasAcknowledgedSecurityNotice = "GlanceSettings.hasAcknowledgedSecurityNotice"
+        static let isAppLockEnabled = "GlanceSettings.isAppLockEnabled"
+        static let defaultRelockPolicy = "GlanceSettings.defaultRelockPolicy"
     }
 
     @ObservationIgnored private let defaults = UserDefaults.standard
@@ -282,7 +284,40 @@ final class GlanceSettings {
         didSet { defaults.set(hasAcknowledgedSecurityNotice, forKey: Key.hasAcknowledgedSecurityNotice) }
     }
 
+    /// Master switch for App Lock — when off, no apps are guarded.
+    var isAppLockEnabled: Bool {
+        didSet { defaults.set(isAppLockEnabled, forKey: Key.isAppLockEnabled) }
+    }
+    /// The relock policy applied to newly added locked apps.
+    var defaultRelockPolicy: RelockPolicy {
+        didSet {
+            if let data = try? JSONEncoder().encode(defaultRelockPolicy) {
+                defaults.set(data, forKey: Key.defaultRelockPolicy)
+            }
+        }
+    }
+
     private init() {
+        // Migrate legacy preferences from com.jonathan.glance if needed
+        if let legacyDefaults = UserDefaults(suiteName: "com.jonathan.glance") {
+            let legacyKeys = [
+                Key.isFaceUnlockEnabled, Key.matchThreshold, Key.livenessChecksEnabled,
+                Key.livenessMode, Key.minimumFaceWidth, Key.unlockAnimationStyle,
+                Key.showUnlockAnimation, Key.unlockTriggers, Key.retryOnHover,
+                Key.faceDetectionSeconds, Key.autoRetryOnce, Key.hapticFeedbackEnabled,
+                Key.showsInMenuBar, Key.preferredDisplayID, Key.preferredDisplayName,
+                Key.autoLockIntervalDays, Key.defaultCameraID, Key.builtInDisplayCameraID,
+                Key.externalDisplayCameraID, Key.hasCompletedOnboarding,
+                Key.hasAcknowledgedSecurityNotice, Key.isAppLockEnabled, Key.defaultRelockPolicy,
+                "appLock.apps", "appLock.enabled"
+            ]
+            for key in legacyKeys {
+                if defaults.object(forKey: key) == nil, let val = legacyDefaults.object(forKey: key) {
+                    defaults.set(val, forKey: key)
+                }
+            }
+        }
+
         // Enabled by default — onboarding already enrolled a face and set a
         // password specifically to use Face Unlock.
         isFaceUnlockEnabled = defaults.object(forKey: Key.isFaceUnlockEnabled) as? Bool ?? true
@@ -348,6 +383,14 @@ final class GlanceSettings {
         onboardingResumeStep = defaults.string(forKey: Key.onboardingResumeStep)
             .flatMap(OnboardingStep.init(rawValue:))
         hasAcknowledgedSecurityNotice = defaults.object(forKey: Key.hasAcknowledgedSecurityNotice) as? Bool ?? false
+
+        isAppLockEnabled = defaults.object(forKey: Key.isAppLockEnabled) as? Bool ?? false
+        if let policyData = defaults.data(forKey: Key.defaultRelockPolicy),
+           let policy = try? JSONDecoder().decode(RelockPolicy.self, from: policyData) {
+            defaultRelockPolicy = policy
+        } else {
+            defaultRelockPolicy = .everyTime
+        }
 
         // Push into the nonisolated mirror immediately, or FaceRecognitionPipeline
         // would keep its own default until the slider is first touched.

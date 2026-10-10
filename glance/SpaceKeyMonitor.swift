@@ -19,7 +19,7 @@ import OSLog
 @MainActor
 final class SpaceKeyMonitor {
     /// Traces the Input Monitoring handshake, otherwise invisible since TCC decisions happen out of process.
-    static let log = Logger(subsystem: "com.jonathan.glance", category: "inputmonitoring")
+    static let log = Logger(subsystem: "com.ankush.iface", category: "inputmonitoring")
 
     /// Fires on key-down only, not release or auto-repeat.
     var onSpaceKeyDown: (() -> Void)?

@@ -1,182 +1,125 @@
 <h1 align="center">
   <br>
-  <a href="https://tryglance.app"><img src="glance/Assets.xcassets/appicon.imageset/appicon.png" alt="Glance" width="150"></a>
+  <img src="glance/Assets.xcassets/appicon.imageset/appicon.png" alt="iFace" width="140">
   <br>
-  Glance
+  iFace
   <br>
 </h1>
 
-<h3 align="center">Face unlock for your Mac</h3>
+<h3 align="center">Face ID & App Lock for macOS</h3>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-black.svg" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/macOS-15%2B-black.svg" alt="macOS 15+">
+  <img src="https://img.shields.io/badge/Apple%20Silicon-M1%20%7C%20M2%20%7C%20M3%20%7C%20M4-black.svg" alt="Apple Silicon">
   <img src="https://img.shields.io/badge/Swift-SwiftUI-black.svg" alt="Swift">
 </p>
 
-Glance brings the FaceID-like experience of your iPhone to a Mac near you. Unlock your Mac with a glance — no typing, no reaching for the TouchID key. Everything runs on-device using Apple's Vision
-and Core ML frameworks, so your face data and your Mac password never touch the internet. The UI is built into your Macbook's notch with fluid dynamic island like animations.
+<p align="center">
+  <a href="https://github.com/Ankushkushwaha1/iFace/releases/latest/download/iFace.dmg" target="_self">
+    <img src="assets/download_for_mac.png" alt="Download iFace for Mac" width="230">
+  </a>
+</p>
 
+https://github.com/user-attachments/assets/53f28b22-dfa0-4051-8eee-bd13bd98ead3
 
-https://github.com/user-attachments/assets/77438826-80a9-4ab2-9fc3-42407a2d0adb
+**iFace** brings the seamless Apple Face ID experience to macOS. Unlock your Mac automatically with a single glance and protect your private applications behind instant biometric verification — no typing passwords or reaching for the keyboard.
 
+Everything runs **100% on-device** using Apple's Vision and Core ML frameworks with hardware-backed encryption. The UI integrates directly into your MacBook's notch with fluid, Dynamic Island-style animations.
 
 ---
 
-> [!WARNING]
-> ## Read before downloading
-> ## Glance is not as secure as Apple's FaceID or TouchID
-> 
-> MacBooks don't come equipped with the depth sensors that make iPhone FaceID trustworthy and secure. An
-> iPhone builds a 3D map of your face; a MacBook webcam sees a flat 2D image. That means:
-> 
-> - Glance defeats, with reasonable confidence, a printed photo and a photo on a phone screen (heavy liveness detection must be turned on)
-> - Glance does not reliably defeat a video of you
-> - macOS has no API that lets a third-party app authorize a login, so Glance unlocks by typing
->   your stored password on the lock screen
-> 
-> Glance is a convenience feature, not a security upgrade. Only continue if you accept the tradeoff.
-
-## Installation
-
-**Requirements:**
-- macOS 15 Sequoia or later
-- Apple Silicon or Intel Mac
-
-<a href="https://github.com/jonnyoo/glance/releases/latest/download/Glance.dmg" target="_self"><img width="200" src="https://github.com/user-attachments/assets/cdb8af97-1ee2-4669-b7cb-dcfb56c9dd61" alt="Download for Mac" /></a>
-
-Open the `.dmg` file and drag Glance to `/Applications`, then open it.
-
-
-## Permissions
-
-| Permission | Why |
-|---|---|
-| **Camera** | To see your face. Frames are processed in memory and never written to disk. |
-| **Accessibility** | To type your password into the lock screen. |
-| **Touch ID** | Gates the key that encrypts your face data and password. |
-
-## How it works
-
-1. Launch the app and follow the onboarding to enroll your face. Glance guides you through capturing your face, turning your head in nine
-   directions. Each frame becomes a 512-number *embedding* — a mathematical fingerprint — and the
-   image is thrown away.
-2. Enter your Mac password once, encrypted behind Touch ID.
-3. When your Mac locks or wakes from sleep, the animation appears in the notch and starts searching for a face.
-4. If it's you — and the liveness checks agree you're a real person — Glance types the
-   password and you're in.
-
-## Features
+## Key Features
 
 | Feature | Description |
 |---|---|
-| **Face unlock** | Triggers on wake, on lock, or on pressing space at the lock screen. Pick any combination. |
-| **Multiple identities** | Enroll several people, or several versions of yourself — with glasses, a beard, different lighting. Toggle any of them off without deleting. |
-| **Liveness checks** | Watches for the motion and reflections that separate a real face from a photo. *Light* or *Heavy* strictness, or off. |
-| **Notch UI** | A closed pill that expands into a scan animation with success and failure states. Hover to retry — or turn animations off entirely and Glance stays invisible. |
-| **Camera & display** | Choose which camera to use, including different cameras for the built-in display vs. an external monitor. |
-| **Auto-locking sessions** | The Touch ID session re-locks itself after an idle period you choose, so an unattended Mac doesn't stay authorized forever. |
-| **Trackpad haptics** | Hovering over the notch will trigger haptics |
-| **Notchless Mac support** | Macs without a notch will be replaced with a pill-shape, dynamic island style design. |
-| **Your data, your call** | Edit or delete your enrolment or stored password at any time. The encrypted files are removed immediately. |
+| **App Lock** | Guard sensitive apps (WhatsApp, Photos, Telegram, Notes, etc.) behind Face ID. Shows a frosted glass shield and unlocks in milliseconds upon face recognition. |
+| **Mac Screen Unlock** | Automatically unlocks your Mac on wake, lid open, display sleep recovery, or pressing Space at the lock screen. |
+| **Notch & Dynamic Island UI** | Native fluid notch animations showing scan, verify, success, and retry states. Renders as a floating pill on notchless Macs and external displays. |
+| **Multiple Identities** | Enroll multiple angles, lighting conditions, or trusted users with individual toggles. |
+| **Anti-Spoofing & Liveness** | Analyzes multi-cue motion, micro-reflections, and 3D facial landmarks to reject photos and phone screens. |
+| **Re-Lock Policies** | Customize app re-lock behavior: lock immediately on focus loss / minimize, or after a custom idle duration. |
+| **Silent Operation** | Clean, silent password injection with optional trackpad haptic feedback. |
+| **100% On-Device Privacy** | Zero cloud servers, zero network requests, and zero telemetry. Video frames are analyzed in memory and immediately discarded. |
 
 ---
 
-# Privacy and Security
+## Security & Privacy by Design
 
-Glance is designed to keep biometric data and credentials on-device.
+### Biometric Embeddings
+iFace never saves camera photos or video frames to disk. During enrollment, camera frames are transformed into a **512-dimensional vector embedding** using an ArcFace Core ML model. The raw image is instantly thrown away, and the embedding vector is stored encrypted locally with **AES-GCM**.
 
-### Face data
-
-Glance never stores camera images. During enrollment, each captured face is converted into a **512-dimensional embedding** using an ArcFace-based Core ML model. The original frame is then discarded.
-
-Embeddings are stored locally and encrypted with **AES-GCM**.
-
-### Credentials
-
-Your Mac password is stored as encrypted data and is never written to disk in plaintext. The encryption key is a **256-bit AES key stored in the macOS Keychain**, protected by `userPresence` — requiring Touch ID or your device password.
-
-The key is only held in memory while an authorized Glance session is active.
-
-### Unlock pipeline
-
-Glance won't type your password simply because a face matches. An unlock requires all of the following:
-
-1. A valid Glance session is authorized.
-2. The Mac is actually at the lock screen.
-3. An enabled identity matches above the configured similarity threshold.
-4. Liveness checks accept the detected face.
-5. Accessibility permission is available to enter the password.
-
-Face recognition and liveness detection run independently and must both succeed before the password is entered. 
-
-### Local by design
-
-Face recognition, face enrollment, and liveness detection run entirely on-device using Vision and Core ML. Glance does not send face data, camera frames, or credentials to a server.
-
-
-### How it tells a face from a photo
-
-Five independent cues over a rolling ~2s window, in two roles:
-
-- **Deny cues** are evidence of a spoof — screen glare, or a device-shaped rectangle framing the
-face. Either one fails the scan outright and overrides anything else.
-- **Confirm cues** are evidence of a real face — flat-vs-3D landmark geometry, nose parallax
-across head turns, blinks. Any one is enough, and their absence is never a failure, since a
-live person can sit still and not blink.
-
-Light detection only include deny cues. Heavy detection includes both deny and confirm cues.
-
-### Face Lab
-
-Face Lab is a hidden debug console to test face recognition and liveness detection with real values.
-
-**To open it:** Settings → About, then click the app icon 5 times. A
-debug section should appear in the sidebar.
+### Hardware-Backed Keychain
+Your password is encrypted locally using AES-256 and protected by Apple Keychain `userPresence` (Touch ID or login credentials). Credentials are decrypted only in memory during an authorized unlock and immediately zeroed out.
 
 ---
 
+## Installation & Setup
 
-## Building from source
+### Requirements
+- macOS 15 Sequoia or later
+- Apple Silicon (M1/M2/M3/M4) or Intel Mac
+- Built-in FaceTime HD camera or external webcam
 
-### Prerequisites
+<p align="center">
+  <a href="https://github.com/Ankushkushwaha1/iFace/releases/latest/download/iFace.dmg" target="_self">
+    <img width="230" src="assets/download_for_mac.png" alt="Download iFace for Mac" />
+  </a>
+</p>
 
-- macOS 15+
-- Xcode 26+
+1. Download **`iFace.dmg`** using the button above.
+2. Open the `.dmg` file and drag **iFace** to your **Applications** folder.
+3. Open **iFace** from Launchpad or Applications and follow the guided setup.
 
+> [!NOTE]
+> **If macOS says *"iFace is damaged and can't be opened"***:
+> Because iFace is an independent open-source project without a paid Apple Developer certificate, macOS Gatekeeper quarantines the downloaded file. The app is completely safe.
+> To launch it, run this one command in **Terminal**:
+> ```bash
+> xattr -cr /Applications/iFace.app
+> ```
+> *(Or open **System Settings → Privacy & Security** → scroll to **Security** and click **Open Anyway**).*
 
+### Permissions Required
+* **Camera**: Required to verify your face. Processed strictly in memory and never saved to disk.
+* **Accessibility**: Required to type your credentials into the macOS lock screen.
+* **Touch ID / Keychain**: Protects stored credentials and encryption keys.
 
-### Installation
+---
 
-1. Clone repository:
-  ```bash
-   git clone https://github.com/jonnyoo/glance.git
-   cd glance
-  ```
-2. Open in Xcode:
-  ```bash
-   open glance.xcodeproj
-  ```
-3. Run the project:
-  - Click `run` or press `Cmd + R`.
+## Building from Source
 
+```bash
+# 1. Clone the repository
+git clone https://github.com/Ankushkushwaha1/iFace.git
+cd iFace
 
+# 2. Open the Xcode project
+open iFace.xcodeproj
+
+# 3. Build & Run
+# Press Cmd + R in Xcode
+```
+
+---
 
 ## Contributing
 
-Not currently accepting PRs. Feel free to fork this project.
+Contributions, feature suggestions, and bug reports are warmly welcomed!
 
-App feedback goes to [tryglance.app/feedback](https://tryglance.app/feedback).
+* **Got an idea or bug report?** Open an [Issue](https://github.com/Ankushkushwaha1/iFace/issues).
+* **Want to contribute code?** Fork the repository, create a feature branch, and submit a **Pull Request**.
+* Check out the [Contributing Guidelines](CONTRIBUTING.md) for full details on setting up and submitting changes.
+
+---
 
 ## Acknowledgements
 
-- **[The Boring Notch](https://github.com/TheBoredTeam/boring.notch)** — for the notch window
-physics.
-- **[InsightFace](https://github.com/deepinsight/insightface)** — the ArcFace model doing the
-recognition.
-- **[Alcove](https://tryalcove.com)** — big design inspiration.
+- **[The Boring Notch](https://github.com/TheBoredTeam/boring.notch)** — Notch window physics inspiration.
+- **[InsightFace](https://github.com/deepinsight/insightface)** — ArcFace facial representation architecture.
 
+---
 
 ## License
 
-[MIT](LICENSE) © Jonathan Zhou
+[MIT License](LICENSE) © 2026 **Ankush Kushwaha**

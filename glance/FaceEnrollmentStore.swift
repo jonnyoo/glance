@@ -120,7 +120,10 @@ final class FaceEnrollmentStore {
 
     /// Everyone the user hasn't switched off — what unlock actually scores against. `identities` stays the full list.
     var activeIdentities: [FaceIdentity] {
-        identities.filter(\.isEnabled)
+        if identities.isEmpty {
+            reloadIfUnlocked()
+        }
+        return identities.filter(\.isEnabled)
     }
 
     private init() {

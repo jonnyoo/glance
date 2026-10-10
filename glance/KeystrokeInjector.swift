@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import AppKit
 import ApplicationServices
 import CoreGraphics
 
@@ -16,7 +17,7 @@ enum KeystrokeError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .accessibilityNotGranted:
-            return "Accessibility permission required. Open System Settings → Privacy & Security → Accessibility and enable glance."
+            return "Accessibility permission required. Open System Settings → Privacy & Security → Accessibility and enable iFace."
         case .eventCreationFailed:
             return "Couldn't create CGEvent for keystroke."
         }
@@ -37,6 +38,13 @@ enum KeystrokeInjector {
         return AXIsProcessTrustedWithOptions(options)
     }
 
+    /// Directly opens macOS System Settings to Privacy & Security → Accessibility.
+    nonisolated static func openAccessibilityPreferences() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     /// Types the UTF-8 bytes into whatever has keyboard focus, then presses Return. Takes `Data` rather than `String` so the
     /// caller can hold the plaintext as a zero-able buffer; the brief internal `String` decode is scoped to this call. Blocking.
     nonisolated static func typeAndReturn(_ passwordBytes: Data) throws {
@@ -47,20 +55,20 @@ enum KeystrokeInjector {
             throw KeystrokeError.eventCreationFailed
         }
         let source = CGEventSource(stateID: .hidSystemState)
+        Thread.sleep(forTimeInterval: 0.05)
         try clearFocusedField(source: source)
+        Thread.sleep(forTimeInterval: 0.04)
         try postUnicodeText(text, source: source)
+        Thread.sleep(forTimeInterval: 0.06)
         try postReturn(source: source)
     }
 
-    /// Wipes anything already typed into the focused field (e.g. a stray keypress
-    /// on the lock screen) so it isn't prepended to the password: ⌘→ to the end,
-    /// then ⌘⌫ to delete back to the start. Both are positional keys, so this
-    /// behaves the same on every keyboard layout — unlike ⌘A, whose "A" moves.
+    /// Selects any existing text in the focused field (⌘A) silently without
+    /// producing macOS alert sounds on empty text fields. The subsequent
+    /// password typing immediately replaces any selected text.
     private nonisolated static func clearFocusedField(source: CGEventSource?) throws {
-        let rightArrow: CGKeyCode = 0x7C
-        let delete: CGKeyCode = 0x33
-        try postKey(rightArrow, flags: .maskCommand, source: source)
-        try postKey(delete, flags: .maskCommand, source: source)
+        let keyA: CGKeyCode = 0x00
+        try postKey(keyA, flags: .maskCommand, source: source)
     }
 
     /// Posts a virtual key down/up, wrapped in a real ⌘ down/up when `flags`
@@ -101,7 +109,7 @@ enum KeystrokeInjector {
     /// with longer payloads, while replacing one down/up pair per character with
     /// one pair per batch.
     nonisolated private static let maximumUnicodeBatchLength = 20
-    nonisolated private static let unicodeEventInterval: TimeInterval = 0.004
+    nonisolated private static let unicodeEventInterval: TimeInterval = 0.012
 
     /// Posts the password in small UTF-16 batches. Splitting occurs only between
     /// surrogate pairs, so non-BMP password characters are never corrupted.

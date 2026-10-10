@@ -34,7 +34,7 @@ final class CameraManager: NSObject {
     /// Exposed read-only so `CameraPreviewView` can attach a preview layer to the same session.
     let session = AVCaptureSession()
     private let videoOutput = AVCaptureVideoDataOutput()
-    private let sessionQueue = DispatchQueue(label: "com.jonathan.glance.camera.session")
+    private let sessionQueue = DispatchQueue(label: "com.ankush.iface.camera.session")
 
     /// Handed to the delegate outside the actor; only ever touched via `Task { @MainActor ... }`.
     private let framePublisher = FramePublisher()
@@ -60,7 +60,7 @@ final class CameraManager: NSObject {
             errorMessage = "Camera access not granted (status: \(describe(status))). " +
                 (status == .restricted
                     ? "macOS reports this as *restricted* — not a simple user denial. This usually means Screen Time content restrictions or an MDM/profile policy is blocking camera access for this app; toggling it in System Settings > Privacy & Security > Camera won't help until that restriction is lifted."
-                    : "Enable it in System Settings > Privacy & Security > Camera. If glance isn't listed there, quit the app, run `tccutil reset Camera com.jonathan.glance` in Terminal, then relaunch so macOS asks again.")
+                    : "Enable it in System Settings > Privacy & Security > Camera. If iFace isn't listed there, quit the app, run `tccutil reset Camera com.ankush.iface` in Terminal, then relaunch so macOS asks again.")
             return
         }
 

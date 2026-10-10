@@ -155,7 +155,7 @@ final class FaceLabController {
         let pipeline = self.pipeline
         do {
             let (result, livenessFrame) = try await Task.detached(priority: .userInitiated) {
-                let result = try pipeline.recognize(in: cameraFrame.image)
+                let result = try await pipeline.recognize(in: cameraFrame.image)
                 let faceCrop = CameraManager.renderCrop(from: cameraFrame, imageRect: result.face.boundingBox)
                 return (result, LivenessFeatureExtractor.extract(from: result, frame: cameraFrame.image, faceCrop: faceCrop))
             }.value

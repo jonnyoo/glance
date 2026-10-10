@@ -1,10 +1,17 @@
 # Xcode build products / derived data
 build/
+build_output/
+.build_noindex/
+*.noindex/
 DerivedData/
 *.xcuserstate
+*.dmg
 
 # Xcode per-user state (schemes, breakpoints)
 xcuserdata/
+*.xcuserdatad/
+*.xcodeproj/xcuserdata/
+
 
 # Compiled Core ML models are derived from the committed .mlpackage source
 *.mlmodelc

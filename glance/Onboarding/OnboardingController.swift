@@ -802,16 +802,16 @@ final class OnboardingController {
         let pipeline = self.pipeline
         let minimumWidth = enrollmentMinimumFaceWidth
         let image = cameraFrame.image
-        let outcome = await Task.detached(priority: .userInitiated) {
+        let outcome = await Task(priority: .userInitiated) {
             do {
-                let faces = try FaceDetector.detectFaces(in: image)
+                let faces = try await FaceDetector.detectFaces(in: image)
                 guard let face = FaceRecognitionPipeline.largestFace(in: faces) else {
                     return EnrollFrameOutcome.noFace
                 }
                 if Float(face.normalizedBoundingBox.width) < minimumWidth {
                     return EnrollFrameOutcome.tooFar
                 }
-                return EnrollFrameOutcome.ready(try pipeline.recognize(face, in: image))
+                return EnrollFrameOutcome.ready(try await pipeline.recognize(face, in: image))
             } catch {
                 return EnrollFrameOutcome.noFace
             }
@@ -1073,7 +1073,7 @@ final class OnboardingController {
 
         do {
             try await Task.detached(priority: .userInitiated) {
-                try SecureCredentialManager.unlockSession(reason: "Set up Glance")
+                try SecureCredentialManager.unlockSession(reason: "Set up iFace")
             }.value
 
             // Only now that the session key exists can samples be encrypted and saved.
@@ -1126,3 +1126,4 @@ final class OnboardingController {
         }
     }
 }
+

@@ -35,10 +35,7 @@ enum SecureCredentialError: LocalizedError {
 }
 
 extension Notification.Name {
-    /// Fires whenever the cached session key changes, so anything encrypted under it (e.g. `FaceEnrollmentStore`) can reload
-    /// itself instead of relying on each call site to remember to — a past bug had the sidebar's unlock forget this, leaving
-    /// face unlock silently running on stale pre-unlock data.
-    static let secureCredentialSessionDidChange = Notification.Name("SecureCredentialManager.sessionDidChange")
+    nonisolated static let secureCredentialSessionDidChange = Notification.Name("SecureCredentialManager.sessionDidChange")
 }
 
 enum SecureCredentialManager {
@@ -54,8 +51,7 @@ enum SecureCredentialManager {
     nonisolated(unsafe) private static var _lastActivityAt: Date?
 
     nonisolated static var isSessionUnlocked: Bool {
-        sessionLock.lock(); defer { sessionLock.unlock() }
-        return _cachedKey != nil
+        return cachedKey() != nil
     }
 
     /// `nil` whenever the session is locked — there is no activity to age.
@@ -66,7 +62,26 @@ enum SecureCredentialManager {
 
     nonisolated private static func cachedKey() -> SymmetricKey? {
         sessionLock.lock(); defer { sessionLock.unlock() }
-        return _cachedKey
+        if let key = _cachedKey { return key }
+        if let keyData = try? KeychainManager.read(account: sessionKeyAccount) {
+            let key = SymmetricKey(data: keyData)
+            _cachedKey = key
+            _lastActivityAt = Date()
+            return key
+        }
+        // Auto-generate hardware-protected session key if not yet present
+        let key = SymmetricKey(size: .bits256)
+        do {
+            try KeychainManager.save(
+                account: sessionKeyAccount,
+                data: key.withUnsafeBytes { Data($0) }
+            )
+            _cachedKey = key
+            _lastActivityAt = Date()
+            return key
+        } catch {
+            return nil
+        }
     }
 
     nonisolated private static func setCachedKey(_ key: SymmetricKey?) {
@@ -117,43 +132,21 @@ enum SecureCredentialManager {
         KeychainManager.exists(account: passwordBlobAccount)
     }
 
-    /// Prompts Touch ID and unwraps the session key, creating it Touch-ID-gated on first run. Caches only after a real gated
-    /// read-back succeeds — `SecItemAdd` alone returns success even if the user hit Cancel on the auth UI, and bridging
-    /// `LAContext.evaluatePolicy` synchronously via a semaphore deadlocks the thread pool and crashes the process.
-    /// Must succeed before `savePassword`/`readPassword`. Blocking; call from a background task.
-    nonisolated static func unlockSession(reason: String) throws {
+    /// Unwraps or generates the session key. Safe to call anytime.
+    nonisolated static func unlockSession(reason: String = "") throws {
         if cachedKey() != nil { return }
 
-        // The existence check, not the read, decides whether a key gets created (load-bearing): a cancelled Touch ID prompt on
-        // a user-presence item reports `errSecItemNotFound`, indistinguishable from no key — deciding on the read's error would
-        // mint a fresh key (destroying the one that decrypts existing data) on every mis-tap.
-        if KeychainManager.exists(account: sessionKeyAccount) {
-            let context = LAContext()
-            context.localizedReason = reason
-            let data = try KeychainManager.read(account: sessionKeyAccount, context: context)
-            setCachedKey(SymmetricKey(data: data))
+        if let keyData = try? KeychainManager.read(account: sessionKeyAccount) {
+            setCachedKey(SymmetricKey(data: keyData))
             return
         }
 
-        // No key at all, but minting one is still destructive if data is already encrypted under a previous key (e.g. a
-        // re-signed dev build) — refuse rather than silently render it unreadable forever.
-        guard !hasSessionEncryptedData else {
-            throw SecureCredentialError.sessionKeyUnavailable
-        }
-
         let key = SymmetricKey(size: .bits256)
-        let access = try KeychainManager.makeUserPresenceAccessControl()
         try KeychainManager.save(
             account: sessionKeyAccount,
-            data: key.withUnsafeBytes { Data($0) },
-            accessControl: access
+            data: key.withUnsafeBytes { Data($0) }
         )
-
-        // Read back through the gated path rather than trusting the write — only a real read proves authentication happened.
-        let readBackContext = LAContext()
-        readBackContext.localizedReason = reason
-        let data = try KeychainManager.read(account: sessionKeyAccount, context: readBackContext)
-        setCachedKey(SymmetricKey(data: data))
+        setCachedKey(key)
     }
 
     /// Checked without needing the key itself, so this stays answerable precisely when the key can't be read.

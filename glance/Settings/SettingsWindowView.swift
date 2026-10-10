@@ -169,6 +169,8 @@ struct SettingsWindowView: View {
                     coordinator: environment.faceUnlockCoordinator,
                     pocController: environment.pocController
                 )
+            case .appLock:
+                AppLockSettingsPage(pocController: environment.pocController)
             case .about:
                 AboutSettingsPage(updater: environment.updater, environment: environment)
             case .debugFaceLab:
