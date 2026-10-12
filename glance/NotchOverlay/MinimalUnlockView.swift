@@ -37,7 +37,7 @@ struct MinimalUnlockView: View {
 
             Spacer(minLength: 0)
 
-            ScanAnimationView(media: media)
+            ScanAnimationView(media: media, compact: true)
                 .padding(.vertical, mediaVerticalInset)
                 .frame(width: mediaWidth)
                 // Scoped to the video alone — the lock icon on the left

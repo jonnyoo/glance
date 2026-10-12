@@ -29,9 +29,13 @@ enum ScanMedia: Equatable {
 
 struct ScanAnimationView: NSViewRepresentable {
     let media: ScanMedia
+    /// Picks the 120 px assets for the minimal style, where the media is only
+    /// ~40 pt wide: AVPlayerLayer downsamples without mipmaps, so a 432 px
+    /// source shrunk 5-6x aliases visibly.
+    var compact = false
 
     func makeNSView(context: Context) -> ScanAnimationHostView {
-        let view = ScanAnimationHostView()
+        let view = ScanAnimationHostView(compact: compact)
         view.apply(media: media)
         return view
     }
@@ -48,14 +52,17 @@ final class ScanAnimationHostView: NSView {
     private var currentMedia: ScanMedia?
     private var readyObservation: NSKeyValueObservation?
     private var fallbackRevealWorkItem: DispatchWorkItem?
+    private let compact: Bool
 
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
+    init(compact: Bool = false) {
+        self.compact = compact
+        super.init(frame: .zero)
         wantsLayer = true
         layer = CALayer()
 
         stillImageLayer.contentsGravity = .resizeAspect
-        if let still = Self.loadStillFromBundle() {
+        stillImageLayer.minificationFilter = .trilinear
+        if let still = Self.loadStillFromBundle(compact: compact) {
             stillImageLayer.contents = still
         }
         layer?.addSublayer(stillImageLayer)
@@ -91,7 +98,7 @@ final class ScanAnimationHostView: NSView {
             return
         }
 
-        guard let url = Bundle.main.url(forResource: resource, withExtension: "mp4") else {
+        guard let url = Bundle.main.url(forResource: compact ? resource + "-small" : resource, withExtension: "mp4") else {
             assertionFailure("\(resource).mp4 missing from bundle — check glance/Resources/")
             return
         }
@@ -146,8 +153,8 @@ final class ScanAnimationHostView: NSView {
 
     /// The asset lives in Resources/ rather than an asset catalog, so
     /// `NSImage(named:)` won't find it — load by URL instead.
-    private static func loadStillFromBundle() -> NSImage? {
-        guard let url = Bundle.main.url(forResource: "unlockstatic", withExtension: "png") else { return nil }
+    private static func loadStillFromBundle(compact: Bool) -> NSImage? {
+        guard let url = Bundle.main.url(forResource: compact ? "unlockstatic-small" : "unlockstatic", withExtension: "png") else { return nil }
         return NSImage(contentsOf: url)
     }
 }
