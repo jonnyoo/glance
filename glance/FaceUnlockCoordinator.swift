@@ -58,6 +58,16 @@ final class FaceUnlockCoordinator {
     /// Gap between headless auto-retries, just to keep the camera from restarting in a tight loop.
     private let headlessRetryDelay: Duration = .seconds(1)
 
+    /// CGSession can lag the true lock state right after wake. Poll instead of unconditionally sleeping:
+    /// when the state already agrees (the common case), the scan starts immediately.
+    private let lockStateSettleTimeout: Duration = .milliseconds(300)
+    private let lockStatePollInterval: Duration = .milliseconds(25)
+    /// How often to check for a newly published camera frame. Long enough to avoid a busy spin, short
+    /// enough that a frame arriving during recognition is picked up on the next loop rather than ~20ms later.
+    private let framePollInterval: Duration = .milliseconds(5)
+    /// UI-only buffer past the login window's entrance. Camera warm-up deliberately overlaps this wait.
+    private let armDelay: Duration = .milliseconds(250)
+
     /// When off, no notch/pill presence at all — every overlay call in this file is conditioned on this rather than just skipping the video.
     private var showsUI: Bool { GlanceSettings.shared.showUnlockAnimation }
 
@@ -82,10 +92,17 @@ final class FaceUnlockCoordinator {
             _ = lockMonitor.eventCount
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
-                self?.observeLockAndWakeEvents()
-                // Brief settle delay: CGSession's reported state can lag the true state right after wake.
-                try? await Task.sleep(nanoseconds: 300_000_000)
-                self?.evaluateTrigger()
+                guard let self else { return }
+                self.observeLockAndWakeEvents()
+                // Brief settle delay, but return as soon as CGSession agrees. A screen that is genuinely
+                // unlocked still waits the full window (and is then disarmed), same as before.
+                let deadline = ContinuousClock.now + self.lockStateSettleTimeout
+                while ContinuousClock.now < deadline,
+                      !Task.isCancelled,
+                      !LockMonitor.isScreenActuallyLocked() {
+                    try? await Task.sleep(for: self.lockStatePollInterval)
+                }
+                self.evaluateTrigger()
             }
         }
     }
@@ -131,10 +148,30 @@ final class FaceUnlockCoordinator {
 
         hasArmedForCurrentLock = true
         lastArmedAt = .now
+
         Task { [weak self] in
-            // arm() only shows a small closed notch silhouette, so this only needs a brief buffer past the login window's entrance.
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            await self?.arm(autoScan: shouldAutoScan)
+            guard let self else { return }
+            let showsUI = self.showsUI
+
+            if showsUI {
+                // Warms camera hardware during the arm delay. Starting it before the sleep would delay
+                // the overlay: the cold configuration path runs on the main actor and can take ~200ms.
+                // The nested task only gets to run once this task suspends in `Task.sleep`.
+                if shouldAutoScan {
+                    Task { @MainActor [weak self] in
+                        guard let self,
+                              self.isEnabled,
+                              self.hasArmedForCurrentLock,
+                              LockMonitor.isScreenActuallyLocked()
+                        else { return }
+                        await self.camera.start()
+                    }
+                }
+                // arm() only shows a small closed notch silhouette, so this only needs a brief buffer past the login window's entrance.
+                try? await Task.sleep(for: self.armDelay)
+            }
+            // Headless has no overlay to wait for; previously it still paid this 250ms.
+            await self.arm(autoScan: shouldAutoScan)
         }
     }
 
@@ -207,7 +244,12 @@ final class FaceUnlockCoordinator {
 
     /// Either way the overlay still arms — a deselected trigger only skips the automatic scan, leaving hover-to-start available.
     private func arm(autoScan: Bool) async {
-        guard LockMonitor.isScreenActuallyLocked() else { return }
+        guard isEnabled, LockMonitor.isScreenActuallyLocked() else {
+            // A pre-warm may already have started the camera while the UI settled, and the user
+            // may have switched Face Unlock off during that same window.
+            camera.stop()
+            return
+        }
         guard showsUI else {
             // Headless: evaluateTrigger() already guaranteed autoScan is true here, so this is just "start scanning."
             startScanCycle()
@@ -236,7 +278,10 @@ final class FaceUnlockCoordinator {
     /// of itself. This was a real bug — a superseded `camera.stop()` queued behind the newer cycle's `startRunning()` made the
     /// camera visibly switch on then die mid-warm-up, leaving the surviving cycle polling a dead session and never unlocking.
     private func runScanCycle(generation: Int) async {
-        guard LockMonitor.isScreenActuallyLocked() else { return }
+        guard LockMonitor.isScreenActuallyLocked() else {
+            if generation == scanGeneration { camera.stop() }
+            return
+        }
 
         await camera.start()
         guard generation == scanGeneration else { return }
@@ -350,8 +395,9 @@ final class FaceUnlockCoordinator {
             guard LockMonitor.isScreenActuallyLocked() else { return .noResolution }
 
             guard let frame = camera.currentFrame, frame.id != lastProcessedFrameID else {
-                // 20ms keeps the liveness window's sample count high while staying close to the camera's native ~33ms cadence.
-                try? await Task.sleep(nanoseconds: 20_000_000)
+                // Camera cadence still caps throughput; this short poll just avoids adding a fixed delay
+                // on top of it and picks up the first frame promptly after warm-up.
+                try? await Task.sleep(for: framePollInterval)
                 continue
             }
             lastProcessedFrameID = frame.id
@@ -359,7 +405,12 @@ final class FaceUnlockCoordinator {
             let pipeline = self.pipeline
             let previousBoundingBox = lastFaceBoundingBox
             let outcome = await Task.detached(priority: .userInitiated) { () -> (FaceRecognitionResult, LivenessFrame)? in
-                guard let result = try? pipeline.recognize(in: frame.image, preferNear: previousBoundingBox) else { return nil }
+                // Unlock never reads capture quality; it is only needed for enrollment and Face Lab.
+                guard let result = try? pipeline.recognize(
+                    in: frame.image,
+                    preferNear: previousBoundingBox,
+                    includeQuality: false
+                ) else { return nil }
                 let faceCrop = CameraManager.renderCrop(from: frame, imageRect: result.face.boundingBox)
                 return (result, LivenessFeatureExtractor.extract(from: result, frame: frame.image, faceCrop: faceCrop))
             }.value
@@ -367,7 +418,7 @@ final class FaceUnlockCoordinator {
             guard let (result, livenessFrame) = outcome else {
                 wrongFaceStartedAt = nil
                 lastFaceBoundingBox = nil
-                try? await Task.sleep(nanoseconds: 20_000_000)
+                // No extra sleep: the next iteration either has a newer frame ready or waits in the guard above.
                 continue
             }
             lastFaceBoundingBox = result.face.normalizedBoundingBox
@@ -415,8 +466,6 @@ final class FaceUnlockCoordinator {
                 await pocController.injectStoredPassword(requireAuthoritativeLock: true)
                 return .matched
             }
-
-            try? await Task.sleep(nanoseconds: 20_000_000)
         }
         return .noResolution
     }

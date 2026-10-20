@@ -19,6 +19,9 @@ final class LivenessAnalyzer {
     /// Face Lab can switch individual cues off to isolate one; the unlock
     /// path leaves this at "all enabled."
     var enabledCuesProvider: () -> Set<LivenessCue> = { Set(LivenessCue.allCases) }
+    /// Face Lab wants the geometry diagnostics to keep updating after Heavy mode confirms; the unlock path
+    /// doesn't, because confirmation is latched and only deny cues can still change the decision.
+    var keepsComputingConfirmCuesAfterConfirmation = false
 
     private var frames: [LivenessFrame] = []
     private var evaluator = LivenessEvaluator()
@@ -46,14 +49,28 @@ final class LivenessAnalyzer {
         frames.append(frame)
         frames.removeAll { frame.timestamp.timeIntervalSince($0.timestamp) > windowDuration }
 
-        evaluator.mode = modeProvider()
+        let mode = modeProvider()
+        evaluator.mode = mode
         evaluator.tuning = tuningProvider()
         evaluator.enabledCues = enabledCuesProvider()
 
-        let geometry = GeometryLiveness.evaluate(frames)
-        lastGeometry = geometry
+        // Light mode confirms by frame count and never reads confirm cues. Heavy mode needs them only until
+        // it has confirmed; the evaluator latches that, so afterwards only a deny cue can change the outcome.
+        // Face Lab opts back in so its geometry diagnostics keep updating.
+        let alreadyConfirmedInHeavy = lastSnapshot.mode == .heavy && lastSnapshot.decision.isConfirmed
+        let needsConfirmCues = mode == .heavy && (keepsComputingConfirmCuesAfterConfirmation || !alreadyConfirmedInHeavy)
 
-        let readings = LivenessCues.readings(window: frames, geometry: geometry)
+        let geometry: GeometryLivenessResult
+        let readings: [LivenessCue: CueReading]
+        if needsConfirmCues {
+            geometry = GeometryLiveness.evaluate(frames)
+            readings = LivenessCues.readings(window: frames, geometry: geometry)
+        } else {
+            geometry = .empty
+            readings = LivenessCues.denyReadings(window: frames)
+        }
+
+        lastGeometry = geometry
         let snapshot = evaluator.observe(readings)
         lastSnapshot = snapshot
         return snapshot

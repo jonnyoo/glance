@@ -87,6 +87,9 @@ final class FaceLabController {
 
     init() {
         observeFrames()
+        // This page's whole point is watching the raw cue measurements, so keep them coming even after
+        // Heavy mode has latched a confirmation.
+        livenessAnalyzer.keepsComputingConfirmCuesAfterConfirmation = true
         livenessAnalyzer.modeProvider = { [weak self] in self?.livenessMode ?? .heavy }
         livenessAnalyzer.tuningProvider = { [weak self] in self?.livenessTuning ?? .default }
         livenessAnalyzer.enabledCuesProvider = { [weak self] in

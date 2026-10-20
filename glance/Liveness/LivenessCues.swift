@@ -269,16 +269,23 @@ struct LivenessEvaluator {
 /// Turns a rolling window into this frame's reading for every cue. Deny cues read only
 /// the latest frame (per-frame appearance); confirm cues read the whole window (cross-frame motion).
 nonisolated enum LivenessCues {
-    nonisolated static func readings(
-        window: [LivenessFrame], geometry: GeometryLivenessResult
-    ) -> [LivenessCue: CueReading] {
+    /// Deny cues are always evaluated — they can veto even after Heavy mode has confirmed.
+    nonisolated static func denyReadings(window: [LivenessFrame]) -> [LivenessCue: CueReading] {
         [
             .glossGlare: glossGlare(window.last),
             .deviceDetected: deviceDetected(window.last),
-            .flatVs3D: geometry.planarReading,
-            .depthPose: LivenessScoring.poseDepthConsistency(window),
-            .blink: LivenessScoring.blinkDynamics(window),
         ]
+    }
+
+    /// Full set, for Heavy mode before it confirms and for Face Lab diagnostics.
+    nonisolated static func readings(
+        window: [LivenessFrame], geometry: GeometryLivenessResult
+    ) -> [LivenessCue: CueReading] {
+        var result = denyReadings(window: window)
+        result[.flatVs3D] = geometry.planarReading
+        result[.depthPose] = LivenessScoring.poseDepthConsistency(window)
+        result[.blink] = LivenessScoring.blinkDynamics(window)
+        return result
     }
 
     /// Skin gives many small scattered specular points; glass gives one big

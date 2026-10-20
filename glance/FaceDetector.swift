@@ -32,8 +32,10 @@ struct DetectedFace {
 /// Pure, synchronous, CPU-bound work — `nonisolated` so it can run on a
 /// background task despite the project's default main-actor isolation.
 nonisolated enum FaceDetector {
-    /// Runs face-rectangle, capture-quality, and landmarks detection on a single frame.
-    static func detectFaces(in image: CGImage) throws -> [DetectedFace] {
+    /// Runs face-rectangle, optionally capture-quality, and landmarks detection on a single frame.
+    /// - Parameter includeQuality: unlock only needs the box and landmarks; quality is used by enrollment and
+    ///   Face Lab. Skipping it removes a Vision model from the hot path without changing either.
+    static func detectFaces(in image: CGImage, includeQuality: Bool = true) throws -> [DetectedFace] {
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
 
         let rectanglesRequest = VNDetectFaceRectanglesRequest()
@@ -43,13 +45,25 @@ nonisolated enum FaceDetector {
 
         // Chained to the rectangles results (via `inputFaceObservations`) rather than run independently, so results
         // correspond 1:1 in order — avoids the fragility of matching back via boundingBox float equality.
-        let qualityRequest = VNDetectFaceCaptureQualityRequest()
         let landmarksRequest = VNDetectFaceLandmarksRequest()
-        qualityRequest.inputFaceObservations = faceObservations
         landmarksRequest.inputFaceObservations = faceObservations
-        try handler.perform([qualityRequest, landmarksRequest])
 
-        let qualityResults = qualityRequest.results ?? []
+        let qualityRequest: VNDetectFaceCaptureQualityRequest?
+        if includeQuality {
+            let request = VNDetectFaceCaptureQualityRequest()
+            request.inputFaceObservations = faceObservations
+            qualityRequest = request
+        } else {
+            qualityRequest = nil
+        }
+
+        var requests: [VNRequest] = [landmarksRequest]
+        if let qualityRequest {
+            requests.append(qualityRequest)
+        }
+        try handler.perform(requests)
+
+        let qualityResults = qualityRequest?.results ?? []
         let landmarkResults = landmarksRequest.results ?? []
         let imageSize = CGSize(width: image.width, height: image.height)
 
