@@ -37,7 +37,7 @@ enum KeychainError: LocalizedError {
 }
 
 enum KeychainManager {
-    nonisolated static let service = "com.jonathan.glance"
+    nonisolated static let service = Bundle.main.bundleIdentifier ?? "com.salimmous.glance"
 
     /// Attributes-only existence check — skips auth UI (`kSecUseAuthenticationUISkip`) so it never prompts
     /// even for `.userPresence` items, and treats only `errSecSuccess` / `errSecInteractionNotAllowed` as existing.

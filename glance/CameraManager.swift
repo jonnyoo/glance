@@ -56,10 +56,11 @@ final class CameraManager: NSObject {
         }
 
         guard permission == .granted else {
+            let bundleID = Bundle.main.bundleIdentifier ?? "com.salimmous.glance"
             errorMessage = "Camera access not granted (status: \(describe(status))). " +
                 (status == .restricted
                     ? "macOS reports this as *restricted* — not a simple user denial. This usually means Screen Time content restrictions or an MDM/profile policy is blocking camera access for this app; toggling it in System Settings > Privacy & Security > Camera won't help until that restriction is lifted."
-                    : "Enable it in System Settings > Privacy & Security > Camera. If glance isn't listed there, quit the app, run `tccutil reset Camera com.jonathan.glance` in Terminal, then relaunch so macOS asks again.")
+                    : "Enable it in System Settings > Privacy & Security > Camera. If glance isn't listed there, quit the app, run `tccutil reset Camera \(bundleID)` in Terminal, then relaunch so macOS asks again.")
             return
         }
 
@@ -112,7 +113,7 @@ final class CameraManager: NSObject {
     private nonisolated final class SessionWorker: @unchecked Sendable {
         let session = AVCaptureSession()
         private let videoOutput = AVCaptureVideoDataOutput()
-        private let queue = DispatchQueue(label: "com.jonathan.glance.camera.session")
+        private let queue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier ?? "com.salimmous.glance").camera.session")
         private var isConfigured = false
         private var currentInput: AVCaptureDeviceInput?
 

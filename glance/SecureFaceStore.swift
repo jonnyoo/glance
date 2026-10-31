@@ -23,8 +23,13 @@ nonisolated enum SecureFaceStore {
     /// Distinct filename/extension so plaintext can never be mistaken for ciphertext.
     private static let fileURL: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let directory = appSupport.appendingPathComponent("glance", isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let subdirectory = Bundle.main.bundleIdentifier ?? "com.salimmous.glance"
+        let directory = appSupport.appendingPathComponent(subdirectory, isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
         return directory.appendingPathComponent("face-identities.enc")
     }()
 
@@ -46,6 +51,7 @@ nonisolated enum SecureFaceStore {
         let plaintext = try JSONEncoder().encode(identities)
         let ciphertext = try SecureCredentialManager.encrypt(plaintext)
         try ciphertext.write(to: fileURL, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
     }
 
     static func deleteAll() {

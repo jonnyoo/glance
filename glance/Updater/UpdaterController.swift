@@ -53,8 +53,16 @@ final class UpdaterController {
     }
 
     /// Safe to call even with a placeholder `SUPublicEDKey` — `SPUStandardUpdaterController` logs and alerts on a misconfigured
-    /// Sparkle setup itself rather than throwing.
+    /// Sparkle setup itself rather than throwing. Skips starting Sparkle on forked bundle identifiers while `SUFeedURL` still
+    /// points at upstream `tryglance.app`, preventing cross-origin update checks or Sparkle misconfiguration alerts.
     func start() {
+        let bundleID = Bundle.main.bundleIdentifier
+        let feedURL = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String ?? ""
+        guard !feedURL.isEmpty,
+              !(bundleID != "com.jonathan.glance" && feedURL.contains("tryglance.app"))
+        else {
+            return
+        }
         controller.startUpdater()
     }
 

@@ -150,7 +150,7 @@ debug section should appear in the sidebar.
 
 1. Clone repository:
   ```bash
-   git clone https://github.com/jonnyoo/glance.git
+   git clone https://github.com/salimmous/glance.git
    cd glance
   ```
 2. Open in Xcode:
