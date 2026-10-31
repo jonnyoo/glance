@@ -202,13 +202,16 @@ struct NotchGeometry {
         }
 
         // Width derived from the menu-bar areas flanking the notch — nil/empty on
-        // displays without one, hence the safeAreaInsets check above.
+        // displays without one, hence the safeAreaInsets check above. Guard against
+        // wake-time races where `auxiliaryTopLeftArea`/`RightArea` transiently report
+        // nil/0 before WindowServer finishes layout, which would otherwise stretch the
+        // closed notch across the entire display width.
         let leftPadding = screen.auxiliaryTopLeftArea?.width ?? 0
         let rightPadding = screen.auxiliaryTopRightArea?.width ?? 0
-        // These are all AppKit point values. Do not impose a model-derived minimum:
-        // the camera housing on a 13-inch MacBook Air is legitimately narrower than
-        // the 200-point housing on several MacBook Pro models.
-        let width = screen.frame.width - leftPadding - rightPadding
+        let rawWidth = screen.frame.width - leftPadding - rightPadding
+        let width = (leftPadding > 0 && rightPadding > 0 && rawWidth > 40 && rawWidth < screen.frame.width * 0.5)
+            ? rawWidth
+            : 200
         let height = screen.safeAreaInsets.top
 
         return NotchGeometry(closedSize: CGSize(width: width, height: height), isPhysicalNotch: true)
@@ -220,20 +223,32 @@ struct NotchGeometry {
     @MainActor
     static func preferredScreen() -> NSScreen? {
         if let targetID = GlanceSettings.shared.preferredDisplayID {
-            return NSScreen.screens.first { $0.stableDisplayID == targetID }
+            return NSScreen.screens.first { $0.matchesDisplayID(targetID) }
         }
         return NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main
     }
 }
 
 extension NSScreen {
-    /// Stable enough to persist a user's display choice across launches — the only
-    /// per-display identity AppKit exposes.
+    /// Hardware UUID for persisting a user's display choice across dock/undock and reboots,
+    /// falling back to `CGDirectDisplayID` only if CoreGraphics yields no UUID.
     var stableDisplayID: String? {
         guard let number = deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
             return nil
         }
+        if let uuid = CGDisplayCreateUUIDFromDisplayID(number)?.takeRetainedValue() {
+            return CFUUIDCreateString(nil, uuid) as String
+        }
         return String(number)
+    }
+
+    /// Matches both hardware UUIDs and legacy numeric `CGDirectDisplayID` strings saved by earlier builds.
+    func matchesDisplayID(_ targetID: String) -> Bool {
+        if stableDisplayID == targetID { return true }
+        guard let number = deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
+            return false
+        }
+        return String(number) == targetID
     }
 
     /// True for the Mac's own display (vs. an external monitor) — used to pin the Face

@@ -23,14 +23,11 @@ enum CameraDeviceCatalog {
         return discovery.devices.map { CameraDevice(id: $0.uniqueID, name: $0.localizedName) }
     }
 
-    /// True if the currently-active screen is the Mac's built-in display
-    /// (vs. an external monitor) — used to pick between the built-in/
-    /// external camera overrides.
+    /// True if the active target screen for Face Unlock is the Mac's built-in display
+    /// (vs. an external monitor) — used to pick between the built-in/external camera overrides.
     static func isUsingBuiltInDisplay() -> Bool {
-        guard let screen = NSScreen.main,
-              let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
-        else { return true }
-        return CGDisplayIsBuiltin(screenNumber) != 0
+        guard let screen = NotchGeometry.preferredScreen() ?? NSScreen.main else { return true }
+        return screen.isBuiltIn
     }
 
     /// Display-specific override, then flat default, then the system default camera.

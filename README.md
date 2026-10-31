@@ -157,7 +157,9 @@ debug section should appear in the sidebar.
   ```bash
    open glance.xcodeproj
   ```
-3. Run the project:
+3. Configure code signing in Xcode:
+  - Select the `glance` target → **Signing & Capabilities** and choose your Apple ID / Development Team (required for Keychain and Touch ID entitlements).
+4. Run the project:
   - Click `run` or press `Cmd + R`.
 
 

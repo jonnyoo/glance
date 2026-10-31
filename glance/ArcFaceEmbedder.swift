@@ -37,6 +37,7 @@ nonisolated final class ArcFaceEmbedder: FaceEmbedder, @unchecked Sendable {
     nonisolated let modelIdentifier = "arcface-w600k_mbf-v1"
     nonisolated let embeddingDimension = 512
     nonisolated let requiresAlignment = true
+    nonisolated let isUnlockCapable = true
 
     private static let inputSize = FaceAligner.outputSize
     private static let inputName = "input_image"

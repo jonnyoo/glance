@@ -43,10 +43,11 @@ nonisolated enum LivenessFeatureExtractor {
         let eyeRight = LandmarkGeometry.eyeCenter(pupil: landmarks.rightPupil, eye: landmarks.rightEye, imageSize: imageSize)
 
         var noseOffsetRatio: CGFloat?
-        if let interocular, interocular > 0, let eyeLeft, let eyeRight,
+        if let eyeLeft, let eyeRight,
            let nose = landmarks.nose, let noseCenter = LandmarkGeometry.centroid(of: nose, imageSize: imageSize) {
-            let eyeMidX = (eyeLeft.x + eyeRight.x) / 2
-            noseOffsetRatio = (noseCenter.x - eyeMidX) / interocular
+            noseOffsetRatio = LandmarkGeometry.eyeAlignedNoseOffsetRatio(
+                eyeA: eyeLeft, eyeB: eyeRight, noseCenter: noseCenter
+            )
         }
 
         return LivenessFrame(

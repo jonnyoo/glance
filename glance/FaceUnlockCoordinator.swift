@@ -61,6 +61,15 @@ final class FaceUnlockCoordinator {
     /// When off, no notch/pill presence at all — every overlay call in this file is conditioned on this rather than just skipping the video.
     private var showsUI: Bool { GlanceSettings.shared.showUnlockAnimation }
 
+    /// Ensures Face Unlock cannot fire before first-run onboarding and the post-update security disclaimer are completed,
+    /// or while an interactive onboarding/enrollment flow owns the notch.
+    private var isOnboardingGateSatisfied: Bool {
+        let settings = GlanceSettings.shared
+        return settings.hasCompletedOnboarding
+            && settings.hasAcknowledgedSecurityNotice
+            && NotchOverlayController.shared.phase != .onboarding
+    }
+
     /// Reads the space key on the lock screen for the "On space" trigger; only runs while locked + opted in.
     private let spaceKeyMonitor = SpaceKeyMonitor()
 
@@ -108,7 +117,11 @@ final class FaceUnlockCoordinator {
         // Runs before the hasArmedForCurrentLock guard — the space monitor's lifetime is tied to "locked + opted in," not to whether a scan already ran.
         updateSpaceMonitor()
 
-        guard isEnabled, !hasArmedForCurrentLock else { return }
+        guard isEnabled, isOnboardingGateSatisfied, !hasArmedForCurrentLock else { return }
+        guard !pipeline.usingFallbackEmbedder, pipeline.embedder.isUnlockCapable else {
+            statusMessage = "Face unlock unavailable — ArcFace recognition model could not be loaded."
+            return
+        }
         guard let signal = requiredTrigger(for: lockMonitor.lastEvent) else { return }
         // A pinned display that isn't connected bails entirely rather than showing up elsewhere; "Main display" (nil) always resolves.
         guard NotchGeometry.preferredScreen() != nil else { return }
@@ -169,6 +182,9 @@ final class FaceUnlockCoordinator {
     /// Idempotent and safe to call on every lock/wake event. Deliberately does not prompt for Input Monitoring — a missing grant just means "don't listen."
     private func updateSpaceMonitor() {
         let shouldListen = isEnabled
+            && isOnboardingGateSatisfied
+            && !pipeline.usingFallbackEmbedder
+            && pipeline.embedder.isUnlockCapable
             && GlanceSettings.shared.unlockTriggers.contains(.onSpace)
             && LockMonitor.isScreenActuallyLocked()
             && SpaceKeyMonitor.hasInputMonitoringAccess()
@@ -182,6 +198,9 @@ final class FaceUnlockCoordinator {
     /// Runs the same gate chain as `evaluateTrigger`, then starts a scan. Independent of `LockMonitor` events, so doesn't touch `hasArmedForCurrentLock`.
     private func handleSpaceKeyPress() {
         guard isEnabled,
+              isOnboardingGateSatisfied,
+              !pipeline.usingFallbackEmbedder,
+              pipeline.embedder.isUnlockCapable,
               GlanceSettings.shared.unlockTriggers.contains(.onSpace),
               LockMonitor.isScreenActuallyLocked(),
               NotchGeometry.preferredScreen() != nil,
@@ -308,7 +327,7 @@ final class FaceUnlockCoordinator {
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled, let self else { return }
             // Re-check rather than trust the delay: the user may have unlocked by password or retried manually while this waited.
-            guard LockMonitor.isScreenActuallyLocked(), self.isEnabled else { return }
+            guard LockMonitor.isScreenActuallyLocked(), self.isEnabled, self.isOnboardingGateSatisfied else { return }
             if self.showsUI {
                 guard NotchOverlayController.shared.phase == .closed else { return }
             }
@@ -336,8 +355,10 @@ final class FaceUnlockCoordinator {
         /// a valid match clears it, so only a sustained wrong face resolves the scan.
         var wrongFaceStartedAt: ContinuousClock.Instant?
 
-        /// Cleared the moment a detected face fails to match, so a latched match can't be handed to whoever steps in next.
+        /// Cleared the moment a detected face fails to match or disappears, so neither a latched match nor a
+        /// latched liveness confirmation can carry across a face swap.
         var readyMatch: ScoredIdentity?
+        var matchedIdentityID: UUID?
         /// Turning liveness off in Settings makes this half permanently ready.
         var livenessConfirmed = !livenessEnabled
         /// Last frame's selected face, passed back so `selectDominantFace` stays on the same person instead of flip-flopping.
@@ -367,37 +388,60 @@ final class FaceUnlockCoordinator {
             guard let (result, livenessFrame) = outcome else {
                 wrongFaceStartedAt = nil
                 lastFaceBoundingBox = nil
+                readyMatch = nil
+                matchedIdentityID = nil
+                livenessConfirmed = !livenessEnabled
+                if livenessEnabled {
+                    liveness.resetConfirmations()
+                }
                 try? await Task.sleep(nanoseconds: 20_000_000)
                 continue
             }
             lastFaceBoundingBox = result.face.normalizedBoundingBox
 
-            // Fed regardless of match, so liveness stays a genuinely independent gate rather than one starved by recognition confidence.
-            var confirmingCue: LivenessCue?
-            if livenessEnabled {
-                let snapshot = liveness.observe(livenessFrame)
-                switch snapshot.decision {
-                case .denied:
-                    // Overrides everything, including a match and any confirmation that already happened.
-                    lastOutcome = snapshot.decision.denialReason
-                    return .spoofSuspected
-                case .confirmed(let cue):
-                    livenessConfirmed = true
-                    confirmingCue = cue
-                case .pending:
-                    break
-                }
-            }
-
             // `activeIdentities`, not `identities`: someone switched off on the Your Face page stays enrolled but must not unlock.
+            // Identity is evaluated BEFORE feeding confirmation cues so an unrecognized person cannot pre-confirm liveness
+            // (Heavy blink/3D or Light frame count) and then swap in a static photo of the owner.
             let scored = pipeline.score(result.embedding, against: FaceEnrollmentStore.shared.activeIdentities)
             let matched = pipeline.bestMatch(in: scored, threshold: matchThreshold)
 
+            var confirmingCue: LivenessCue?
             if let matched {
                 wrongFaceStartedAt = nil
+                if matchedIdentityID != matched.identity.id {
+                    matchedIdentityID = matched.identity.id
+                    livenessConfirmed = !livenessEnabled
+                    if livenessEnabled {
+                        liveness.resetConfirmations()
+                    }
+                }
                 readyMatch = matched
+
+                if livenessEnabled {
+                    let snapshot = liveness.observe(livenessFrame)
+                    switch snapshot.decision {
+                    case .denied:
+                        lastOutcome = snapshot.decision.denialReason
+                        return .spoofSuspected
+                    case .confirmed(let cue):
+                        livenessConfirmed = true
+                        confirmingCue = cue
+                    case .pending:
+                        break
+                    }
+                }
             } else {
                 readyMatch = nil
+                matchedIdentityID = nil
+                livenessConfirmed = !livenessEnabled
+                if livenessEnabled {
+                    liveness.resetConfirmations()
+                    let snapshot = liveness.observeUnmatched(livenessFrame)
+                    if case .denied = snapshot.decision {
+                        lastOutcome = snapshot.decision.denialReason
+                        return .spoofSuspected
+                    }
+                }
                 if wrongFaceStartedAt == nil {
                     wrongFaceStartedAt = .now
                 }

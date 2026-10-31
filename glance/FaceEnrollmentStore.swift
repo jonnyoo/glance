@@ -167,7 +167,7 @@ final class FaceEnrollmentStore {
 
         let sample = FaceSample(embedding: embedding, pose: pose, capturedAt: Date(), quality: quality)
 
-        if let index = identities.firstIndex(where: { $0.name == trimmed }) {
+        if let index = identities.firstIndex(where: { Self.namesMatch($0.name, trimmed) }) {
             if identities[index].modelIdentifier != embedder.modelIdentifier {
                 identities[index].samples = [sample]
             } else {
@@ -227,14 +227,18 @@ final class FaceEnrollmentStore {
         return committed
     }
 
-    /// Case- and diacritic-insensitive, unlike `addSample`'s exact match: "alex"/"Alex"/"Álex" are one person to the
-    /// user even though storage would treat them as separate identities. `excluding` lets a recapture keep its own name.
+    /// Canonical case- and diacritic-insensitive comparison shared by `addSample` and `nameIsTaken`
+    /// so "alex"/"Alex"/"Álex" consistently map to one person everywhere.
+    nonisolated static func namesMatch(_ lhs: String, _ rhs: String) -> Bool {
+        lhs.compare(rhs, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+    }
+
+    /// Case- and diacritic-insensitive (`namesMatch`). `excluding` lets a recapture keep its own name.
     func nameIsTaken(_ name: String, excluding id: UUID? = nil) -> Bool {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         return identities.contains {
-            $0.id != id
-                && $0.name.compare(trimmed, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+            $0.id != id && Self.namesMatch($0.name, trimmed)
         }
     }
 

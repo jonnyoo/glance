@@ -23,6 +23,18 @@ final class POCController {
 
     var statusMessage: String = "Idle"
 
+    init() {
+        NotificationCenter.default.addObserver(
+            forName: .secureCredentialSessionDidChange,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshCredentialStatus()
+            }
+        }
+    }
+
     func refreshAccessibilityStatus() {
         accessibilityGranted = KeystrokeInjector.isAccessibilityTrusted()
     }
@@ -87,10 +99,10 @@ final class POCController {
     // MARK: - Injection
 
     /// Reads + decrypts + injects the stored password, zeroing the plaintext
-    /// buffer before returning. When `requireAuthoritativeLock` is true (the
-    /// auto-trigger path), refuses to inject unless the CGSession dictionary
-    /// confirms the screen is actually locked.
-    func injectStoredPassword(requireAuthoritativeLock: Bool = false) async {
+    /// buffer before returning. Defaults `requireAuthoritativeLock` to true so
+    /// injection refuses to proceed (and aborts mid-sequence) unless the
+    /// CGSession dictionary confirms the screen is actually locked.
+    func injectStoredPassword(requireAuthoritativeLock: Bool = true) async {
         guard KeystrokeInjector.isAccessibilityTrusted() else {
             statusMessage = "Accessibility not granted — open System Settings and enable glance."
             return
@@ -111,8 +123,15 @@ final class POCController {
         do {
             try await Task.detached(priority: .userInitiated) {
                 var bytes = try SecureCredentialManager.readPassword()
-                defer { bytes.resetBytes(in: 0..<bytes.count) }
-                try KeystrokeInjector.typeAndReturn(bytes)
+                defer {
+                    bytes.withUnsafeMutableBytes { raw in
+                        if let base = raw.baseAddress, raw.count > 0 {
+                            _ = memset_s(base, raw.count, 0, raw.count)
+                        }
+                    }
+                    bytes.resetBytes(in: 0..<bytes.count)
+                }
+                try KeystrokeInjector.typeAndReturn(bytes, requireLockedScreen: requireAuthoritativeLock)
             }.value
             statusMessage = "Injected stored password + Return at \(Date().formatted(date: .omitted, time: .standard))"
         } catch {

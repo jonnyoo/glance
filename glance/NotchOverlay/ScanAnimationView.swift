@@ -46,6 +46,7 @@ final class ScanAnimationHostView: NSView {
     private let playerLayer = AVPlayerLayer()
     private let stillImageLayer = CALayer()
     private var currentMedia: ScanMedia?
+    private var desiredMedia: ScanMedia?
     private var readyObservation: NSKeyValueObservation?
     private var fallbackRevealWorkItem: DispatchWorkItem?
 
@@ -78,7 +79,18 @@ final class ScanAnimationHostView: NSView {
         CATransaction.commit()
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            currentMedia = nil
+            teardownPlayer()
+        } else if player == nil, let desiredMedia, desiredMedia.videoResourceName != nil {
+            apply(media: desiredMedia)
+        }
+    }
+
     func apply(media: ScanMedia) {
+        desiredMedia = media
         guard media != currentMedia else { return }
         currentMedia = media
         readyObservation = nil

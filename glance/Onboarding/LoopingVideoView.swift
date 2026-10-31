@@ -30,6 +30,7 @@ final class LoopingVideoHostView: NSView {
     private let playerLayer = AVPlayerLayer()
     private var endObserver: NSObjectProtocol?
     private var currentResourceName: String?
+    private var desiredResourceName: String?
     private var pauseBetweenLoops: TimeInterval = 2.0
     private var pendingRestart: DispatchWorkItem?
 
@@ -53,7 +54,18 @@ final class LoopingVideoHostView: NSView {
         CATransaction.commit()
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            currentResourceName = nil
+            teardown()
+        } else if player == nil, let desiredResourceName {
+            configure(resourceName: desiredResourceName, pauseBetweenLoops: pauseBetweenLoops)
+        }
+    }
+
     func configure(resourceName: String, pauseBetweenLoops: TimeInterval) {
+        self.desiredResourceName = resourceName
         self.pauseBetweenLoops = pauseBetweenLoops
         guard resourceName != currentResourceName else { return }
         currentResourceName = resourceName

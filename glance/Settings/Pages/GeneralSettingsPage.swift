@@ -214,7 +214,7 @@ struct GeneralSettingsPage: View {
                     settings.preferredDisplayID = nil
                     settings.preferredDisplayName = nil
                 }
-                ForEach(screens.compactMap(NamedScreen.init), id: \.id) { screen in
+                ForEach(screens.compactMap { NamedScreen($0) }, id: \.id) { screen in
                     Button(screen.name) {
                         settings.preferredDisplayID = screen.id
                         settings.preferredDisplayName = screen.name
@@ -239,7 +239,7 @@ struct GeneralSettingsPage: View {
 
     private var displayLabel: String {
         guard let targetID = settings.preferredDisplayID else { return "Main display" }
-        if let connected = screens.first(where: { $0.stableDisplayID == targetID }) {
+        if let connected = screens.first(where: { $0.matchesDisplayID(targetID) }) {
             return connected.localizedName
         }
         // Picked, but not currently connected — say so rather than showing

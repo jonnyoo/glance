@@ -132,7 +132,7 @@ private struct EnrollmentSweepOverlay: View {
         let guiding = host.controller.guideVisible
         let tooFar = host.controller.isTooFar
         let checkmark = host.controller.showCheckmark
-        let direction = pose.flatMap(EnrollmentSweepDirection.init(pose:))
+        let direction = pose.flatMap { EnrollmentSweepDirection(pose: $0) }
         let canPlay = presented && guiding && !tooFar && !checkmark
         let isVisible = canPlay && playingDirection != nil
 

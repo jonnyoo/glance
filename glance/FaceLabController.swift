@@ -276,7 +276,8 @@ final class FaceLabController {
         if let best = scored.first {
             let verdict = (bestMatch != nil) ? "MATCH" : "no match"
             let staleNote = best.identity.isStale(comparedTo: embedder) ? " [STALE — re-enroll under current model]" : ""
-            log("Recognize: best = \(best.identity.name) centroid=\(String(format: "%.3f", best.centroidSimilarity)) max=\(String(format: "%.3f", best.maxSampleSimilarity)) -> \(verdict)\(staleNote)")
+            let fallbackNote = pipeline.usingFallbackEmbedder ? " [FALLBACK EMBEDDER — unlock matching disabled]" : ""
+            log("Recognize: best = \(best.identity.name) centroid=\(String(format: "%.3f", best.centroidSimilarity)) max=\(String(format: "%.3f", best.maxSampleSimilarity)) -> \(verdict)\(staleNote)\(fallbackNote)")
         }
     }
 

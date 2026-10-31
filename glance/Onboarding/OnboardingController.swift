@@ -747,21 +747,16 @@ final class OnboardingController {
         applyDisplayPinForCameraSelection()
     }
 
-    /// Pins the Face Unlock panel to the MacBook's own screen while the built-in camera
-    /// is selected (auto-resolved or explicitly chosen), and releases that pin otherwise
-    /// so the panel returns to the user's normal (often external-monitor) screen. Only
-    /// meaningful with more than one screen connected — nothing to move on just one.
-    /// Called whenever the pick changes and again when the step first appears, so an
-    /// untouched system-default choice that happens to resolve to the built-in camera
-    /// still moves the panel.
+    /// Updates the display preference only when the user explicitly selects an external camera
+    /// while a built-in display was pinned, leaving automatic ("Main display", `nil`) intact for
+    /// the built-in camera so `NotchGeometry.preferredScreen()` still uses the hardware notch when
+    /// open and seamlessly falls back to the external display in clamshell mode.
     func applyDisplayPinForCameraSelection() {
         guard NSScreen.screens.count > 1 else { return }
         let isBuiltIn = resolveSelectedCameraDevice()?.deviceType == .builtInWideAngleCamera
-        if isBuiltIn {
-            guard let builtInScreen = NSScreen.screens.first(where: { $0.isBuiltIn }) else { return }
-            GlanceSettings.shared.preferredDisplayID = builtInScreen.stableDisplayID
-            GlanceSettings.shared.preferredDisplayName = builtInScreen.localizedName
-        } else {
+        if !isBuiltIn,
+           let targetID = GlanceSettings.shared.preferredDisplayID,
+           NSScreen.screens.first(where: { $0.matchesDisplayID(targetID) })?.isBuiltIn == true {
             GlanceSettings.shared.preferredDisplayID = nil
             GlanceSettings.shared.preferredDisplayName = nil
         }

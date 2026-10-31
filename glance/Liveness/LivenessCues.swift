@@ -224,6 +224,46 @@ struct LivenessEvaluator {
         framesObserved = 0
     }
 
+    /// Clears positive confirmation progress (`framesObserved` and `.confirm` cue latches)
+    /// when face continuity or identity match is lost, while keeping `.deny` cue streaks intact
+    /// so spoof tells cannot be reset by flickering or swapping faces.
+    mutating func resetConfirmations() {
+        framesObserved = 0
+        for cue in LivenessCue.allCases where cue.role == .confirm {
+            states[cue] = nil
+        }
+    }
+
+    /// Updates only `.deny` cues without advancing `framesObserved` or `.confirm` latches —
+    /// used on frames whose face did not match an enrolled identity so an impostor cannot
+    /// pre-charge Heavy or Light liveness confirmation before presenting a photo.
+    mutating func observeDenyOnly(_ readings: [LivenessCue: CueReading]) -> LivenessSnapshot {
+        for cue in LivenessCue.allCases {
+            switch cue.role {
+            case .deny:
+                var state = states[cue] ?? LivenessCueState()
+                let reading = readings[cue] ?? .none
+                state.reading = reading
+                if reading.confidence > 0, reading.level >= tuning.level(for: cue) {
+                    state.framesCounted += 1
+                    if state.framesCounted >= tuning.frames(for: cue) {
+                        state.hasFired = true
+                    }
+                }
+                states[cue] = state
+            case .confirm:
+                if var state = states[cue] {
+                    state.reading = .none
+                    states[cue] = state
+                }
+            }
+        }
+
+        return LivenessSnapshot(
+            decision: currentDecision(), mode: mode, cueStates: states, frameCount: framesObserved
+        )
+    }
+
     /// Firing is latched: a cue that has fired stays fired for the rest of the scan.
     mutating func observe(_ readings: [LivenessCue: CueReading]) -> LivenessSnapshot {
         framesObserved += 1

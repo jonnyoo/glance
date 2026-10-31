@@ -13,7 +13,7 @@ import CoreGraphics
 /// One frame's worth of liveness-relevant measurements — already normalized, no Vision needed.
 /// Populated by `LivenessFeatureExtractor.extract(from:)` from a real camera frame, or built
 /// directly from synthetic data by `tools/liveness_selftest.swift`.
-struct LivenessFrame {
+nonisolated struct LivenessFrame {
     let timestamp: Date
     /// Every landmark point Vision found this frame, tagged by region — see `LandmarkGeometry.allPoints`.
     let landmarks: [LandmarkPoint]
@@ -83,7 +83,12 @@ nonisolated enum LivenessScoring {
         let minMeasurableRange: CGFloat = 12 * .pi / 180
         guard yawRange > minMeasurableRange else { return .none }
 
-        guard let correlation = pearsonCorrelation(pairs.map(\.0), pairs.map(\.1)) else { return .none }
+        let offsets = pairs.map(\.0)
+        guard let minOffset = offsets.min(), let maxOffset = offsets.max(),
+              (maxOffset - minOffset) >= 0.01
+        else { return .none }
+
+        guard let correlation = pearsonCorrelation(offsets, yaws) else { return .none }
         let level = Float(clamp((correlation + 1) / 2, 0, 1))
         // Confidence ramps in over the next ~15 degrees past the minimum —
         // more rotation observed, more trustworthy the correlation is.

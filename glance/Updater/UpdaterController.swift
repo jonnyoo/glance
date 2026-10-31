@@ -44,8 +44,7 @@ final class UpdaterController {
         // `Task { @MainActor in }` since the KVO closure itself carries no actor isolation the compiler can see.
         canCheckForUpdatesObservation = controller.updater.observe(
             \.canCheckForUpdates, options: [.initial, .new]
-        ) { updater, _ in
-            // `[weak self]` captured on the Task's closure, not the outer KVO one — Swift 6 flags the latter as unsafe.
+        ) { [weak self] updater, _ in
             let value = updater.canCheckForUpdates
             Task { @MainActor [weak self] in
                 self?.canCheckForUpdates = value
@@ -83,9 +82,17 @@ private final class UpdatePresentationDelegate: NSObject, SPUStandardUserDriverD
         beginPresenting()
     }
 
-    /// Fires for every way an update session can end (dismissed, skipped, errored, installed) — the one place to clear the flag.
+    /// Fires for every way an update session can end (dismissed, skipped, errored, installed) — the one place to clear the flag,
+    /// and to drop the Dock icon back to `.accessory` once Sparkle's own window finishes closing if Settings isn't open.
     func standardUserDriverWillFinishUpdateSession() {
         isPresentingUpdateUI = false
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isPresentingUpdateUI else { return }
+            let stillOpen = NSApp.windows.contains { $0.canBecomeMain && $0.isVisible }
+            if !stillOpen {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        }
     }
 
     private func beginPresenting() {

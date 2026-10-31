@@ -11,7 +11,7 @@ import CoreGraphics
 struct DetectedFace {
     /// Pixel-space bounding box, top-left origin — ready to crop with.
     let boundingBox: CGRect
-    /// Vision's original normalized box — kept as-is since it's the exact format `layerRectConverted(fromMetadataOutputRect:)` expects.
+    /// Vision's original normalized box (0...1, bottom-left origin). Flip Y before passing to `layerRectConverted(fromMetadataOutputRect:)`.
     let normalizedBoundingBox: CGRect
     /// 0...1 confidence from Vision that this is a face, roughly indicating
     /// image quality/pose suitability for recognition. `nil` if the quality

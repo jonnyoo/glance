@@ -153,8 +153,6 @@ final class NotchWindowController {
 
     private func windowIfNeeded() -> NotchWindow {
         if let window { return window }
-        // Never resized afterward (see NotchWindow.swift), so a style change
-        // mid-session keeps whatever margin it was created with.
         let size = NotchGeometry.windowSize(for: currentGeometry.style)
         let rect = NSRect(x: 0, y: 0, width: size.width, height: size.height)
         let newWindow = NotchWindow(contentRect: rect)
@@ -170,6 +168,10 @@ final class NotchWindowController {
 
     private func reposition(_ window: NotchWindow) {
         guard let screen = NotchGeometry.preferredScreen() else { return }
+        let targetSize = NotchGeometry.windowSize(for: NotchGeometry.forScreen(screen).style)
+        if window.frame.size != targetSize {
+            window.setContentSize(targetSize)
+        }
         let screenFrame = screen.frame
         let size = window.frame.size
         window.setFrameOrigin(NSPoint(
