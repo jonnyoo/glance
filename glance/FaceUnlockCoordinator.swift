@@ -10,10 +10,12 @@
 import Foundation
 import CoreGraphics
 import Observation
+import OSLog
 
 @Observable
 @MainActor
 final class FaceUnlockCoordinator {
+    static let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.salimmous.glance", category: "faceunlock")
     private let pocController: POCController
     let lockMonitor = LockMonitor()
     let camera = CameraManager()
@@ -100,7 +102,9 @@ final class FaceUnlockCoordinator {
     }
 
     private func evaluateTrigger() {
-        guard LockMonitor.isScreenActuallyLocked() else {
+        let isLocked = LockMonitor.isScreenActuallyLocked()
+        Self.log.info("evaluateTrigger: screenLocked=\(isLocked) isEnabled=\(self.isEnabled) hasArmed=\(self.hasArmedForCurrentLock) lastEvent=\(String(describing: self.lockMonitor.lastEvent)) isSessionUnlocked=\(SecureCredentialManager.isSessionUnlocked) hasPassword=\(SecureCredentialManager.hasStoredPassword())")
+        guard isLocked else {
             hasArmedForCurrentLock = false
             hasAutoRetriedForCurrentLock = false
             disarmOverlay()
@@ -117,20 +121,29 @@ final class FaceUnlockCoordinator {
         // Runs before the hasArmedForCurrentLock guard — the space monitor's lifetime is tied to "locked + opted in," not to whether a scan already ran.
         updateSpaceMonitor()
 
-        guard isEnabled, isOnboardingGateSatisfied, !hasArmedForCurrentLock else { return }
+        guard isEnabled, isOnboardingGateSatisfied, !hasArmedForCurrentLock else {
+            Self.log.info("evaluateTrigger bailed: isEnabled=\(self.isEnabled), gate=\(self.isOnboardingGateSatisfied), hasArmed=\(self.hasArmedForCurrentLock)")
+            return
+        }
         guard !pipeline.usingFallbackEmbedder, pipeline.embedder.isUnlockCapable else {
+            Self.log.error("evaluateTrigger bailed: fallback embedder or not unlock capable")
             statusMessage = "Face unlock unavailable — ArcFace recognition model could not be loaded."
             return
         }
-        guard let signal = requiredTrigger(for: lockMonitor.lastEvent) else { return }
+        guard let signal = requiredTrigger(for: lockMonitor.lastEvent) else {
+            Self.log.info("evaluateTrigger bailed: no requiredTrigger for \(String(describing: self.lockMonitor.lastEvent))")
+            return
+        }
         // A pinned display that isn't connected bails entirely rather than showing up elsewhere; "Main display" (nil) always resolves.
         guard NotchGeometry.preferredScreen() != nil else { return }
 
         guard SecureCredentialManager.isSessionUnlocked else {
+            Self.log.error("evaluateTrigger bailed: session is locked")
             statusMessage = "Face unlock is on, but the session is locked — authenticate once from Password settings first."
             return
         }
         guard SecureCredentialManager.hasStoredPassword() else {
+            Self.log.error("evaluateTrigger bailed: no password stored in Keychain")
             statusMessage = "Face unlock is on, but no password is stored yet."
             return
         }

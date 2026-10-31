@@ -95,6 +95,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if GlanceSettings.shared.hasCompletedOnboarding {
             if GlanceSettings.shared.hasAcknowledgedSecurityNotice {
                 startUpdaterIfNeeded()
+                if !environment.pocController.isSessionUnlocked && environment.pocController.hasStoredPassword {
+                    Task { @MainActor [weak self] in
+                        await self?.environment.pocController.unlockSession()
+                    }
+                }
             } else {
                 // Upgraded from a version before the notice existed — show it once, standalone.
                 presentPostUpdateSecurityNotice()
