@@ -206,6 +206,10 @@ final class OnboardingController {
         guard !SecureCredentialManager.isSessionUnlocked else { return true }
         do {
             try await Task.detached(priority: .userInitiated) {
+                if SecureCredentialManager.isSessionKeyMissingWithOrphanedData {
+                    try? SecureCredentialManager.deletePassword()
+                    SecureFaceStore.deleteAll()
+                }
                 try SecureCredentialManager.unlockSession(reason: reason)
             }.value
             return true
@@ -951,6 +955,10 @@ final class OnboardingController {
 
         do {
             try await Task.detached(priority: .userInitiated) {
+                if SecureCredentialManager.isSessionKeyMissingWithOrphanedData {
+                    try? SecureCredentialManager.deletePassword()
+                    SecureFaceStore.deleteAll()
+                }
                 try SecureCredentialManager.unlockSession(reason: "Set up Glance")
             }.value
 
