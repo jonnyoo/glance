@@ -272,16 +272,15 @@ final class OnboardingController {
     /// frame near a pose boundary.
     private let requiredMatchStreak = 2
     /// Transient 1-frame Vision landmark/pitch jitter shouldn't discard an active pose hold.
-    private let maxOutOfBandGraceFrames = 1
-    /// Wait this long after yaw/pitch matches before samples count, so the user has
-    /// settled into the turn rather than being captured mid-motion.
-    private let poseHoldDuration: Duration = .milliseconds(350)
+    private let maxOutOfBandGraceFrames = 2
+    /// Snappy hold duration matching Apple Face ID circular responsiveness.
+    private let poseHoldDuration: Duration = .milliseconds(200)
     /// Permissive floor for Vision's capture-quality score (no fixed universal cutoff) —
     /// better to accept a mediocre sample than stall the whole flow.
     private let qualityFloor: Float = 0.2
     /// Hold off accepting captures this long once the camera comes up, so the first
     /// samples aren't taken mid-blink. Detection still runs during this window.
-    private let initialCaptureDelay: Duration = .milliseconds(800)
+    private let initialCaptureDelay: Duration = .milliseconds(600)
     /// Enrollment wants a closer face than unlock's bystander cutoff while accommodating
     /// 16:9 sensor horizontal width behind `.resizeAspectFill` circular previews.
     private var enrollmentMinimumFaceWidth: Float {
@@ -290,10 +289,12 @@ final class OnboardingController {
 
     /// If a pose takes longer than this, matching bands widen by `EnrollmentPoseEvaluator.stallWidenFactor`
     /// so an unusual camera angle can't permanently strand the user.
-    private let stallTimeout: Duration = .seconds(6)
+    private let stallTimeout: Duration = .seconds(5)
 
-    private(set) var currentPoseIndex = 0
-    private(set) var capturedForCurrentPose = 0
+    private(set) var capturedPoses: Set<EnrollmentPose> = []
+    private var activeCapturingPose: EnrollmentPose? = nil
+    private var capturedForActivePose = 0
+
     private(set) var faceDetected = false
     private(set) var currentYaw: Float?
     private(set) var currentPitch: Float?
@@ -305,9 +306,6 @@ final class OnboardingController {
     private(set) var excessiveTurn: ExcessiveTurn?
     private(set) var enrollmentComplete = false
 
-    /// Sectors already captured — read by EnrollmentRingView to decide which
-    /// ticks are lit.
-    private(set) var capturedPoses: Set<EnrollmentPose> = []
     /// Bumped every time `.center` is captured; EnrollmentRingView observes
     /// this to trigger the whole-ring pulse (center has no sector of its
     /// own to light).
@@ -346,25 +344,33 @@ final class OnboardingController {
     /// Capture waits `poseHoldDuration` past this instant.
     private var poseHoldStartedAt: ContinuousClock.Instant?
 
+    /// Current target pose for sweep overlay and guidance hints.
     var currentPose: EnrollmentPose? {
-        EnrollmentPose(rawValue: currentPoseIndex)
+        if !capturedPoses.contains(.center) { return .center }
+        if let active = activeCapturingPose { return active }
+        let compassOrder: [EnrollmentPose] = [.top, .topRight, .right, .bottomRight, .bottom, .bottomLeft, .left, .topLeft]
+        return compassOrder.first { !capturedPoses.contains($0) }
     }
 
-    /// Copy shown under the camera: pose guidance, a closer-up prompt, or the
-    /// completion line.
+    /// Dynamic guidance matching iPhone Face ID: prompts center first, then guides
+    /// free-form circular movement, giving gentle hints for remaining sectors if needed.
     var enrollmentInstruction: String {
         if enrollmentComplete { return "Face captured" }
         if let excessiveTurn { return excessiveTurn.instruction }
         if isTooFar { return "Bring your face closer" }
-        return currentPose?.instruction ?? ""
+        if !capturedPoses.contains(.center) {
+            return "Look straight at the camera"
+        }
+        if capturedPoses.count >= 7 {
+            return currentPose?.instruction ?? "Move your head to complete the circle"
+        }
+        return "Move your head slowly to complete the circle"
     }
 
-    /// Live head direction, or `nil` when there's nothing to point at. Axes are normalized
-    /// against the current pose's relative thresholds, so `progress` hits 1 as the pose starts matching.
+    /// Continuous 360-degree head direction relative to neutral baseline, powering the live ring indicator.
     var headTurn: HeadTurn? {
-        guard step == .enroll, !enrollmentComplete, faceDetected, !isTooFar, excessiveTurn == nil,
-              let pose = currentPose else { return nil }
-        return poseEvaluator.headTurn(for: pose)
+        guard step == .enroll, !enrollmentComplete, faceDetected, !isTooFar, excessiveTurn == nil else { return nil }
+        return poseEvaluator.globalHeadTurn()
     }
 
     private enum EnrollFrameOutcome: Sendable {
@@ -375,7 +381,7 @@ final class OnboardingController {
 
     var overallEnrollmentProgress: Double {
         let total = Double(EnrollmentPose.allCases.count * samplesPerPose)
-        let done = Double(currentPoseIndex * samplesPerPose + capturedForCurrentPose)
+        let done = Double(capturedPoses.count * samplesPerPose + capturedForActivePose)
         return min(done / total, 1.0)
     }
 
@@ -509,9 +515,9 @@ final class OnboardingController {
         collectedSamples = []
         poseEvaluator = EnrollmentPoseEvaluator()
         nameError = nil
-        currentPoseIndex = 0
-        capturedForCurrentPose = 0
         capturedPoses = []
+        activeCapturingPose = nil
+        capturedForActivePose = 0
         matchStreak = 0
         outOfBandStreak = 0
         poseHoldStartedAt = nil
@@ -536,6 +542,8 @@ final class OnboardingController {
         matchStreak = 0
         outOfBandStreak = 0
         excessiveTurn = nil
+        activeCapturingPose = nil
+        capturedForActivePose = 0
         sweepWindow.present(for: self)
         Task { await camera.start() }
     }
@@ -738,22 +746,22 @@ final class OnboardingController {
             currentYaw = poseEvaluator.smoothedYaw
             currentPitch = poseEvaluator.smoothedPitch
             isTooFar = false
-            excessiveTurn = poseEvaluator.excessiveTurn(for: pose)
+            let targetPose = currentPose ?? .center
+            excessiveTurn = poseEvaluator.excessiveTurn(for: targetPose)
             guard excessiveTurn == nil else {
                 matchStreak = 0
                 outOfBandStreak = 0
                 poseHoldStartedAt = nil
                 return
             }
-            await processMatchedEnrollFrame(result, rawYaw: rawYaw, rawPitch: rawPitch, pose: pose)
+            await processMatchedEnrollFrame(result, rawYaw: rawYaw, rawPitch: rawPitch)
         }
     }
 
     private func processMatchedEnrollFrame(
         _ result: FaceRecognitionResult,
         rawYaw: Float,
-        rawPitch: Float,
-        pose: EnrollmentPose
+        rawPitch: Float
     ) async {
 
         // Detection above still ran; only capture is held back until settled.
@@ -768,17 +776,34 @@ final class OnboardingController {
         // Only a 5-point alignment is reliably canonical; a 2-point/padded-crop fallback
         // isn't accepted toward enrollment.
         let alignmentOK = result.alignmentTier == .fivePoint
+        guard qualityOK, alignmentOK, !isTooFar else {
+            matchStreak = 0
+            poseHoldStartedAt = nil
+            return
+        }
+
+        let uncaptured = Set(EnrollmentPose.allCases).subtracting(capturedPoses)
+        guard !uncaptured.isEmpty else { return }
+
         let widened = ContinuousClock.now - poseStartedAt > stallTimeout
-        let poseOK = poseEvaluator.matches(pose: pose, widened: widened)
-        guard qualityOK, alignmentOK, !isTooFar, poseOK else {
+        guard let matchedPose = poseEvaluator.bestMatchingPose(uncaptured: uncaptured, widened: widened) else {
             outOfBandStreak += 1
             if outOfBandStreak > maxOutOfBandGraceFrames {
                 matchStreak = 0
                 poseHoldStartedAt = nil
+                activeCapturingPose = nil
+                capturedForActivePose = 0
             }
             return
         }
         outOfBandStreak = 0
+
+        if activeCapturingPose != matchedPose {
+            activeCapturingPose = matchedPose
+            capturedForActivePose = 0
+            matchStreak = 0
+            poseHoldStartedAt = .now
+        }
 
         if poseHoldStartedAt == nil {
             poseHoldStartedAt = .now
@@ -789,31 +814,36 @@ final class OnboardingController {
         guard matchStreak >= requiredMatchStreak else { return }
         matchStreak = 0
 
-        if pose == .center {
+        if matchedPose == .center {
             poseEvaluator = poseEvaluator.recordingCenterSample(yaw: rawYaw, pitch: rawPitch)
         }
 
         collectedSamples.append(CollectedSample(
             embedding: result.embedding,
-            pose: pose,
+            pose: matchedPose,
             quality: result.quality,
             capturedAt: Date()
         ))
-        capturedForCurrentPose += 1
+        capturedForActivePose += 1
 
-        if capturedForCurrentPose >= samplesPerPose {
-            if pose == .center {
-                poseEvaluator = poseEvaluator.calibratingFromCenterSamples()
-                centerPulseTick += 1
-            } else {
-                capturedPoses.insert(pose)
-            }
-            currentPoseIndex += 1
-            capturedForCurrentPose = 0
+        if capturedForActivePose >= samplesPerPose {
+            capturedPoses.insert(matchedPose)
+            activeCapturingPose = nil
+            capturedForActivePose = 0
             outOfBandStreak = 0
             poseStartedAt = .now
             poseHoldStartedAt = nil
-            if currentPoseIndex >= EnrollmentPose.allCases.count {
+
+            if matchedPose == .center {
+                poseEvaluator = poseEvaluator.calibratingFromCenterSamples()
+                centerPulseTick += 1
+            }
+
+            // Apple Face ID-style haptic tick feedback on Force Touch trackpad
+            NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .default)
+
+            if capturedPoses.count >= EnrollmentPose.allCases.count {
+                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                 await finishEnrollment()
             }
         }
