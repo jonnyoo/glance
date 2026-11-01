@@ -20,12 +20,15 @@ protocol FaceEmbedder: Sendable {
     nonisolated var embeddingDimension: Int { get }
     /// Whether this embedder needs a canonically-aligned input (ArcFace) vs. tolerating a loose crop (Vision feature-print).
     nonisolated var requiresAlignment: Bool { get }
+    /// Whether this embedder has sufficient inter-person separation to authorize Mac unlock (true for ArcFace, false for Vision feature-print).
+    nonisolated var isUnlockCapable: Bool { get }
     nonisolated func embedding(for face: CGImage) throws -> [Float]
 }
 
 enum FaceEmbedderError: LocalizedError {
     case noObservation
     case unsupportedElementType
+    case corruptedObservationData
 
     var errorDescription: String? {
         switch self {
@@ -33,6 +36,8 @@ enum FaceEmbedderError: LocalizedError {
             return "Vision did not produce a feature print for this image."
         case .unsupportedElementType:
             return "Feature print used an unexpected element type."
+        case .corruptedObservationData:
+            return "Feature print data buffer had an unexpected byte length."
         }
     }
 }
@@ -43,6 +48,7 @@ struct VisionFeaturePrintEmbedder: FaceEmbedder {
     // Nominal hint only — `modelIdentifier` is the real discriminator `SecureFaceStore` relies on.
     nonisolated let embeddingDimension = 2048
     nonisolated let requiresAlignment = false
+    nonisolated let isUnlockCapable = false
 
     nonisolated func embedding(for face: CGImage) throws -> [Float] {
         let request = VNGenerateImageFeaturePrintRequest()
@@ -52,27 +58,41 @@ struct VisionFeaturePrintEmbedder: FaceEmbedder {
         guard let observation = request.results?.first as? VNFeaturePrintObservation else {
             throw FaceEmbedderError.noObservation
         }
-        return try Self.floatVector(from: observation)
+        return try Self.floatVector(
+            from: observation.data,
+            elementCount: observation.elementCount,
+            elementType: observation.elementType
+        )
     }
 
-    /// Decodes Vision's raw bytes + element type into `[Float]` so it can persist as plain JSON and be averaged.
-    nonisolated private static func floatVector(from observation: VNFeaturePrintObservation) throws -> [Float] {
-        let count = observation.elementCount
-        switch observation.elementType {
+    /// Decodes Vision's raw bytes + element type into `[Float]` via bounds-checked, alignment-safe byte copies.
+    nonisolated static func floatVector(
+        from data: Data,
+        elementCount count: Int,
+        elementType: VNElementType
+    ) throws -> [Float] {
+        guard count >= 0 else { throw FaceEmbedderError.corruptedObservationData }
+        switch elementType {
         case .float:
+            let byteCount = count * MemoryLayout<Float>.stride
+            guard data.count >= byteCount else { throw FaceEmbedderError.corruptedObservationData }
             var result = [Float](repeating: 0, count: count)
-            observation.data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
-                let buffer = raw.bindMemory(to: Float.self)
-                for i in 0..<count { result[i] = buffer[i] }
+            result.withUnsafeMutableBytes { dst in
+                if byteCount > 0 {
+                    _ = data.copyBytes(to: dst, count: byteCount)
+                }
             }
             return result
         case .double:
-            var result = [Float](repeating: 0, count: count)
-            observation.data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
-                let buffer = raw.bindMemory(to: Double.self)
-                for i in 0..<count { result[i] = Float(buffer[i]) }
+            let byteCount = count * MemoryLayout<Double>.stride
+            guard data.count >= byteCount else { throw FaceEmbedderError.corruptedObservationData }
+            var doubles = [Double](repeating: 0, count: count)
+            doubles.withUnsafeMutableBytes { dst in
+                if byteCount > 0 {
+                    _ = data.copyBytes(to: dst, count: byteCount)
+                }
             }
-            return result
+            return doubles.map(Float.init)
         default:
             throw FaceEmbedderError.unsupportedElementType
         }

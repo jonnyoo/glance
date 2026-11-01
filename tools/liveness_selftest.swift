@@ -379,9 +379,12 @@ private func generateStillLiveSequence(frameCount: Int, noiseStd: CGFloat, seed:
 
 @main
 struct LivenessSelfTest {
+    @MainActor
     static func main() {
         runGeometryTests()
         runDecisionModelTests()
+        runRollInvarianceTests()
+        runIdentitySwapResetTests()
         runAbstentionTests()
         print("\nAll liveness self-tests passed.")
     }
@@ -601,6 +604,155 @@ struct LivenessSelfTest {
             "FAIL: depthPoseLevel (\(LivenessTuning.default.depthPoseLevel)) is at or below 0.5, which is zero correlation — noise alone would confirm liveness."
         )
         print("PASS: the depth/pose gate sits above the zero-correlation midpoint.")
+    }
+
+    // MARK: - 2D Roll Spoofing Defense
+
+    private static func rotate2D(_ point: CGPoint, by angle: CGFloat) -> CGPoint {
+        let c = cos(angle), s = sin(angle)
+        return CGPoint(x: point.x * c - point.y * s, y: point.x * s + point.y * c)
+    }
+
+    private static func runRollInvarianceTests() {
+        print("")
+        let openEye: [CGPoint] = [
+            CGPoint(x: -10, y: 0),
+            CGPoint(x: -5, y: 3),
+            CGPoint(x: 0, y: 3.5),
+            CGPoint(x: 5, y: 3),
+            CGPoint(x: 10, y: 0),
+            CGPoint(x: 5, y: -3),
+            CGPoint(x: 0, y: -3.5),
+            CGPoint(x: -5, y: -3),
+        ]
+
+        // 1. Rocking a static photo in 2D roll (28° -> 0° -> 25°) MUST NOT synthesize a blink.
+        let rollAnglesDegrees: [CGFloat] = [28, 26, 14, 0, 12, 25, 25, 24]
+        let rolledPhotoFrames: [LivenessFrame] = rollAnglesDegrees.enumerated().map { idx, deg in
+            let rad = deg * .pi / 180
+            let rotated = openEye.map { rotate2D($0, by: rad) }
+            let ear = LandmarkGeometry.contourAspectRatio(points: rotated)
+            return LivenessFrame(
+                timestamp: Date(timeIntervalSince1970: Double(idx) * 0.05),
+                landmarks: [], interocularDistance: 140, yaw: 0,
+                leftEyeAspectRatio: ear, rightEyeAspectRatio: ear,
+                noseOffsetRatio: 0, hasReliableLandmarks: true, deviceOverlapFraction: nil
+            )
+        }
+        let rolledBlink = LivenessScoring.blinkDynamics(rolledPhotoFrames)
+        precondition(
+            rolledBlink.confidence == 0,
+            "FAIL: 2D roll on a static photo synthesized a blink reading (\(rolledBlink))."
+        )
+
+        // 2. Real eyelid closure while head is tilted 22° MUST still fire `.blink`.
+        let eyelidScales: [CGFloat] = [1.0, 1.0, 0.25, 0.20, 0.90, 1.0]
+        let realBlinkFrames: [LivenessFrame] = eyelidScales.enumerated().map { idx, openScale in
+            let tiltedRad: CGFloat = 22 * .pi / 180
+            let deformed = openEye.map { rotate2D(CGPoint(x: $0.x, y: $0.y * openScale), by: tiltedRad) }
+            let ear = LandmarkGeometry.contourAspectRatio(points: deformed)
+            return LivenessFrame(
+                timestamp: Date(timeIntervalSince1970: Double(idx) * 0.05),
+                landmarks: [], interocularDistance: 140, yaw: 0,
+                leftEyeAspectRatio: ear, rightEyeAspectRatio: ear,
+                noseOffsetRatio: 0, hasReliableLandmarks: true, deviceOverlapFraction: nil
+            )
+        }
+        let realBlink = LivenessScoring.blinkDynamics(realBlinkFrames)
+        precondition(
+            realBlink.confidence == 1 && realBlink.level == 1,
+            "FAIL: real blink on a tilted face failed to fire (\(realBlink))."
+        )
+        print("PASS: contourAspectRatio is invariant to 2D photo roll while preserving real blinks.")
+
+        // 3. Rocking a flat symmetrical photo in 2D roll (-20°...+20°) MUST NOT leak sin(roll) into noseOffsetRatio.
+        let baseEyeLeft = CGPoint(x: -70, y: 0)
+        let baseEyeRight = CGPoint(x: 70, y: 0)
+        let baseNose = CGPoint(x: 0, y: 40) // 40px below eye midline in top-left/y-down space
+        let rollSweep: [CGFloat] = [-20, -12, -4, 4, 12, 20].map { $0 * .pi / 180 }
+        let rolledDepthFrames: [LivenessFrame] = rollSweep.enumerated().map { idx, roll in
+            let eL = rotate2D(baseEyeLeft, by: roll)
+            let eR = rotate2D(baseEyeRight, by: roll)
+            let nC = rotate2D(baseNose, by: roll)
+            let offset = LandmarkGeometry.eyeAlignedNoseOffsetRatio(eyeA: eL, eyeB: eR, noseCenter: nC)
+            return LivenessFrame(
+                timestamp: Date(timeIntervalSince1970: Double(idx) * 0.05),
+                landmarks: [], interocularDistance: 140,
+                // Worst case: Vision mis-attributes some 2D roll to yaw.
+                yaw: Float(roll),
+                leftEyeAspectRatio: 0.35, rightEyeAspectRatio: 0.35,
+                noseOffsetRatio: offset, hasReliableLandmarks: true, deviceOverlapFraction: nil
+            )
+        }
+        for frame in rolledDepthFrames {
+            precondition(
+                abs(frame.noseOffsetRatio ?? 1) < 1e-6,
+                "FAIL: flat rotated photo leaked non-zero noseOffsetRatio (\(String(describing: frame.noseOffsetRatio)))."
+            )
+        }
+        let spoofDepth = LivenessScoring.poseDepthConsistency(rolledDepthFrames)
+        precondition(
+            spoofDepth.confidence == 0 || spoofDepth.level < LivenessTuning.default.depthPoseLevel,
+            "FAIL: 2D roll on a flat photo reached depthPoseLevel (\(spoofDepth))."
+        )
+        print("PASS: eyeAlignedNoseOffsetRatio stays zero across 2D roll and blocks roll-spoofed depth/pose.")
+    }
+
+    // MARK: - 2-Stage Identity Swap Defense
+
+    @MainActor
+    private static func runIdentitySwapResetTests() {
+        let analyzer = LivenessAnalyzer()
+
+        // Heavy mode: attacker confirms liveness with own 3D face, then swaps in a static photo of owner.
+        analyzer.modeProvider = { .heavy }
+        for frame in generateLiveSequence(frameCount: frameCount, noiseStd: 0.2, seed: 7) {
+            _ = analyzer.observe(frame)
+        }
+        precondition(
+            analyzer.lastSnapshot.decision.isConfirmed,
+            "FAIL: live sequence should confirm Heavy mode before identity swap."
+        )
+        analyzer.resetConfirmations()
+        let staticOwnerPhoto = makeCueFrame(at: 5.0, glare: skinGlare)
+        let afterHeavySwap = analyzer.observe(staticOwnerPhoto)
+        precondition(
+            afterHeavySwap.decision == .pending,
+            "FAIL: Heavy mode kept confirmation across identity swap (\(afterHeavySwap.decision))."
+        )
+
+        // Light mode: attacker shows own clean face for 4 frames (auto-confirms), then flashes phone photo for 1 frame.
+        analyzer.reset()
+        analyzer.modeProvider = { .light }
+        for i in 0..<4 {
+            _ = analyzer.observe(makeCueFrame(at: Double(i) * 0.05, glare: skinGlare))
+        }
+        precondition(
+            analyzer.lastSnapshot.decision.isConfirmed,
+            "FAIL: Light mode should auto-confirm after 4 frames."
+        )
+        analyzer.resetConfirmations()
+        let firstPhotoFrame = analyzer.observe(makeCueFrame(at: 1.0, glare: screenGlare))
+        precondition(
+            firstPhotoFrame.decision == .pending,
+            "FAIL: Light mode auto-confirmed on frame 1 after identity swap (\(firstPhotoFrame.decision))."
+        )
+
+        // Deny cues accumulated during unmatched frames MUST survive `resetConfirmations()` so flickering can't clear spoof tells.
+        analyzer.reset()
+        analyzer.modeProvider = { .light }
+        _ = analyzer.observeUnmatched(makeCueFrame(at: 0.0, glare: screenGlare))
+        _ = analyzer.observeUnmatched(makeCueFrame(at: 0.05, glare: screenGlare))
+        precondition(
+            !analyzer.lastSnapshot.decision.isConfirmed,
+            "FAIL: unmatched frames must never advance Light mode toward auto-confirmation."
+        )
+        analyzer.resetConfirmations()
+        let thirdGlareFrame = analyzer.observe(makeCueFrame(at: 0.10, glare: screenGlare))
+        guard case .denied(.glossGlare) = thirdGlareFrame.decision else {
+            fatalError("FAIL: deny frame count was lost across resetConfirmations, got \(thirdGlareFrame.decision).")
+        }
+        print("PASS: resetConfirmations blocks Heavy & Light 2-stage swaps while preserving accumulated deny counts.")
     }
 
     // MARK: - Abstention

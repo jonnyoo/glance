@@ -32,11 +32,10 @@ final class CameraManager: NSObject {
     private(set) var errorMessage: String?
 
     /// Exposed read-only so `CameraPreviewView` can attach a preview layer to the same session.
-    let session = AVCaptureSession()
-    private let videoOutput = AVCaptureVideoDataOutput()
-    private let sessionQueue = DispatchQueue(label: "com.jonathan.glance.camera.session")
+    var session: AVCaptureSession { sessionWorker.session }
+    private let sessionWorker = SessionWorker()
 
-    /// Handed to the delegate outside the actor; only ever touched via `Task { @MainActor ... }`.
+    /// Handed to the delegate outside the actor; coalesces frame delivery back onto `@MainActor`.
     private let framePublisher = FramePublisher()
 
     override init() {
@@ -57,31 +56,39 @@ final class CameraManager: NSObject {
         }
 
         guard permission == .granted else {
+            let bundleID = Bundle.main.bundleIdentifier ?? "com.salimmous.glance"
             errorMessage = "Camera access not granted (status: \(describe(status))). " +
                 (status == .restricted
                     ? "macOS reports this as *restricted* — not a simple user denial. This usually means Screen Time content restrictions or an MDM/profile policy is blocking camera access for this app; toggling it in System Settings > Privacy & Security > Camera won't help until that restriction is lifted."
-                    : "Enable it in System Settings > Privacy & Security > Camera. If glance isn't listed there, quit the app, run `tccutil reset Camera com.jonathan.glance` in Terminal, then relaunch so macOS asks again.")
+                    : "Enable it in System Settings > Privacy & Security > Camera. If glance isn't listed there, quit the app, run `tccutil reset Camera \(bundleID)` in Terminal, then relaunch so macOS asks again.")
+            return
+        }
+
+        guard let device = CameraDeviceCatalog.resolvedDevice() else {
+            errorMessage = "No camera device found."
+            isRunning = false
             return
         }
 
         errorMessage = nil
-        configureSessionIfNeeded()
-        reconcileDeviceIfNeeded()
-
-        sessionQueue.async { [session] in
-            if !session.isRunning {
-                session.startRunning()
+        let worker = sessionWorker
+        let publisher = framePublisher
+        let startError: String? = await withCheckedContinuation { continuation in
+            worker.start(device: device, delegate: publisher) { error in
+                continuation.resume(returning: error)
             }
         }
-        isRunning = true
+        if let startError {
+            errorMessage = startError
+            isRunning = false
+        } else {
+            isRunning = true
+        }
     }
 
     func stop() {
-        sessionQueue.async { [session] in
-            if session.isRunning {
-                session.stopRunning()
-            }
-        }
+        framePublisher.clearPending()
+        sessionWorker.stop()
         isRunning = false
         currentFrame = nil
     }
@@ -96,71 +103,107 @@ final class CameraManager: NSObject {
         }
     }
 
-    private var isConfigured = false
-    private var currentInput: AVCaptureDeviceInput?
-
-    private func configureSessionIfNeeded() {
-        guard !isConfigured else { return }
-        isConfigured = true
-
-        session.beginConfiguration()
-        // `.high` doesn't guarantee the sensor's max resolution; macOS (unlike iOS) doesn't fight an explicitly-set
-        // `activeFormat`, so leaving this at `.high` and locking the format separately below is sufficient.
-        session.sessionPreset = .high
-
-        videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
-        videoOutput.alwaysDiscardsLateVideoFrames = true
-        videoOutput.setSampleBufferDelegate(framePublisher, queue: sessionQueue)
-        if session.canAddOutput(videoOutput) {
-            session.addOutput(videoOutput)
-        }
-
-        session.commitConfiguration()
-    }
-
-    /// Called on every `start()` so a camera preference change in Settings takes effect without an app restart.
-    private func reconcileDeviceIfNeeded() {
-        guard let device = CameraDeviceCatalog.resolvedDevice() else {
-            errorMessage = "No camera device found."
-            return
-        }
-        guard device.uniqueID != currentInput?.device.uniqueID else { return }
-
-        session.beginConfiguration()
-        if let currentInput {
-            session.removeInput(currentInput)
-        }
-        if let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) {
-            session.addInput(input)
-            currentInput = input
-            selectHighestResolutionFormat(for: device)
-        } else {
-            currentInput = nil
-            errorMessage = "No camera device found."
-        }
-        session.commitConfiguration()
-    }
-
-    /// Highest resolution regardless of fps — Vision still works from the downscaled frame; this only affects
-    /// what `CameraFrame.source` (and therefore `renderCrop`) has to work with.
-    private func selectHighestResolutionFormat(for device: AVCaptureDevice) {
-        let best = device.formats.max { lhs, rhs in
-            let l = CMVideoFormatDescriptionGetDimensions(lhs.formatDescription)
-            let r = CMVideoFormatDescriptionGetDimensions(rhs.formatDescription)
-            return Int(l.width) * Int(l.height) < Int(r.width) * Int(r.height)
-        }
-        guard let best else { return }
-        do {
-            try device.lockForConfiguration()
-            device.activeFormat = best
-            device.unlockForConfiguration()
-        } catch {
-            errorMessage = "Couldn't select the camera's highest-resolution format: \(error.localizedDescription)"
-        }
-    }
-
     fileprivate func publish(frame: CameraFrame) {
+        guard isRunning else { return }
         currentFrame = frame
+    }
+
+    /// Serializes all `AVCaptureSession` configuration, device switching, format selection, and
+    /// `startRunning()`/`stopRunning()` calls on `queue` so they never race `@MainActor`.
+    private nonisolated final class SessionWorker: @unchecked Sendable {
+        let session = AVCaptureSession()
+        private let videoOutput = AVCaptureVideoDataOutput()
+        private let queue = DispatchQueue(label: "\(Bundle.main.bundleIdentifier ?? "com.salimmous.glance").camera.session")
+        private var isConfigured = false
+        private var currentInput: AVCaptureDeviceInput?
+
+        func start(
+            device: AVCaptureDevice,
+            delegate: AVCaptureVideoDataOutputSampleBufferDelegate,
+            completion: @escaping @Sendable (String?) -> Void
+        ) {
+            queue.async { [self] in
+                configureSessionIfNeeded(delegate: delegate)
+                if let error = reconcileDeviceIfNeeded(device) {
+                    completion(error)
+                    return
+                }
+                if !session.isRunning {
+                    session.startRunning()
+                }
+                completion(nil)
+            }
+        }
+
+        func stop() {
+            queue.async { [self] in
+                if session.isRunning {
+                    session.stopRunning()
+                }
+            }
+        }
+
+        private func configureSessionIfNeeded(delegate: AVCaptureVideoDataOutputSampleBufferDelegate) {
+            guard !isConfigured else { return }
+            isConfigured = true
+
+            session.beginConfiguration()
+            // `.high` doesn't guarantee the sensor's max resolution; macOS (unlike iOS) doesn't fight an explicitly-set
+            // `activeFormat`, so leaving this at `.high` and locking the format separately below is sufficient.
+            session.sessionPreset = .high
+
+            videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+            videoOutput.alwaysDiscardsLateVideoFrames = true
+            videoOutput.setSampleBufferDelegate(delegate, queue: queue)
+            if session.canAddOutput(videoOutput) {
+                session.addOutput(videoOutput)
+            }
+
+            session.commitConfiguration()
+        }
+
+        private func reconcileDeviceIfNeeded(_ device: AVCaptureDevice) -> String? {
+            guard device.uniqueID != currentInput?.device.uniqueID else { return nil }
+
+            var configError: String?
+            session.beginConfiguration()
+            if let currentInput {
+                session.removeInput(currentInput)
+            }
+            if let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) {
+                session.addInput(input)
+                currentInput = input
+                selectBestStreamingFormat(for: device)
+            } else {
+                currentInput = nil
+                configError = "No camera device found."
+            }
+            session.commitConfiguration()
+            return configError
+        }
+
+        /// Picks the highest-resolution format (up to 4K) that still sustains video frame rates (>= 24fps)
+        /// so blink and 3D motion liveness cues aren't starved by a 5fps still-photo mode.
+        private func selectBestStreamingFormat(for device: AVCaptureDevice) {
+            let maxPixels = 3840 * 2160
+            let streamingCandidates = device.formats.filter { format in
+                let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                let pixels = Int(dims.width) * Int(dims.height)
+                let maxFPS = format.videoSupportedFrameRateRanges.map(\.maxFrameRate).max() ?? 0
+                return maxFPS >= 24.0 && pixels <= maxPixels
+            }
+            let pool = streamingCandidates.isEmpty ? device.formats : streamingCandidates
+            let best = pool.max { lhs, rhs in
+                let l = CMVideoFormatDescriptionGetDimensions(lhs.formatDescription)
+                let r = CMVideoFormatDescriptionGetDimensions(rhs.formatDescription)
+                return Int(l.width) * Int(l.height) < Int(r.width) * Int(r.height)
+            }
+            guard let best else { return }
+            if (try? device.lockForConfiguration()) != nil {
+                device.activeFormat = best
+                device.unlockForConfiguration()
+            }
+        }
     }
 
     /// Renders a native-resolution crop of `imageRect` from `frame.source`, for spoof-cue extraction which
@@ -201,14 +244,43 @@ final class CameraManager: NSObject {
     /// on this `@MainActor` class would otherwise be main-actor-isolated, which the `nonisolated renderCrop` can't touch.
     private nonisolated static let cropRenderContext = CIContext()
 
-    /// Sample-buffer callbacks arrive on `sessionQueue`, off the main actor; this delegate converts there, then hops back.
-    private final class FramePublisher: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
-        weak var owner: CameraManager?
+    /// Sample-buffer callbacks arrive on `SessionWorker.queue`, off the main actor; this delegate converts there
+    /// and coalesces delivery so at most one `CVPixelBuffer`-backed `CameraFrame` is ever queued for `@MainActor`.
+    private nonisolated final class FramePublisher: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
+        @MainActor weak var owner: CameraManager?
         private let ciContext = CIContext()
         /// Detection only needs a modest resolution; the live preview renders from the capture session directly and
         /// is unaffected. The undownscaled `source` is kept alongside for callers needing native pixels (`renderCrop`).
         private let maxLongEdge: CGFloat = 640
         private var nextFrameID: UInt64 = 0
+
+        private let pendingLock = NSLock()
+        private var pendingFrame: CameraFrame?
+        private var isDeliveryScheduled = false
+
+        func clearPending() {
+            pendingLock.lock()
+            pendingFrame = nil
+            pendingLock.unlock()
+        }
+
+        private func enqueue(_ frame: CameraFrame) -> Bool {
+            pendingLock.lock()
+            defer { pendingLock.unlock() }
+            pendingFrame = frame
+            guard !isDeliveryScheduled else { return false }
+            isDeliveryScheduled = true
+            return true
+        }
+
+        private func takePending() -> CameraFrame? {
+            pendingLock.lock()
+            defer { pendingLock.unlock() }
+            let latest = pendingFrame
+            pendingFrame = nil
+            isDeliveryScheduled = false
+            return latest
+        }
 
         func captureOutput(
             _ output: AVCaptureOutput,
@@ -234,8 +306,12 @@ final class CameraManager: NSObject {
                 sourceSize: sourceExtent.size
             )
 
-            Task { @MainActor [weak owner] in
-                owner?.publish(frame: frame)
+            guard enqueue(frame) else { return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let latest = self.takePending() {
+                    self.owner?.publish(frame: latest)
+                }
             }
         }
     }

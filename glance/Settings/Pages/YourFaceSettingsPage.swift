@@ -94,14 +94,20 @@ struct YourFaceSettingsPage: View {
     // MARK: - Locked
 
     private var lockedState: some View {
-        SettingsEmptyStateView(
-            icon: "lock.fill",
-            message: "Session locked",
-            buttonTitle: isUnlocking ? "Authenticating…" : "Unlock session",
-            isButtonEnabled: !isUnlocking,
-            caption: sessionError,
-            action: unlock
-        )
+        VStack(spacing: SettingsMetrics.rowSpacing) {
+            SettingsEmptyStateView(
+                icon: "lock.fill",
+                message: "Session locked",
+                buttonTitle: isUnlocking ? "Authenticating…" : "Unlock session",
+                isButtonEnabled: !isUnlocking,
+                caption: sessionError,
+                action: unlock
+            )
+
+            if sessionError != nil || SecureCredentialManager.isSessionKeyMissingWithOrphanedData {
+                HoldToConfirmButton(title: "Reset stored data", action: resetUnreadableData)
+            }
+        }
     }
 
     // MARK: - Unreadable
@@ -122,8 +128,15 @@ struct YourFaceSettingsPage: View {
             SettingsCaption(text: store.loadFailure ?? "The stored data couldn't be decrypted with this session key.")
                 .multilineTextAlignment(.center)
 
-            SettingsCaption(text: "Nothing has been deleted, and Glance will not overwrite it — enrolling is blocked until this resolves. Quit and reopen Glance to retry. If it keeps failing, the session key no longer matches this data: remove the stored password on the Password tab to clear both, then set up again.")
+            SettingsCaption(text: "Nothing has been deleted, and Glance will not overwrite it — enrolling is blocked until this resolves. Quit and reopen Glance to retry. If it keeps failing, the session key no longer matches this data: hold \"Reset stored data\" below to clear both, then set up again.")
                 .multilineTextAlignment(.center)
+
+            HoldToConfirmButton(title: "Reset stored data", action: resetUnreadableData)
+
+            if let writeError {
+                SettingsCaption(text: writeError)
+                    .multilineTextAlignment(.center)
+            }
         }
         .frame(maxWidth: .infinity, minHeight: SettingsMetrics.emptyStateMinHeight)
     }
@@ -245,6 +258,20 @@ struct YourFaceSettingsPage: View {
             writeError = error.localizedDescription
         }
         identityPendingDeletion = nil
+    }
+
+    private func resetUnreadableData() {
+        do {
+            try SecureCredentialManager.deletePassword()
+            store.deleteAll()
+            writeError = nil
+            sessionError = nil
+            environment.pocController.sessionError = nil
+            environment.pocController.refreshCredentialStatus()
+        } catch {
+            writeError = "Couldn't reset: \(error.localizedDescription)"
+            sessionError = writeError
+        }
     }
 
     private func unlock() {

@@ -75,14 +75,20 @@ struct PasswordSettingsPage: View {
     // MARK: - Locked
 
     private var lockedState: some View {
-        SettingsEmptyStateView(
-            icon: "lock.fill",
-            message: "Session locked",
-            buttonTitle: isUnlocking ? "Authenticating…" : "Unlock session",
-            isButtonEnabled: !isUnlocking,
-            caption: sessionError,
-            action: unlock
-        )
+        VStack(spacing: SettingsMetrics.rowSpacing) {
+            SettingsEmptyStateView(
+                icon: "lock.fill",
+                message: "Session locked",
+                buttonTitle: isUnlocking ? "Authenticating…" : "Unlock session",
+                isButtonEnabled: !isUnlocking,
+                caption: sessionError,
+                action: unlock
+            )
+
+            if sessionError != nil || SecureCredentialManager.isSessionKeyMissingWithOrphanedData {
+                HoldToConfirmButton(title: "Reset stored data", action: removePassword)
+            }
+        }
     }
 
     // MARK: - Unlocked
@@ -144,17 +150,19 @@ struct PasswordSettingsPage: View {
         }
     }
 
-    /// Face samples must be deleted before the password/session key —
-    /// `deletePassword()` clears the cached session key, and deleting the
-    /// face store requires an unlocked session.
+    /// Deletes Keychain items first so a Keychain error never wipes enrolled faces while leaving credentials behind;
+    /// `FaceEnrollmentStore.deleteAll()` removes the encrypted file directly and works whether locked or unlocked.
     private func removePassword() {
         do {
-            FaceEnrollmentStore.shared.deleteAll()
             try SecureCredentialManager.deletePassword()
+            FaceEnrollmentStore.shared.deleteAll()
+            sessionError = nil
+            pocController.sessionError = nil
             pocController.refreshCredentialStatus()
             statusMessage = "Password and face enrollment removed."
         } catch {
             statusMessage = "Couldn't remove: \(error.localizedDescription)"
+            sessionError = statusMessage
         }
     }
 }

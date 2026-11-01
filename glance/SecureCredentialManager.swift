@@ -29,7 +29,7 @@ enum SecureCredentialError: LocalizedError {
         case .decryptionFailed:
             return "Decryption failed. The stored credential may be corrupted."
         case .sessionKeyUnavailable:
-            return "The session key is missing, but encrypted data still exists that only it could read. Nothing has been deleted. Remove the stored password on the Password tab to clear both and start fresh."
+            return "The session key is missing, but encrypted data still exists that only it could read. Nothing has been deleted. Hold \"Reset stored data\" below to clear both and start fresh."
         }
     }
 }
@@ -38,7 +38,7 @@ extension Notification.Name {
     /// Fires whenever the cached session key changes, so anything encrypted under it (e.g. `FaceEnrollmentStore`) can reload
     /// itself instead of relying on each call site to remember to — a past bug had the sidebar's unlock forget this, leaving
     /// face unlock silently running on stale pre-unlock data.
-    static let secureCredentialSessionDidChange = Notification.Name("SecureCredentialManager.sessionDidChange")
+    nonisolated static let secureCredentialSessionDidChange = Notification.Name("SecureCredentialManager.sessionDidChange")
 }
 
 enum SecureCredentialManager {
@@ -154,6 +154,11 @@ enum SecureCredentialManager {
         readBackContext.localizedReason = reason
         let data = try KeychainManager.read(account: sessionKeyAccount, context: readBackContext)
         setCachedKey(SymmetricKey(data: data))
+    }
+
+    /// True when encrypted data exists on disk or in Keychain, yet the session key that wraps it is missing from Keychain.
+    nonisolated static var isSessionKeyMissingWithOrphanedData: Bool {
+        !KeychainManager.exists(account: sessionKeyAccount) && hasSessionEncryptedData
     }
 
     /// Checked without needing the key itself, so this stays answerable precisely when the key can't be read.

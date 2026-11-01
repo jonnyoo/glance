@@ -38,6 +38,32 @@ final class LivenessAnalyzer {
         lastGeometry = .empty
     }
 
+    /// Clears cross-frame landmark history and positive confirmation state when a face disappears
+    /// or switches identity, while keeping any accumulated `.deny` tells across the scan.
+    func resetConfirmations() {
+        frames.removeAll()
+        lastGeometry = .empty
+        evaluator.mode = modeProvider()
+        evaluator.tuning = tuningProvider()
+        evaluator.enabledCues = enabledCuesProvider()
+        evaluator.resetConfirmations()
+        lastSnapshot = evaluator.observeDenyOnly([:])
+    }
+
+    /// Evaluates per-frame `.deny` cues (glare, device bezel) on an unmatched face without
+    /// appending its landmarks to the confirmation window or advancing Light-mode auto-confirm.
+    @discardableResult
+    func observeUnmatched(_ frame: LivenessFrame) -> LivenessSnapshot {
+        evaluator.mode = modeProvider()
+        evaluator.tuning = tuningProvider()
+        evaluator.enabledCues = enabledCuesProvider()
+
+        let readings = LivenessCues.readings(window: [frame], geometry: .empty)
+        let snapshot = evaluator.observeDenyOnly(readings)
+        lastSnapshot = snapshot
+        return snapshot
+    }
+
     /// Call once per frame with a detected face, regardless of whether it matched an identity,
     /// so liveness stays an independent gate. The window is time-pruned (~2s) but the evaluator's
     /// fire counts are not — they accumulate across the whole scan, so a spoof tell can't be waited out.

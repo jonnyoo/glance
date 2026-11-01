@@ -150,14 +150,16 @@ debug section should appear in the sidebar.
 
 1. Clone repository:
   ```bash
-   git clone https://github.com/jonnyoo/glance.git
+   git clone https://github.com/salimmous/glance.git
    cd glance
   ```
 2. Open in Xcode:
   ```bash
    open glance.xcodeproj
   ```
-3. Run the project:
+3. Configure code signing in Xcode:
+  - Select the `glance` target → **Signing & Capabilities** and choose your Apple ID / Development Team (required for Keychain and Touch ID entitlements).
+4. Run the project:
   - Click `run` or press `Cmd + R`.
 
 

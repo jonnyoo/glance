@@ -54,7 +54,16 @@ final class PreviewHostView: NSView {
     func updateFaceBoxes(_ faces: [DetectedFace]) {
         boxLayers.forEach { $0.removeFromSuperlayer() }
         boxLayers = faces.map { face in
-            let rect = previewLayer.layerRectConverted(fromMetadataOutputRect: face.normalizedBoundingBox)
+            // Vision's `normalizedBoundingBox` uses a bottom-left origin (y up), while
+            // `layerRectConverted(fromMetadataOutputRect:)` expects AVFoundation metadata space (top-left origin, y down).
+            let box = face.normalizedBoundingBox
+            let metadataRect = CGRect(
+                x: box.origin.x,
+                y: 1 - box.origin.y - box.height,
+                width: box.width,
+                height: box.height
+            )
+            let rect = previewLayer.layerRectConverted(fromMetadataOutputRect: metadataRect)
             let shape = CAShapeLayer()
             shape.path = CGPath(rect: rect, transform: nil)
             shape.strokeColor = NSColor.systemGreen.cgColor

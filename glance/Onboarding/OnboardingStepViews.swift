@@ -235,7 +235,6 @@ struct SelectCameraStepView: View {
         .background(GlanceTheme.panel)
         .onAppear {
             controller.refreshCameraDevices()
-            controller.applyDisplayPinForCameraSelection()
         }
     }
 }

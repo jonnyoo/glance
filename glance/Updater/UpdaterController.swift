@@ -44,8 +44,7 @@ final class UpdaterController {
         // `Task { @MainActor in }` since the KVO closure itself carries no actor isolation the compiler can see.
         canCheckForUpdatesObservation = controller.updater.observe(
             \.canCheckForUpdates, options: [.initial, .new]
-        ) { updater, _ in
-            // `[weak self]` captured on the Task's closure, not the outer KVO one — Swift 6 flags the latter as unsafe.
+        ) { [weak self] updater, _ in
             let value = updater.canCheckForUpdates
             Task { @MainActor [weak self] in
                 self?.canCheckForUpdates = value
@@ -54,8 +53,16 @@ final class UpdaterController {
     }
 
     /// Safe to call even with a placeholder `SUPublicEDKey` — `SPUStandardUpdaterController` logs and alerts on a misconfigured
-    /// Sparkle setup itself rather than throwing.
+    /// Sparkle setup itself rather than throwing. Skips starting Sparkle on forked bundle identifiers while `SUFeedURL` still
+    /// points at upstream `tryglance.app`, preventing cross-origin update checks or Sparkle misconfiguration alerts.
     func start() {
+        let bundleID = Bundle.main.bundleIdentifier
+        let feedURL = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String ?? ""
+        guard !feedURL.isEmpty,
+              !(bundleID != "com.jonathan.glance" && feedURL.contains("tryglance.app"))
+        else {
+            return
+        }
         controller.startUpdater()
     }
 
@@ -83,9 +90,17 @@ private final class UpdatePresentationDelegate: NSObject, SPUStandardUserDriverD
         beginPresenting()
     }
 
-    /// Fires for every way an update session can end (dismissed, skipped, errored, installed) — the one place to clear the flag.
+    /// Fires for every way an update session can end (dismissed, skipped, errored, installed) — the one place to clear the flag,
+    /// and to drop the Dock icon back to `.accessory` once Sparkle's own window finishes closing if Settings isn't open.
     func standardUserDriverWillFinishUpdateSession() {
         isPresentingUpdateUI = false
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isPresentingUpdateUI else { return }
+            let stillOpen = NSApp.windows.contains { $0.canBecomeMain && $0.isVisible }
+            if !stillOpen {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        }
     }
 
     private func beginPresenting() {
