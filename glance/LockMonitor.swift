@@ -47,6 +47,7 @@ final class LockMonitor {
     }
 
     deinit {
+        returnWatchTimer?.invalidate()
         let distributed = DistributedNotificationCenter.default()
         for observer in distributedObservers {
             distributed.removeObserver(observer)
@@ -73,6 +74,7 @@ final class LockMonitor {
             queue: .main
         ) { [weak self] _ in
             self?.isScreenLocked = false
+            self?.stopReturnWatch()
             self?.record(.screenUnlocked)
         })
         // Observing the key press that dismissed the screensaver isn't possible — Secure Event Input suppresses keyboard taps
@@ -82,7 +84,17 @@ final class LockMonitor {
             object: nil,
             queue: .main
         ) { [weak self] _ in
+            self?.stopReturnWatch()
             self?.record(.wake)
+        })
+        // When the screensaver locks the screen, `didstop` only arrives after the password is accepted, so nothing fires when the
+        // user comes back. Watch HID idle time instead (readable despite Secure Event Input) while the screensaver runs.
+        distributedObservers.append(distributed.addObserver(
+            forName: Notification.Name("com.apple.screensaver.didstart"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.startReturnWatch()
         })
 
         let workspace = NSWorkspace.shared.notificationCenter
@@ -115,6 +127,31 @@ final class LockMonitor {
         isSleeping = false
         wakeEventCount += 1
         record(.wake)
+    }
+
+    private var returnWatchTimer: Timer?
+    private var lastIdleSeconds: Double = 0
+
+    private func startReturnWatch() {
+        stopReturnWatch()
+        lastIdleSeconds = 0
+        returnWatchTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.checkUserReturned()
+        }
+    }
+
+    private func stopReturnWatch() {
+        returnWatchTimer?.invalidate()
+        returnWatchTimer = nil
+    }
+
+    private func checkUserReturned() {
+        let idle = CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: CGEventType(rawValue: ~0)!)
+        // Idle dropping back near zero after a real absence = mouse moved or key pressed while the screensaver was up.
+        if lastIdleSeconds >= 3, idle < 1 {
+            recordWake()
+        }
+        lastIdleSeconds = idle
     }
 
     private func record(_ kind: LockEventKind) {
