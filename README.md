@@ -17,7 +17,7 @@
 Glance brings the FaceID-like experience of your iPhone to a Mac near you. Unlock your Mac with a glance — no typing, no reaching for the TouchID key. Everything runs on-device using Apple's Vision
 and Core ML frameworks, so your face data and your Mac password never touch the internet. The UI is built into your Macbook's notch with fluid dynamic island like animations.
 
-> **Personal fork of [Glance](https://github.com/jonnyoo/glance) by [@jonnyoo](https://github.com/jonnyoo).** All credit for the app, its design and its face-recognition pipeline belongs to the original author. The one change here: the unlock confirmation turns **green** once your face is approved, so blue still means scanning and green means approved. The idle face and failure animation are untouched.
+> **Personal fork of [Glance](https://github.com/jonnyoo/glance) by [@jonnyoo](https://github.com/jonnyoo).** All credit for the app, its design and its face-recognition pipeline belongs to the original author. This fork maintained by **Aayush Ate** — the only change is the green unlock confirmation: once your face is approved it turns **green**; blue still means scanning and green means approved. The idle face and failure animation are untouched.
 
 
 https://github.com/user-attachments/assets/77438826-80a9-4ab2-9fc3-42407a2d0adb
