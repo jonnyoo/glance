@@ -7,7 +7,7 @@
 //  Known limitation: LivenessAnalyzer defeats a photo but not a replayed video (real non-rigid motion looks live) — a successful spoof types the real macOS password.
 //
 
-import Foundation
+import AppKit
 import CoreGraphics
 import Observation
 
@@ -64,12 +64,38 @@ final class FaceUnlockCoordinator {
     /// Reads the space key on the lock screen for the "On space" trigger; only runs while locked + opted in.
     private let spaceKeyMonitor = SpaceKeyMonitor()
 
+    /// Flips `isEnabled` from anywhere while logged in — see `GlanceSettings.faceUnlockToggleShortcut`.
+    private let toggleHotKey = GlobalHotKey()
+    /// Set by the Settings recorder: pauses the live hotkey, which would otherwise swallow the current combo before the recorder sees it.
+    var isRecordingToggleShortcut = false
+    /// The system refused the chosen combo — another app already owns it.
+    private(set) var isToggleShortcutUnavailable = false
+
     init(pocController: POCController) {
         self.pocController = pocController
         self.isEnabled = GlanceSettings.shared.isFaceUnlockEnabled
         self.matchThreshold = GlanceSettings.shared.matchThreshold
         spaceKeyMonitor.onSpaceKeyDown = { [weak self] in self?.handleSpaceKeyPress() }
+        toggleHotKey.onPress = { [weak self] in self?.toggleFromShortcut() }
         observeLockAndWakeEvents()
+        observeToggleShortcut()
+    }
+
+    /// Re-registers whenever the shortcut or recording state changes; re-subscribes since `withObservationTracking` fires once.
+    private func observeToggleShortcut() {
+        let shortcut = withObservationTracking {
+            let stored = GlanceSettings.shared.faceUnlockToggleShortcut
+            return isRecordingToggleShortcut ? nil : stored
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in self?.observeToggleShortcut() }
+        }
+        isToggleShortcutUnavailable = !toggleHotKey.register(shortcut)
+    }
+
+    /// The shortcut works with no Glance UI in sight, so a sound confirms which way it flipped.
+    private func toggleFromShortcut() {
+        isEnabled.toggle()
+        NSSound(named: isEnabled ? "Tink" : "Pop")?.play()
     }
 
     /// Re-subscribes on every change — `withObservationTracking` only fires once per registration.
