@@ -100,6 +100,16 @@ struct GeneralSettingsPage: View {
                     GlanceToggle(isOn: $coordinator.isEnabled)
                 }
                 SettingsGroupDivider()
+                SettingsRowContent(
+                    title: "Toggle shortcut",
+                    info: "Turns Face Unlock off (or back on) from anywhere — a sound confirms which. Works while you’re logged in, not on the lock screen."
+                ) {
+                    ShortcutRecorderPill(
+                        shortcut: $settings.faceUnlockToggleShortcut,
+                        isRecording: $coordinator.isRecordingToggleShortcut
+                    )
+                }
+                SettingsGroupDivider()
                 UnlockTriggerPicker(selection: $settings.unlockTriggers, isEnabled: coordinator.isEnabled)
                 SettingsGroupDivider()
                 displayPicker()
@@ -124,6 +134,9 @@ struct GeneralSettingsPage: View {
             }
             if let launchAtLoginError {
                 SettingsCaption(text: launchAtLoginError)
+            }
+            if coordinator.isToggleShortcutUnavailable {
+                SettingsCaption(text: "That shortcut is already used by another app — pick a different one.")
             }
             if hasInheritedXcodePermission {
                 SettingsCaption(text: "Running from Xcode — permission checks resolve against Xcode’s grants, not glance’s, so this reading is meaningless. Launch glance.app on its own to see the real state.")

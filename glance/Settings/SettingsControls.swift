@@ -9,6 +9,7 @@
 
 import SwiftUI
 import AppKit
+import Carbon.HIToolbox
 import CoreImage
 
 
@@ -149,6 +150,74 @@ struct SettingsMenuPickerPill<MenuContent: View>: View {
         .fixedSize()
         // Window-level accent tint otherwise paints the menu label blue.
         .tint(SettingsMetrics.textPrimary)
+    }
+}
+
+/// Click to record a shortcut: the next ⌘/⌃/⌥ combo is taken, Esc cancels. Styled like
+/// `SettingsMenuPickerPill`. `isRecording` is owned by the caller so it can pause the live
+/// hotkey while recording (see `FaceUnlockCoordinator.isRecordingToggleShortcut`).
+struct ShortcutRecorderPill: View {
+    @Binding var shortcut: HotKeyShortcut?
+    @Binding var isRecording: Bool
+    @State private var monitor: Any?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button { isRecording.toggle() } label: {
+                Text(isRecording ? "Type shortcut…" : shortcut?.displayString ?? "Record shortcut")
+                    .font(.system(size: 13))
+                    .foregroundStyle(isRecording || shortcut == nil ? SettingsMetrics.textSecondary : SettingsMetrics.textPrimary)
+                    .padding(.horizontal, 12)
+                    .frame(height: 28)
+                    .background(Capsule().fill(SettingsMetrics.pickerPillFill))
+                    .overlay {
+                        Capsule().strokeBorder(
+                            isRecording ? GlanceTheme.accent : SettingsMetrics.rowBorder,
+                            lineWidth: SettingsMetrics.rowBorderWidth
+                        )
+                    }
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+
+            if shortcut != nil, !isRecording {
+                Button { shortcut = nil } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(SettingsMetrics.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear shortcut")
+            }
+        }
+        .onChange(of: isRecording) { _, recording in
+            if recording { startMonitoring() } else { stopMonitoring() }
+        }
+        .onDisappear {
+            isRecording = false
+            stopMonitoring()
+        }
+    }
+
+    /// Swallows every keyDown while recording, so the combo can't also trigger a menu item.
+    private func startMonitoring() {
+        stopMonitoring()
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == UInt16(kVK_Escape) {
+                isRecording = false
+            } else if let recorded = HotKeyShortcut(event: event) {
+                shortcut = recorded
+                isRecording = false
+            } else {
+                NSSound.beep() // needs ⌘, ⌃ or ⌥
+            }
+            return nil
+        }
+    }
+
+    private func stopMonitoring() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
     }
 }
 
