@@ -3,6 +3,9 @@
 //  glance
 //
 //  Thin, password-agnostic wrapper around Keychain Services — save/read/delete/exists by account, plus a Touch-ID access control helper.
+//  Every item lives in the data protection keychain, where access is enforced by the app's provisioned keychain group. The legacy
+//  file-based login keychain instead keeps a per-app ACL tied to the exact code signature, and asks for the login keychain password
+//  whenever that signature changes (every rebuilt development copy, every re-signed release).
 //
 
 import Foundation
@@ -36,14 +39,24 @@ enum KeychainError: LocalizedError {
 enum KeychainManager {
     nonisolated static let service = "com.jonathan.glance"
 
-    /// Attributes-only existence check — never prompts, even for access-controlled items.
-    nonisolated static func exists(account: String) -> Bool {
-        let query: [String: Any] = [
+    nonisolated private static func baseQuery(account: String) -> [String: Any] {
+        [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecMatchLimit as String: kSecMatchLimitOne
+            kSecUseDataProtectionKeychain as String: true
         ]
+    }
+
+    /// Existence check that never prompts. Without a non-interactive context, even an attributes-only query on a user-presence
+    /// item shows the password/Touch ID dialog in the data protection keychain, so an existence check followed by the real read
+    /// asked twice. A protected item answers `errSecInteractionNotAllowed` here instead, which still means it exists.
+    nonisolated static func exists(account: String) -> Bool {
+        let context = LAContext()
+        context.interactionNotAllowed = true
+        var query = baseQuery(account: account)
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        query[kSecUseAuthenticationContext as String] = context
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         return status != errSecItemNotFound
@@ -51,13 +64,9 @@ enum KeychainManager {
 
     /// Pass an `LAContext` to authorize a read on an access-controlled item — the OS presents the prompt during this call.
     nonisolated static func read(account: String, context: LAContext? = nil) throws -> Data {
-        var query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
+        var query = baseQuery(account: account)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
         if let context {
             query[kSecUseAuthenticationContext as String] = context
         }
@@ -81,11 +90,7 @@ enum KeychainManager {
     /// `errSecDuplicateItem`. Existing access-control attributes are preserved;
     /// this method's access-control argument applies when adding a new item.
     nonisolated static func save(account: String, data: Data, accessControl: SecAccessControl? = nil) throws {
-        let itemQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
+        let itemQuery = baseQuery(account: account)
 
         let updateStatus = SecItemUpdate(
             itemQuery as CFDictionary,
@@ -100,12 +105,8 @@ enum KeychainManager {
             throw KeychainError.osStatus(updateStatus)
         }
 
-        var addQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecValueData as String: data
-        ]
+        var addQuery = baseQuery(account: account)
+        addQuery[kSecValueData as String] = data
         if let accessControl {
             addQuery[kSecAttrAccessControl as String] = accessControl
         } else {
@@ -129,15 +130,34 @@ enum KeychainManager {
     }
 
     nonisolated static func delete(account: String) throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-        let status = SecItemDelete(query as CFDictionary)
+        let status = SecItemDelete(baseQuery(account: account) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainError.osStatus(status)
         }
+    }
+
+    /// Moves an ungated item that older builds wrote to the file-based login keychain into the data protection keychain. Does
+    /// nothing if there is no old copy. Reading the old copy can show macOS's own one-time "allow access" prompt if the app's
+    /// signature changed since it was written. The old copy is deleted only once the new one reads back identical (or a newer
+    /// copy already exists), so a failure leaves the item where it was. Never use this for access-controlled items: those were
+    /// always in the data protection keychain.
+    nonisolated static func migrateLegacyItem(account: String) {
+        var legacyQuery = baseQuery(account: account)
+        legacyQuery[kSecUseDataProtectionKeychain as String] = false
+        var readQuery = legacyQuery
+        readQuery[kSecReturnData as String] = true
+        readQuery[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(readQuery as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data
+        else { return }
+
+        if !exists(account: account) {
+            guard (try? save(account: account, data: data)) != nil,
+                  (try? read(account: account)) == data
+            else { return }
+        }
+        SecItemDelete(legacyQuery as CFDictionary)
     }
 
     /// `.userPresence` requires Touch ID or device password, with no separate no-hardware handling needed.

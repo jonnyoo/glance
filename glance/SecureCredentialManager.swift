@@ -5,6 +5,8 @@
 //  Two-tier storage on KeychainManager: a Touch-ID-gated session key (unwrapped once per launch) wraps an ungated encrypted
 //  password blob, safe to read anytime — including the lock screen, where no app UI exists to host a Touch ID prompt.
 //  Touch ID authorizes the session; nothing yet authorizes each individual unlock beyond that (face recognition will).
+//  Optionally (off by default), an ungated copy of the session key lets a launch unlock the session with no prompt, so a Mac
+//  without Touch ID doesn't have to type its password into Glance after every login. See `setUnlockAtLogin`.
 //
 
 import Foundation
@@ -44,6 +46,18 @@ extension Notification.Name {
 enum SecureCredentialManager {
     nonisolated private static let sessionKeyAccount = "sessionKey"
     nonisolated private static let passwordBlobAccount = "encryptedPassword"
+    nonisolated private static let loginKeyAccount = "sessionKeyAtLogin"
+
+    /// Runs `KeychainManager.migrateLegacyItem` once per process, before anything reads or writes the password blob. Older
+    /// builds put the blob (never the gated session key) in the file-based login keychain. A static `let` is initialised exactly
+    /// once and thread-safely, so concurrent callers can't race the move.
+    nonisolated private static let legacyMigration: Void = {
+        KeychainManager.migrateLegacyItem(account: passwordBlobAccount)
+    }()
+
+    nonisolated private static func migrateLegacyStorageIfNeeded() {
+        _ = legacyMigration
+    }
 
     // MARK: - Session state (thread-safe via NSLock)
 
@@ -114,7 +128,8 @@ enum SecureCredentialManager {
     // MARK: - Public API
 
     nonisolated static func hasStoredPassword() -> Bool {
-        KeychainManager.exists(account: passwordBlobAccount)
+        migrateLegacyStorageIfNeeded()
+        return KeychainManager.exists(account: passwordBlobAccount)
     }
 
     /// Prompts Touch ID and unwraps the session key, creating it Touch-ID-gated on first run. Caches only after a real gated
@@ -141,6 +156,9 @@ enum SecureCredentialManager {
             throw SecureCredentialError.sessionKeyUnavailable
         }
 
+        // An ungated copy left over from a previous key would never decrypt anything encrypted under the new one.
+        try? KeychainManager.delete(account: loginKeyAccount)
+
         let key = SymmetricKey(size: .bits256)
         let access = try KeychainManager.makeUserPresenceAccessControl()
         try KeychainManager.save(
@@ -158,7 +176,54 @@ enum SecureCredentialManager {
 
     /// Checked without needing the key itself, so this stays answerable precisely when the key can't be read.
     nonisolated static var hasSessionEncryptedData: Bool {
-        KeychainManager.exists(account: passwordBlobAccount) || SecureFaceStore.exists
+        migrateLegacyStorageIfNeeded()
+        return KeychainManager.exists(account: passwordBlobAccount) || SecureFaceStore.exists
+    }
+
+    // MARK: - Unlock at login (opt-in)
+
+    /// Whether launching Glance unlocks the session without a prompt. The keychain item is the only record of the choice, so
+    /// it can never disagree with what launch will actually do.
+    nonisolated static var unlocksAtLogin: Bool {
+        KeychainManager.exists(account: loginKeyAccount)
+    }
+
+    /// Enabling stores an ungated copy of the current session key, so the next launch (in practice, the next macOS login) can
+    /// unlock without Touch ID or the account password. The copy stays on this Mac, can only be read while the Mac is unlocked,
+    /// and only by apps signed into Glance's keychain group. What it gives up is the per-launch confirmation: the macOS login
+    /// itself becomes the only authentication. Enabling requires an unlocked session; disabling deletes the copy.
+    nonisolated static func setUnlockAtLogin(_ enabled: Bool) throws {
+        guard enabled else {
+            try KeychainManager.delete(account: loginKeyAccount)
+            return
+        }
+        guard let key = cachedKey() else { throw SecureCredentialError.sessionLocked }
+        try KeychainManager.save(account: loginKeyAccount, data: key.withUnsafeBytes { Data($0) })
+    }
+
+    /// Never prompts. Returns `false` and leaves the session locked when the user hasn't opted in, or the copy can't be read
+    /// (e.g. the keychain is still locked). A copy that fails to decrypt the stored password is deleted rather than trusted.
+    /// Blocking; call from a background task.
+    nonisolated static func unlockSessionFromLoginKey() -> Bool {
+        if cachedKey() != nil { return true }
+        migrateLegacyStorageIfNeeded()
+        guard KeychainManager.exists(account: sessionKeyAccount),
+              let data = try? KeychainManager.read(account: loginKeyAccount),
+              data.count == SymmetricKeySize.bits256.bitCount / 8
+        else { return false }
+
+        let key = SymmetricKey(data: data)
+        if let ciphertext = try? KeychainManager.read(account: passwordBlobAccount) {
+            guard let sealed = try? AES.GCM.SealedBox(combined: ciphertext),
+                  var plaintext = try? AES.GCM.open(sealed, using: key)
+            else {
+                try? KeychainManager.delete(account: loginKeyAccount)
+                return false
+            }
+            plaintext.resetBytes(in: 0..<plaintext.count)
+        }
+        setCachedKey(key)
+        return true
     }
 
     /// Clears the cached session key. Next save/read requires Touch ID again.
@@ -170,6 +235,7 @@ enum SecureCredentialManager {
     /// call `unlockSession(reason:)` first. Blocking; call from a background task.
     nonisolated static func savePassword(_ passwordBytes: Data) throws {
         guard !passwordBytes.isEmpty else { throw SecureCredentialError.emptyPassword }
+        migrateLegacyStorageIfNeeded()
         let combined = try encrypt(passwordBytes)
         try KeychainManager.save(account: passwordBlobAccount, data: combined)
     }
@@ -178,6 +244,7 @@ enum SecureCredentialManager {
     /// `.resetBytes(in:)` after use. Blocking; call from a background task.
     nonisolated static func readPassword() throws -> Data {
         guard cachedKey() != nil else { throw SecureCredentialError.sessionLocked }
+        migrateLegacyStorageIfNeeded()
         let ciphertext = try KeychainManager.read(account: passwordBlobAccount)
         let plaintext = try decrypt(ciphertext)
         // Only on success: a failed read shouldn't extend the idle window.
@@ -185,8 +252,10 @@ enum SecureCredentialManager {
         return plaintext
     }
 
-    /// Deletes both Keychain items and clears the cached session key.
+    /// Deletes every Keychain item (including the unlock-at-login copy) and clears the cached session key.
     nonisolated static func deletePassword() throws {
+        migrateLegacyStorageIfNeeded()
+        try KeychainManager.delete(account: loginKeyAccount)
         try KeychainManager.delete(account: passwordBlobAccount)
         try KeychainManager.delete(account: sessionKeyAccount)
         setCachedKey(nil)
