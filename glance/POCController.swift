@@ -16,6 +16,7 @@ final class POCController {
 
     var hasStoredPassword: Bool = SecureCredentialManager.hasStoredPassword()
     var isSessionUnlocked: Bool = SecureCredentialManager.isSessionUnlocked
+    var unlocksAtLogin: Bool = SecureCredentialManager.unlocksAtLogin
     var sessionError: String? = nil
 
     /// Bound to the setup SecureField. Cleared immediately after a successful save.
@@ -34,6 +35,7 @@ final class POCController {
     func refreshCredentialStatus() {
         hasStoredPassword = SecureCredentialManager.hasStoredPassword()
         isSessionUnlocked = SecureCredentialManager.isSessionUnlocked
+        unlocksAtLogin = SecureCredentialManager.unlocksAtLogin
     }
 
     // MARK: - Session (Touch ID gate)
@@ -50,6 +52,20 @@ final class POCController {
             isSessionUnlocked = false
             sessionError = error.localizedDescription
         }
+    }
+
+    /// Silent launch-time unlock for users who opted in to unlocking at login. Never prompts; stays locked otherwise.
+    func unlockSessionAtLaunch() async {
+        _ = await Task.detached(priority: .userInitiated) {
+            SecureCredentialManager.unlockSessionFromLoginKey()
+        }.value
+        refreshCredentialStatus()
+    }
+
+    /// Throws so the toggle can revert itself; the state is re-read from the keychain either way.
+    func setUnlockAtLogin(_ enabled: Bool) throws {
+        defer { refreshCredentialStatus() }
+        try SecureCredentialManager.setUnlockAtLogin(enabled)
     }
 
     func lockSession() {
