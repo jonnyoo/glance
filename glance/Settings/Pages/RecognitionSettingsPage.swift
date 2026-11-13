@@ -63,15 +63,6 @@ struct RecognitionSettingsPage: View {
                     index: matchConfidenceIndex,
                     stopCount: MatchConfidenceLevel.allCases.count
                 )
-
-                SettingsGroupDivider()
-
-                SettingsOptionSliderRowContent(
-                    title: "Detection distance",
-                    stepLabels: DetectionDistanceLevel.allCases.map(\.title),
-                    index: detectionDistanceIndex,
-                    stopCount: DetectionDistanceLevel.allCases.count
-                )
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -106,19 +97,6 @@ struct RecognitionSettingsPage: View {
         Binding(
             get: { matchConfidenceLevel.sliderIndex },
             set: { coordinator.matchThreshold = MatchConfidenceLevel.from(sliderIndex: $0).threshold }
-        )
-    }
-
-    // MARK: - Detection distance
-
-    private var detectionDistanceLevel: DetectionDistanceLevel {
-        .nearest(to: settings.minimumFaceWidth)
-    }
-
-    private var detectionDistanceIndex: Binding<Double> {
-        Binding(
-            get: { detectionDistanceLevel.sliderIndex },
-            set: { settings.minimumFaceWidth = DetectionDistanceLevel.from(sliderIndex: $0).minimumFaceWidth }
         )
     }
 
@@ -171,36 +149,3 @@ private enum MatchConfidenceLevel: Int, CaseIterable {
     }
 }
 
-/// The three selectable points on the "Detection distance" slider.
-private enum DetectionDistanceLevel: Int, CaseIterable {
-    case close, standard, far
-
-    var title: String {
-        switch self {
-        case .close: return "Close"
-        case .standard: return "Default"
-        case .far: return "Far"
-        }
-    }
-
-    var minimumFaceWidth: Float {
-        switch self {
-        case .close: return 0.23
-        case .standard: return 0.19
-        case .far: return 0.15
-        }
-    }
-
-    var sliderIndex: Double {
-        Double(Self.allCases.firstIndex(of: self) ?? 0)
-    }
-
-    static func from(sliderIndex: Double) -> Self {
-        let clamped = Int(sliderIndex.rounded())
-        return allCases.indices.contains(clamped) ? allCases[clamped] : .standard
-    }
-
-    static func nearest(to width: Float) -> Self {
-        allCases.min { abs($0.minimumFaceWidth - width) < abs($1.minimumFaceWidth - width) } ?? .standard
-    }
-}

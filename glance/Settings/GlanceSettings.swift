@@ -105,7 +105,6 @@ final class GlanceSettings {
         static let matchThreshold = "GlanceSettings.matchThreshold"
         static let livenessChecksEnabled = "GlanceSettings.livenessChecksEnabled"
         static let livenessMode = "GlanceSettings.livenessMode"
-        static let minimumFaceWidth = "GlanceSettings.minimumFaceWidth"
         static let unlockAnimationStyle = "GlanceSettings.unlockAnimationStyle"
         static let showUnlockAnimation = "GlanceSettings.showUnlockAnimation"
         /// Legacy bool key — read once during migration, then ignored.
@@ -147,14 +146,6 @@ final class GlanceSettings {
     /// see `LivenessMode`.
     var livenessMode: LivenessMode {
         didSet { defaults.set(livenessMode.rawValue, forKey: Key.livenessMode) }
-    }
-    /// Mirrored into `FaceRecognitionPipeline.minimumProminentFaceWidth` on
-    /// every change, since that's read from a background `nonisolated` context.
-    var minimumFaceWidth: Float {
-        didSet {
-            defaults.set(minimumFaceWidth, forKey: Key.minimumFaceWidth)
-            FaceRecognitionPipeline.minimumProminentFaceWidth = minimumFaceWidth
-        }
     }
     /// The remembered choice (`.minimal`/`.original` only); `showUnlockAnimation`
     /// tracks on/off separately so toggling back on restores the prior pick.
@@ -294,8 +285,6 @@ final class GlanceSettings {
         // catches the main attack (a photo on a phone screen).
         livenessMode = defaults.string(forKey: Key.livenessMode)
             .flatMap(LivenessMode.init(rawValue:)) ?? .light
-        // Matches `DetectionDistanceLevel.standard` — see RecognitionSettingsPage.swift.
-        minimumFaceWidth = defaults.object(forKey: Key.minimumFaceWidth) as? Float ?? 0.21
 
         // Resolve the stored style first, `.none` included, then split it
         // into the pick + the on/off flag the UI now works in.
@@ -348,9 +337,5 @@ final class GlanceSettings {
         onboardingResumeStep = defaults.string(forKey: Key.onboardingResumeStep)
             .flatMap(OnboardingStep.init(rawValue:))
         hasAcknowledgedSecurityNotice = defaults.object(forKey: Key.hasAcknowledgedSecurityNotice) as? Bool ?? false
-
-        // Push into the nonisolated mirror immediately, or FaceRecognitionPipeline
-        // would keep its own default until the slider is first touched.
-        FaceRecognitionPipeline.minimumProminentFaceWidth = minimumFaceWidth
     }
 }
