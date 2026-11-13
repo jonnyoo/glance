@@ -88,8 +88,11 @@ enum KeychainManager {
     /// Stores an item, updating its data in place when it already exists. Updating
     /// avoids the delete/add gap that can race with a second submit and produce
     /// `errSecDuplicateItem`. Existing access-control attributes are preserved;
-    /// this method's access-control argument applies when adding a new item.
-    nonisolated static func save(account: String, data: Data, accessControl: SecAccessControl? = nil) throws {
+    /// this method's access-control and `accessible` arguments apply when adding a new item (use `setAccessibility` to
+    /// change an existing one). The default `accessible` class only allows reads while the Mac is unlocked: on Macs where
+    /// locking the screen also locks the data protection keybag, such an item is unreadable on the lock screen.
+    nonisolated static func save(account: String, data: Data, accessControl: SecAccessControl? = nil,
+                                 accessible: CFString = kSecAttrAccessibleWhenUnlockedThisDeviceOnly) throws {
         let itemQuery = baseQuery(account: account)
 
         let updateStatus = SecItemUpdate(
@@ -110,7 +113,7 @@ enum KeychainManager {
         if let accessControl {
             addQuery[kSecAttrAccessControl as String] = accessControl
         } else {
-            addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            addQuery[kSecAttrAccessible as String] = accessible
         }
 
         let status = SecItemAdd(addQuery as CFDictionary, nil)
@@ -129,6 +132,15 @@ enum KeychainManager {
         throw KeychainError.osStatus(status)
     }
 
+    /// Moves an existing ungated item to another `accessible` class in place, keeping its data. Needs the keybag unlocked (i.e.
+    /// the Mac unlocked) to re-wrap the item; on any failure the item is left exactly as it was, so callers can simply try
+    /// again later. Never use this for access-controlled items.
+    @discardableResult
+    nonisolated static func setAccessibility(account: String, to accessible: CFString) -> Bool {
+        SecItemUpdate(baseQuery(account: account) as CFDictionary,
+                      [kSecAttrAccessible as String: accessible] as CFDictionary) == errSecSuccess
+    }
+
     nonisolated static func delete(account: String) throws {
         let status = SecItemDelete(baseQuery(account: account) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
@@ -141,7 +153,7 @@ enum KeychainManager {
     /// signature changed since it was written. The old copy is deleted only once the new one reads back identical (or a newer
     /// copy already exists), so a failure leaves the item where it was. Never use this for access-controlled items: those were
     /// always in the data protection keychain.
-    nonisolated static func migrateLegacyItem(account: String) {
+    nonisolated static func migrateLegacyItem(account: String, accessible: CFString = kSecAttrAccessibleWhenUnlockedThisDeviceOnly) {
         var legacyQuery = baseQuery(account: account)
         legacyQuery[kSecUseDataProtectionKeychain as String] = false
         var readQuery = legacyQuery
@@ -153,7 +165,7 @@ enum KeychainManager {
         else { return }
 
         if !exists(account: account) {
-            guard (try? save(account: account, data: data)) != nil,
+            guard (try? save(account: account, data: data, accessible: accessible)) != nil,
                   (try? read(account: account)) == data
             else { return }
         }

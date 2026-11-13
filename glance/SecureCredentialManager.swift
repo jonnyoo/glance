@@ -52,8 +52,22 @@ enum SecureCredentialManager {
     /// builds put the blob (never the gated session key) in the file-based login keychain. A static `let` is initialised exactly
     /// once and thread-safely, so concurrent callers can't race the move.
     nonisolated private static let legacyMigration: Void = {
-        KeychainManager.migrateLegacyItem(account: passwordBlobAccount)
+        KeychainManager.migrateLegacyItem(account: passwordBlobAccount, accessible: passwordBlobAccessible)
+        makePasswordBlobReadableWhileLocked()
     }()
+
+    /// Face unlock reads the blob on the lock screen, and on Macs where locking the screen also locks the data protection
+    /// keybag, a "when unlocked" item can't be read there at all (`errSecInteractionNotAllowed`) — every match then failed at
+    /// the password read. "After first unlock" keeps it readable until restart. The blob is AES-GCM ciphertext under the
+    /// session key, which only ever lives in this process's memory, so this exposes nothing usable on its own.
+    nonisolated private static var passwordBlobAccessible: CFString { kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly }
+
+    /// Upgrades a blob saved as "when unlocked" (by an earlier build, or by `save` updating an existing item in place,
+    /// which keeps its class). Only works while the Mac is unlocked, so it runs at migration, after each save and on every
+    /// session unlock; it's a cheap no-op once the class is already right.
+    nonisolated private static func makePasswordBlobReadableWhileLocked() {
+        KeychainManager.setAccessibility(account: passwordBlobAccount, to: passwordBlobAccessible)
+    }
 
     nonisolated private static func migrateLegacyStorageIfNeeded() {
         _ = legacyMigration
@@ -92,6 +106,8 @@ enum SecureCredentialManager {
         // Posted after releasing the lock — observers may call back into `isSessionUnlocked` (re-acquiring it) from a
         // background thread, so posting while still locked risks a real self-deadlock, not a theoretical one.
         guard changed else { return }
+        // A session unlock means the user just authenticated, so the Mac itself is unlocked — the moment the upgrade can work.
+        if key != nil { makePasswordBlobReadableWhileLocked() }
         NotificationCenter.default.post(name: .secureCredentialSessionDidChange, object: nil)
     }
 
@@ -237,7 +253,8 @@ enum SecureCredentialManager {
         guard !passwordBytes.isEmpty else { throw SecureCredentialError.emptyPassword }
         migrateLegacyStorageIfNeeded()
         let combined = try encrypt(passwordBytes)
-        try KeychainManager.save(account: passwordBlobAccount, data: combined)
+        try KeychainManager.save(account: passwordBlobAccount, data: combined, accessible: passwordBlobAccessible)
+        makePasswordBlobReadableWhileLocked()
     }
 
     /// No separate Touch ID prompt — only the session key was gated, at unlock time. Caller MUST zero the returned bytes via
