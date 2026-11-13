@@ -682,7 +682,7 @@ private struct IdentityRow: View {
     }
 
     private func isLow(_ sample: FaceSample) -> Bool {
-        sample.qualityTier == .poor
+        identity.qualityTier(of: sample) == .poor
     }
 }
 

@@ -84,20 +84,91 @@ final class FaceRecognitionPipeline {
         return FaceRecognitionResult(embedding: embedding, alignedImage: inputImage, alignmentTier: tier, quality: face.quality, face: face)
     }
 
-    /// Largest face by area with no prominence cutoff — unlike `selectDominantFace`, so enrollment can tell "too far" apart from "no face".
+    /// Camera-frame version: finds the face on the small frame (fast), then embeds and scores it from the native-resolution
+    /// frame. See `recognize(_:in:includeQuality:)` for why.
+    nonisolated func recognize(in frame: CameraFrame, preferNear previousBoundingBox: CGRect? = nil, includeQuality: Bool = true) throws -> FaceRecognitionResult {
+        let faces = try FaceDetector.detectFaces(in: frame.image, includeQuality: false)
+        guard let face = Self.selectDominantFace(in: faces, preferNear: previousBoundingBox) else {
+            throw FaceRecognitionPipelineError.noFaceDetected
+        }
+        return try recognize(face, in: frame, includeQuality: includeQuality)
+    }
+
+    /// `face` comes from detection on `frame.image`, which CameraManager shrinks to 640px, leaving a seated user's face only
+    /// ~90–130px wide. Aligning, embedding and quality-scoring from that softens every sample, so this re-finds the face in
+    /// a native-resolution crop around it and uses that instead. The returned `face` is still the small-frame one, because
+    /// selection continuity, liveness and glare all work in `frame.image` coordinates. Falls back to the small frame when
+    /// the camera is no bigger than it or the face can't be re-found in the crop.
+    nonisolated func recognize(_ face: DetectedFace, in frame: CameraFrame, includeQuality: Bool = true) throws -> FaceRecognitionResult {
+        let upscale = frame.sourceSize.width / CGFloat(max(frame.image.width, 1))
+        if upscale > 1.25, let detailed = try? recognizeAtNativeResolution(face, in: frame, includeQuality: includeQuality) {
+            return detailed
+        }
+        if includeQuality, face.quality == nil,
+           let scored = try? FaceDetector.detectFaces(in: frame.image, includeQuality: true),
+           let match = Self.nearest(to: face.normalizedBoundingBox, in: scored) {
+            let result = try recognize(match, in: frame.image)
+            return FaceRecognitionResult(embedding: result.embedding, alignedImage: result.alignedImage,
+                                         alignmentTier: result.alignmentTier, quality: match.quality, face: face)
+        }
+        return try recognize(face, in: frame.image)
+    }
+
+    /// Context around the face box for the native crop — enough for Vision to re-detect the face and for a 2-point/padded
+    /// fallback alignment to have its margin.
+    nonisolated private static let nativeCropPadding: CGFloat = 0.5
+    /// Cap on the native crop's long edge. With the padding above, the face itself ends up ~250px — more than twice
+    /// ArcFace's 112px input — while keeping the extra Vision pass cheap.
+    nonisolated private static let nativeCropMaxEdge: CGFloat = 512
+
+    nonisolated private func recognizeAtNativeResolution(_ face: DetectedFace, in frame: CameraFrame, includeQuality: Bool) throws -> FaceRecognitionResult? {
+        let padX = face.boundingBox.width * Self.nativeCropPadding
+        let padY = face.boundingBox.height * Self.nativeCropPadding
+        let region = face.boundingBox.insetBy(dx: -padX, dy: -padY)
+        guard let crop = CameraManager.renderCrop(from: frame, imageRect: region, maxEdge: Self.nativeCropMaxEdge) else { return nil }
+
+        // The crop is centred on the face, so the detection nearest its centre is the same person.
+        let cropFaces = try FaceDetector.detectFaces(in: crop, includeQuality: includeQuality)
+        let centre = CGRect(x: 0.5, y: 0.5, width: 0, height: 0)
+        guard let detailed = Self.nearest(to: centre, in: cropFaces),
+              detailed.normalizedBoundingBox.width >= 0.3 else { return nil }
+
+        let result = try recognize(detailed, in: crop)
+        return FaceRecognitionResult(embedding: result.embedding, alignedImage: result.alignedImage,
+                                     alignmentTier: result.alignmentTier, quality: detailed.quality, face: face)
+    }
+
+    nonisolated private static func nearest(to box: CGRect, in faces: [DetectedFace]) -> DetectedFace? {
+        faces.min { distance(from: $0, to: CGPoint(x: box.midX, y: box.midY)) < distance(from: $1, to: CGPoint(x: box.midX, y: box.midY)) }
+    }
+
+    /// Largest face by area with no size cutoff — unlike `selectDominantFace`, so enrollment can tell "too far" apart from "no face".
     nonisolated static func largestFace(in faces: [DetectedFace]) -> DetectedFace? {
         faces.max { $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height }
     }
 
-    /// Below this fraction of frame width, a face is treated as a bystander, not a candidate — shared with onboarding's "move closer" prompt. `nonisolated(unsafe)` because it's read from a background-task static func that can't touch GlanceSettings' MainActor-isolated storage.
-    nonisolated(unsafe) static var minimumProminentFaceWidth: Float = 0.18
+    /// Below this many pixels wide, a face has too little detail for a trustworthy embedding. Measured in pixels of the frame
+    /// Vision actually sees — CameraManager downscales to a 640px long edge — so 64px is 10% of the frame width. A wide webcam
+    /// like the BRIO puts a seated user's face at ~14% (~90px), which the old fixed 15% cutoff rejected; in testing a 104px
+    /// face still matched at 0.71 against a 0.58 threshold.
+    nonisolated static let minimumFacePixelWidth: CGFloat = 64
+
+    /// A face narrower than this fraction of the largest face in the same frame is a bystander, not the person at the camera.
+    /// Relative, so it adapts to however far the user sits instead of needing a distance setting.
+    nonisolated static let bystanderRelativeWidth: CGFloat = 0.6
 
     /// Max normalized-coordinate drift between frames still counted as "the same person".
     nonisolated private static let continuityDistanceTolerance: CGFloat = 0.3
 
-    /// Picks the person actually at the camera, not a bystander: filters out faces below `minimumProminentFaceWidth`, then prefers continuity with `previousBoundingBox` over raw largest-by-area so two similarly-sized faces can't flip-flop the selection frame to frame and starve the liveness/wrong-face streaks of agreement.
+    /// Picks the person actually at the camera, not a bystander: drops faces too small to embed reliably and faces much smaller
+    /// than the largest one in the frame, then prefers continuity with `previousBoundingBox` over raw largest-by-area so two
+    /// similarly-sized faces can't flip-flop the selection frame to frame and starve the liveness/wrong-face streaks of agreement.
+    /// Size is never a security gate — whichever face is picked must still match an enrolled identity.
     nonisolated static func selectDominantFace(in faces: [DetectedFace], preferNear previousBoundingBox: CGRect? = nil) -> DetectedFace? {
-        let candidates = faces.filter { $0.normalizedBoundingBox.width >= CGFloat(minimumProminentFaceWidth) }
+        let widest = faces.map(\.boundingBox.width).max() ?? 0
+        let candidates = faces.filter {
+            $0.boundingBox.width >= minimumFacePixelWidth && $0.boundingBox.width >= widest * bystanderRelativeWidth
+        }
         guard !candidates.isEmpty else { return nil }
 
         if let previous = previousBoundingBox {
