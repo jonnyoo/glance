@@ -18,7 +18,7 @@ nonisolated enum GlareCueExtractor {
 
     /// Returns `nil` only if the crop couldn't be rasterized; a too-small crop still
     /// yields a sample, discounted elsewhere via `cropPixelWidth`.
-    static func extract(faceCrop: CGImage) -> GlareSample? {
+    static func extract(faceCrop: CGImage, faceRegion: [CGPoint]? = nil) -> GlareSample? {
         let width = faceCrop.width
         let height = faceCrop.height
         guard width > 0, height > 0 else { return nil }
@@ -36,6 +36,9 @@ nonisolated enum GlareCueExtractor {
         }) else { return nil }
         context.draw(faceCrop, in: CGRect(x: 0, y: 0, width: width, height: height))
 
+        let mask = faceRegion.flatMap { regionMask($0, width: width, height: height) }
+        let pixelCount = mask.map { $0.reduce(0) { $0 + ($1 == 0 ? 0 : 1) } } ?? width * height
+
         var gridCounts = [Int](repeating: 0, count: clusterGridSize * clusterGridSize)
         var specularTotal = 0
 
@@ -44,6 +47,7 @@ nonisolated enum GlareCueExtractor {
                 let rowBase = y * width * 4
                 let gy = min(clusterGridSize - 1, y * clusterGridSize / height)
                 for x in 0..<width {
+                    if let mask, mask[y * width + x] == 0 { continue }
                     let offset = rowBase + x * 4
                     let r = Float(bytes[offset])
                     let g = Float(bytes[offset + 1])
@@ -64,7 +68,6 @@ nonisolated enum GlareCueExtractor {
             }
         }
 
-        let pixelCount = width * height
         let specularFraction = Float(specularTotal) / Float(pixelCount)
         let largestCluster = gridCounts.max() ?? 0
         let clusterRatio = specularTotal > 0 ? Float(largestCluster) / Float(specularTotal) : 0
@@ -74,5 +77,30 @@ nonisolated enum GlareCueExtractor {
             specularFraction: specularFraction,
             specularClusterRatio: clusterRatio
         )
+    }
+
+    /// Invalid or undersized masks fall back to the full crop, never a missing
+    /// glare cue. A small outer margin tolerates landmark jitter at the edge.
+    /// The denominator counts only retained pixels, so masking background does
+    /// not dilute a highlight that is actually on the face.
+    static func regionMask(_ polygon: [CGPoint], width: Int, height: Int) -> [UInt8]? {
+        guard width > 0, height > 0, polygon.count >= 5,
+              polygon.allSatisfy({ $0.x.isFinite && $0.y.isFinite && (-0.1...1.1).contains($0.x) && (-0.1...1.1).contains($0.y) }) else { return nil }
+        var mask = [UInt8](repeating: 0, count: width * height)
+        let valid = mask.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(), bitmapInfo: 0) else { return false }
+            context.setShouldAntialias(false)
+            context.setFillColor(gray: 1, alpha: 1)
+            context.setStrokeColor(gray: 1, alpha: 1)
+            context.setLineJoin(.round)
+            context.setLineWidth(CGFloat(min(width, height)) * 0.05)
+            context.addLines(between: polygon.map { CGPoint(x: $0.x * CGFloat(width), y: (1 - $0.y) * CGFloat(height)) })
+            context.closePath()
+            context.drawPath(using: .fillStroke)
+            return true
+        }
+        guard valid, mask.filter({ $0 != 0 }).count >= width * height * 2 / 5 else { return nil }
+        return mask
     }
 }

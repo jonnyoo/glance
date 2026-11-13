@@ -95,6 +95,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if GlanceSettings.shared.hasCompletedOnboarding {
             if GlanceSettings.shared.hasAcknowledgedSecurityNotice {
                 startUpdaterIfNeeded()
+                // Only does anything if the user opted in on the Password page; otherwise the session stays locked until
+                // they authenticate. Observers of `secureCredentialSessionDidChange` reload the face store on success.
+                Task { await environment.pocController.unlockSessionAtLaunch() }
             } else {
                 // Upgraded from a version before the notice existed — show it once, standalone.
                 presentPostUpdateSecurityNotice()

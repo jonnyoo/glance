@@ -67,6 +67,7 @@ struct CameraSettingsPage: View {
 
     private var unlockedState: some View {
         VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
+            Toggle("Allow iPhone cameras", isOn: $settings.allowContinuityCamera)
             SettingsGroup {
                 cameraPicker(title: "Default", selection: $settings.defaultCameraID)
                 SettingsGroupDivider()
@@ -88,6 +89,10 @@ struct CameraSettingsPage: View {
             if isPreviewShown, let error = previewCamera.errorMessage {
                 SettingsCaption(text: error)
             }
+        }
+        .onChange(of: settings.allowContinuityCamera) {
+            refreshDevices()
+            restartPreview()
         }
         .onChange(of: settings.defaultCameraID) { restartPreview() }
         .onChange(of: settings.builtInDisplayCameraID) { restartPreview() }
@@ -145,10 +150,8 @@ struct CameraSettingsPage: View {
     }
 
     private func cameraLabel(for id: String?) -> String {
-        guard let id, let device = devices.first(where: { $0.id == id }) else {
-            return "System default"
-        }
-        return device.name
+        guard let id else { return "System default" }
+        return devices.first(where: { $0.id == id })?.name ?? "Selected camera unavailable"
     }
 
     // MARK: - Actions

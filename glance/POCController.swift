@@ -16,6 +16,7 @@ final class POCController {
 
     var hasStoredPassword: Bool = SecureCredentialManager.hasStoredPassword()
     var isSessionUnlocked: Bool = SecureCredentialManager.isSessionUnlocked
+    var unlocksAtLogin: Bool = SecureCredentialManager.unlocksAtLogin
     var sessionError: String? = nil
 
     /// Bound to the setup SecureField. Cleared immediately after a successful save.
@@ -34,6 +35,7 @@ final class POCController {
     func refreshCredentialStatus() {
         hasStoredPassword = SecureCredentialManager.hasStoredPassword()
         isSessionUnlocked = SecureCredentialManager.isSessionUnlocked
+        unlocksAtLogin = SecureCredentialManager.unlocksAtLogin
     }
 
     // MARK: - Session (Touch ID gate)
@@ -50,6 +52,20 @@ final class POCController {
             isSessionUnlocked = false
             sessionError = error.localizedDescription
         }
+    }
+
+    /// Silent launch-time unlock for users who opted in to unlocking at login. Never prompts; stays locked otherwise.
+    func unlockSessionAtLaunch() async {
+        _ = await Task.detached(priority: .userInitiated) {
+            SecureCredentialManager.unlockSessionFromLoginKey()
+        }.value
+        refreshCredentialStatus()
+    }
+
+    /// Throws so the toggle can revert itself; the state is re-read from the keychain either way.
+    func setUnlockAtLogin(_ enabled: Bool) throws {
+        defer { refreshCredentialStatus() }
+        try SecureCredentialManager.setUnlockAtLogin(enabled)
     }
 
     func lockSession() {
@@ -90,33 +106,47 @@ final class POCController {
     /// buffer before returning. When `requireAuthoritativeLock` is true (the
     /// auto-trigger path), refuses to inject unless the CGSession dictionary
     /// confirms the screen is actually locked.
-    func injectStoredPassword(requireAuthoritativeLock: Bool = false) async {
+    @discardableResult
+    func injectStoredPassword(requireAuthoritativeLock: Bool = false,
+                              authorization: @MainActor () -> Bool = { true }) async -> Bool {
         guard KeystrokeInjector.isAccessibilityTrusted() else {
             statusMessage = "Accessibility not granted — open System Settings and enable glance."
-            return
+            return false
         }
         guard SecureCredentialManager.isSessionUnlocked else {
             statusMessage = "Session locked — authenticate with Touch ID first."
-            return
+            return false
         }
 
         if requireAuthoritativeLock {
             guard LockMonitor.isScreenActuallyLocked() else {
                 statusMessage = "Skipped: CGSession reports screen is not actually locked."
-                return
+                return false
             }
         }
 
         statusMessage = "Injecting…"
         do {
-            try await Task.detached(priority: .userInitiated) {
-                var bytes = try SecureCredentialManager.readPassword()
-                defer { bytes.resetBytes(in: 0..<bytes.count) }
-                try KeystrokeInjector.typeAndReturn(bytes)
+            var bytes = try await Task.detached(priority: .userInitiated) {
+                try SecureCredentialManager.readPassword()
             }.value
+            defer { bytes.resetBytes(in: 0..<bytes.count) }
+            guard !Task.isCancelled, SecureCredentialManager.isSessionUnlocked, authorization(),
+                  !requireAuthoritativeLock || LockMonitor.isScreenActuallyLocked() else {
+                statusMessage = "Unlock authorization expired or was cancelled."
+                return false
+            }
+            // Re-evaluate the complete gate before each character and Return.
+            // Delays yield the actor, so cancellation/settings changes take effect.
+            try await KeystrokeInjector.typeAndReturn(bytes, stillAuthorized: {
+                !Task.isCancelled && SecureCredentialManager.isSessionUnlocked && authorization()
+                    && (!requireAuthoritativeLock || LockMonitor.isScreenActuallyLocked())
+            })
             statusMessage = "Injected stored password + Return at \(Date().formatted(date: .omitted, time: .standard))"
+            return true
         } catch {
             statusMessage = "Injection failed: \(error.localizedDescription)"
+            return false
         }
     }
 }

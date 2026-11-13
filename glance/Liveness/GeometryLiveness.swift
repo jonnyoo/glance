@@ -67,11 +67,19 @@ nonisolated private let geometryProbeRegions: Set<LandmarkRegion> = [
 ]
 
 nonisolated enum GeometryLiveness {
-    static func evaluate(_ window: [LivenessFrame], tuning: GeometryTuning = .default) -> GeometryLivenessResult {
+    /// Unlock can omit pair diagnostics when the yaw gate already guarantees abstention.
+    /// Face Lab keeps the default so it can still inspect those pairs below the gate.
+    static func evaluate(
+        _ window: [LivenessFrame], tuning: GeometryTuning = .default,
+        skipAbstainingPairs: Bool = false
+    ) -> GeometryLivenessResult {
         let lastLandmarks = window.last?.landmarks.count ?? 0
         var diagnostics = diagnosticRatios(from: window.last)
+        let yawRange = window.count >= 3 ? yawRangeDegrees(window) : nil
+        let yawGateOK = (yawRange ?? 0) >= tuning.minYawRangeDegrees
+        if let yawRange { diagnostics["yaw range (deg)"] = yawRange }
 
-        guard window.count >= 3 else {
+        guard window.count >= 3, !skipAbstainingPairs || yawGateOK else {
             return GeometryLivenessResult(
                 planarResidualScore: 0, planarConfidence: 0,
                 validLandmarkCount: lastLandmarks, pairsAnalyzed: 0, rejectedPairCount: 0,
@@ -80,10 +88,6 @@ nonisolated enum GeometryLiveness {
                 diagnosticRatios: diagnostics
             )
         }
-
-        let yawRange = yawRangeDegrees(window)
-        let yawGateOK = (yawRange ?? 0) >= tuning.minYawRangeDegrees
-        if let yawRange { diagnostics["yaw range (deg)"] = yawRange }
 
         var excesses: [CGFloat] = []
         var coherences: [CGFloat] = []

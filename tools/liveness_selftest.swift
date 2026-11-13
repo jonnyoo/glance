@@ -16,6 +16,9 @@
 //        tools/liveness_selftest.swift \
 //      && /tmp/liveness_selftest
 //
+//  Pass `--benchmark-geometry` to also time full/fast geometry against the
+//  same synthetic below-yaw-gate window. Timing is informational, not asserted.
+//
 //  `GlareCueExtractor.swift` (the pixel-facing half that produces a
 //  `GlareSample` from a camera frame) is deliberately excluded, same
 //  reasoning as `LivenessFeatures.swift` below — this file constructs
@@ -379,10 +382,15 @@ private func generateStillLiveSequence(frameCount: Int, noiseStd: CGFloat, seed:
 
 @main
 struct LivenessSelfTest {
+    @MainActor
     static func main() {
         runGeometryTests()
+        runGeometryFastPathTests()
         runDecisionModelTests()
         runAbstentionTests()
+        if CommandLine.arguments.contains("--benchmark-geometry") {
+            runGeometryBenchmark()
+        }
         print("\nAll liveness self-tests passed.")
     }
 
@@ -460,6 +468,184 @@ struct LivenessSelfTest {
             "FAIL: live sequence's yaw range (\(yawRange)) should clear GeometryTuning.minYawRangeDegrees."
         )
         print("PASS: the live sequence's yaw range clears the minimum-rotation gate.")
+    }
+
+    // MARK: - Geometry fast path equivalence
+
+    /// Change only supplied measurements: the same landmarks must yield the same
+    /// authentication readings regardless of whether abstaining diagnostics run.
+    private static func replacingYaw(_ frames: [LivenessFrame], with yaws: [Float?]) -> [LivenessFrame] {
+        precondition(frames.count == yaws.count)
+        return zip(frames, yaws).map { frame, yaw in
+            LivenessFrame(
+                timestamp: frame.timestamp, landmarks: frame.landmarks,
+                interocularDistance: frame.interocularDistance, yaw: yaw,
+                leftEyeAspectRatio: frame.leftEyeAspectRatio, rightEyeAspectRatio: frame.rightEyeAspectRatio,
+                noseOffsetRatio: frame.noseOffsetRatio, hasReliableLandmarks: frame.hasReliableLandmarks,
+                deviceOverlapFraction: frame.deviceOverlapFraction, glare: frame.glare
+            )
+        }
+    }
+
+    private static func yawRamp(degrees: CGFloat) -> [Float?] {
+        (0..<frameCount).map { Float(degrees * .pi / 180 * CGFloat($0) / CGFloat(frameCount - 1)) }
+    }
+
+    @MainActor
+    private static func runGeometryFastPathTests() {
+        let live = generateLiveSequence(frameCount: frameCount, noiseStd: 0.2, seed: 2)
+        let sequences: [(String, [LivenessFrame])] = [
+            ("live", live),
+            ("noisy live", generateLiveSequence(frameCount: frameCount, noiseStd: 4, seed: 3)),
+            ("tilted photo", generateTiltedPhotoSequence(frameCount: frameCount, noiseStd: 1, seed: 4)),
+            ("wobbling photo", generatePlanarSequence(frameCount: frameCount, noiseStd: 0.5, seed: 1)),
+            ("still", generateStillLiveSequence(frameCount: frameCount, noiseStd: 0, seed: 5)),
+            ("no landmarks", (0..<frameCount).map { makeCueFrame(at: Double($0) * 0.05) }),
+        ]
+        let aboveYaw = yawRamp(degrees: 12.1)
+        let yawCases: [(String, [Float?])] = [
+            ("below gate", yawRamp(degrees: 11.9)),
+            ("nominal 12 degrees", yawRamp(degrees: 12)),
+            ("above gate", aboveYaw),
+            ("no yaw", Array(repeating: nil, count: frameCount)),
+            ("only two yaws", (0..<frameCount).map { $0 == 0 || $0 == frameCount - 1 ? aboveYaw[$0] : nil }),
+            ("three yaws", (0..<frameCount).map { [0, frameCount / 2, frameCount - 1].contains($0) ? aboveYaw[$0] : nil }),
+        ]
+
+        for (name, frames) in sequences {
+            for (yawName, yaws) in yawCases {
+                let window = replacingYaw(frames, with: yaws)
+                let full = GeometryLiveness.evaluate(window)
+                let fast = GeometryLiveness.evaluate(window, skipAbstainingPairs: true)
+                precondition(full.planarReading == fast.planarReading, "FAIL: geometry reading changed for \(name), \(yawName).")
+                precondition(
+                    LivenessCues.readings(window: window, geometry: full) == LivenessCues.readings(window: window, geometry: fast),
+                    "FAIL: cue readings changed for \(name), \(yawName)."
+                )
+                precondition(full.diagnosticRatios == fast.diagnosticRatios && full.validLandmarkCount == fast.validLandmarkCount)
+                if (full.diagnosticRatios["yaw range (deg)"] ?? 0) >= GeometryTuning.default.minYawRangeDegrees {
+                    precondition(full == fast, "FAIL: geometry was skipped above the yaw gate for \(name), \(yawName).")
+                } else {
+                    precondition(fast.planarReading == .none && fast.pairsAnalyzed == 0 && fast.rejectedPairCount == 0)
+                    precondition(fast.medianFitResidual == nil && fast.medianProbeResidual == nil)
+                    precondition(fast.excessRatio == nil && fast.coherence == nil && fast.motionMagnitude == nil)
+                }
+            }
+
+            // Float yaw cannot express exactly 12 degrees. Place the tuning gate
+            // at the measured range and its adjacent representable values to
+            // prove the inclusive comparison is unchanged right at the boundary.
+            let window = replacingYaw(frames, with: yawRamp(degrees: 12))
+            let range = GeometryLiveness.evaluate(window).diagnosticRatios["yaw range (deg)"]!
+            for threshold in [range.nextDown, range, range.nextUp] {
+                var tuning = GeometryTuning.default
+                tuning.minYawRangeDegrees = threshold
+                let full = GeometryLiveness.evaluate(window, tuning: tuning)
+                let fast = GeometryLiveness.evaluate(window, tuning: tuning, skipAbstainingPairs: true)
+                precondition(full.planarReading == fast.planarReading, "FAIL: geometry changed at the exact yaw boundary for \(name).")
+                if threshold <= range {
+                    precondition(full == fast, "FAIL: fast path skipped the inclusive yaw boundary for \(name).")
+                    if name == "live" {
+                        precondition(fast.planarConfidence > 0, "FAIL: boundary test needs active geometry evidence.")
+                    }
+                } else {
+                    precondition(fast.planarReading == .none && fast.pairsAnalyzed == 0)
+                }
+            }
+        }
+
+        for count in 0...2 {
+            let window = Array(live.prefix(count))
+            precondition(GeometryLiveness.evaluate(window) == GeometryLiveness.evaluate(window, skipAbstainingPairs: true))
+        }
+
+        let belowGate = replacingYaw(live, with: yawRamp(degrees: 11.9))
+        let diagnosticResult = GeometryLiveness.evaluate(belowGate)
+        precondition(diagnosticResult.planarReading == .none && diagnosticResult.pairsAnalyzed > 0)
+        precondition(diagnosticResult.medianFitResidual != nil && diagnosticResult.excessRatio != nil)
+
+        // Even unusual tuning retains the original fallback semantics: missing
+        // yaw is treated as zero, and a zero yaw gate therefore permits geometry.
+        var zeroYawGate = GeometryTuning.default
+        zeroYawGate.minYawRangeDegrees = 0
+        let missingYaw = replacingYaw(live, with: Array(repeating: nil, count: frameCount))
+        precondition(
+            GeometryLiveness.evaluate(missingYaw, tuning: zeroYawGate)
+                == GeometryLiveness.evaluate(missingYaw, tuning: zeroYawGate, skipAbstainingPairs: true)
+        )
+        print("PASS: geometry fast path preserves every cue across yaw gates, missing yaw, motion/noise, and empty windows; full diagnostics remain the default.")
+
+        var analyzerSequences = sequences + yawCases.map { ("live, \($0.0)", replacingYaw(live, with: $0.1)) }
+        // A blink confirms before a deny cue arrives. Both paths must preserve
+        // the confirmation, override, cumulative counts, and eventual latch.
+        for denyCue in [LivenessCue.glossGlare, .deviceDetected] {
+            let mixed = belowGate.enumerated().map { index, frame in
+                LivenessFrame(
+                    timestamp: frame.timestamp, landmarks: frame.landmarks,
+                    interocularDistance: frame.interocularDistance, yaw: frame.yaw,
+                    leftEyeAspectRatio: index == 2 ? 0.1 : 0.35,
+                    rightEyeAspectRatio: index == 2 ? 0.1 : 0.35,
+                    noseOffsetRatio: frame.noseOffsetRatio, hasReliableLandmarks: frame.hasReliableLandmarks,
+                    deviceOverlapFraction: denyCue == .deviceDetected && (8...12).contains(index) ? 0.4 : nil,
+                    glare: denyCue == .glossGlare && (8...12).contains(index) ? screenGlare : skinGlare
+                )
+            }
+            analyzerSequences.append(("blink then \(denyCue.rawValue)", mixed))
+        }
+        // Cross the gate, then let all geometry evidence leave the rolling
+        // window. Previously fired cues still retain their scan-wide state.
+        let staleTime = live.last!.timestamp.timeIntervalSince1970 + 3
+        analyzerSequences.append(("window expiry", live + (0..<8).map { makeCueFrame(at: staleTime + Double($0) * 0.05) }))
+
+        for (name, frames) in analyzerSequences {
+            for mode in LivenessMode.allCases {
+                let full = LivenessAnalyzer()
+                let fast = LivenessAnalyzer(skipAbstainingGeometry: true)
+                full.modeProvider = { mode }
+                fast.modeProvider = { mode }
+                for (index, frame) in frames.enumerated() {
+                    precondition(full.observe(frame) == fast.observe(frame), "FAIL: analyzer changed for \(name), \(mode.title), frame \(index).")
+                    precondition(full.lastGeometry.planarReading == fast.lastGeometry.planarReading)
+                    if name.hasPrefix("blink then"), index == 4 {
+                        precondition(full.lastSnapshot.cueStates[.blink]?.hasFired == true)
+                        precondition(full.lastSnapshot.decision.isConfirmed)
+                    }
+                }
+                if name.hasPrefix("blink then") {
+                    precondition(full.lastSnapshot.decision.isDenied, "FAIL: mixed sequence did not exercise a denial latch.")
+                }
+                if name == "live, below gate" {
+                    precondition(full.lastGeometry.pairsAnalyzed > 0 && fast.lastGeometry.pairsAnalyzed == 0)
+                }
+                full.reset()
+                fast.reset()
+                precondition(full.lastSnapshot == .empty && fast.lastSnapshot == .empty)
+                precondition(full.lastGeometry == .empty && fast.lastGeometry == .empty)
+            }
+        }
+        print("PASS: fast/full analyzer snapshots match on every frame in Light and Heavy modes, including blink confirmation, deny overrides/latches, and window expiry.")
+    }
+
+    /// Optional timing of identical, already-constructed synthetic windows;
+    /// never asserted because timings depend on the machine and other work.
+    private static func runGeometryBenchmark() {
+        let window = generatePlanarSequence(frameCount: frameCount, noiseStd: 0.5, seed: 1)
+        let iterations = 300
+        var checksum: Double = 0
+        for skip in [false, true] {
+            for _ in 0..<10 {
+                checksum += Double(GeometryLiveness.evaluate(window, skipAbstainingPairs: skip).validLandmarkCount)
+            }
+            let start = Date.timeIntervalSinceReferenceDate
+            for _ in 0..<iterations {
+                let result = GeometryLiveness.evaluate(window, skipAbstainingPairs: skip)
+                checksum += Double(result.validLandmarkCount + result.pairsAnalyzed) + Double(result.planarConfidence)
+            }
+            let elapsed = Date.timeIntervalSinceReferenceDate - start
+            print(String(format: "Geometry benchmark (%@, %d frames, %d iterations): %.3f ms/evaluation",
+                         skip ? "skip abstaining pairs" : "full diagnostics", frameCount, iterations, elapsed * 1000 / Double(iterations)))
+        }
+        precondition(checksum > 0)
     }
 
     // MARK: - Decision model

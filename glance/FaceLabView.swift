@@ -49,6 +49,7 @@ struct FaceLabView: View {
                 modelStatusSection
                 sessionLockSection
                 previewSection
+                InfraredLabView(beforeCapture: { controller.stop() })
                 detectionSection
                 livenessSection
                 enrollSection
@@ -682,7 +683,7 @@ private struct IdentityRow: View {
     }
 
     private func isLow(_ sample: FaceSample) -> Bool {
-        sample.qualityTier == .poor
+        identity.qualityTier(of: sample) == .poor
     }
 }
 

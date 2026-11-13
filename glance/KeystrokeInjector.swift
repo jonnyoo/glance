@@ -11,12 +11,15 @@ import CoreGraphics
 
 enum KeystrokeError: LocalizedError {
     case accessibilityNotGranted
+    case authorizationExpired
     case eventCreationFailed
 
     var errorDescription: String? {
         switch self {
         case .accessibilityNotGranted:
             return "Accessibility permission required. Open System Settings → Privacy & Security → Accessibility and enable glance."
+        case .authorizationExpired:
+            return "Unlock authorization expired."
         case .eventCreationFailed:
             return "Couldn't create CGEvent for keystroke."
         }
@@ -24,6 +27,12 @@ enum KeystrokeError: LocalizedError {
 }
 
 enum KeystrokeInjector {
+    // Keep the clear-field commands at their existing pace. Use a shorter
+    // yield between Unicode event transitions; authorization still runs
+    // immediately before each key-down, never once for a batched password.
+    private static let characterPause: Duration = .milliseconds(4)
+    private static let controlPause: Duration = .milliseconds(12)
+
     /// Returns true if the app has Accessibility permission (no prompt).
     nonisolated static func isAccessibilityTrusted() -> Bool {
         return AXIsProcessTrusted()
@@ -38,125 +47,81 @@ enum KeystrokeInjector {
     }
 
     /// Types the UTF-8 bytes into whatever has keyboard focus, then presses Return. Takes `Data` rather than `String` so the
-    /// caller can hold the plaintext as a zero-able buffer; the brief internal `String` decode is scoped to this call. Blocking.
-    nonisolated static func typeAndReturn(_ passwordBytes: Data) throws {
-        guard isAccessibilityTrusted() else {
-            throw KeystrokeError.accessibilityNotGranted
-        }
-        guard let text = String(data: passwordBytes, encoding: .utf8) else {
-            throw KeystrokeError.eventCreationFailed
-        }
+    /// caller can hold the plaintext as a zero-able buffer; the brief internal `String` decode is scoped to this call.
+    @MainActor static func typeAndReturn(_ passwordBytes: Data, stillAuthorized: @MainActor () -> Bool = { true },
+                                        accessibilityCheck: () -> Bool = { KeystrokeInjector.isAccessibilityTrusted() },
+                                        postEvent: (CGEvent) -> Void = { $0.post(tap: .cghidEventTap) }) async throws {
+        guard accessibilityCheck() else { throw KeystrokeError.accessibilityNotGranted }
+        guard let text = String(data: passwordBytes, encoding: .utf8) else { throw KeystrokeError.eventCreationFailed }
         let source = CGEventSource(stateID: .hidSystemState)
-        try clearFocusedField(source: source)
-        try postUnicodeText(text, source: source)
-        try postReturn(source: source)
-    }
-
-    /// Wipes anything already typed into the focused field (e.g. a stray keypress
-    /// on the lock screen) so it isn't prepended to the password: ⌘→ to the end,
-    /// then ⌘⌫ to delete back to the start. Both are positional keys, so this
-    /// behaves the same on every keyboard layout — unlike ⌘A, whose "A" moves.
-    private nonisolated static func clearFocusedField(source: CGEventSource?) throws {
-        let rightArrow: CGKeyCode = 0x7C
-        let delete: CGKeyCode = 0x33
-        try postKey(rightArrow, flags: .maskCommand, source: source)
-        try postKey(delete, flags: .maskCommand, source: source)
-    }
-
-    /// Posts a virtual key down/up, wrapped in a real ⌘ down/up when `flags`
-    /// includes `.maskCommand` — some text fields ignore a bare flag without it.
-    private nonisolated static func postKey(_ keyCode: CGKeyCode, flags: CGEventFlags = [], source: CGEventSource?) throws {
-        let command: CGKeyCode = 0x37
-        let usesCommand = flags.contains(.maskCommand)
-        if usesCommand {
-            guard let commandDown = CGEvent(keyboardEventSource: source, virtualKey: command, keyDown: true) else {
+        guard stillAuthorized() else { throw KeystrokeError.authorizationExpired }
+        try await postKey(0x7C, flags: .maskCommand, source: source, authorized: stillAuthorized, post: postEvent)
+        guard stillAuthorized() else { throw KeystrokeError.authorizationExpired }
+        try await postKey(0x33, flags: .maskCommand, source: source, authorized: stillAuthorized, post: postEvent)
+        for char in text {
+            guard stillAuthorized() else { throw KeystrokeError.authorizationExpired }
+            let utf16 = Array(String(char).utf16)
+            guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+                  let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else {
                 throw KeystrokeError.eventCreationFailed
             }
-            commandDown.flags = .maskCommand
-            commandDown.post(tap: .cghidEventTap)
-            Thread.sleep(forTimeInterval: 0.012)
-        }
-        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false) else {
-            throw KeystrokeError.eventCreationFailed
-        }
-        keyDown.flags = flags
-        keyUp.flags = flags
-        keyDown.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.012)
-        keyUp.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.012)
-        if usesCommand {
-            guard let commandUp = CGEvent(keyboardEventSource: source, virtualKey: command, keyDown: false) else {
-                throw KeystrokeError.eventCreationFailed
-            }
-            commandUp.flags = []
-            commandUp.post(tap: .cghidEventTap)
-            Thread.sleep(forTimeInterval: 0.012)
-        }
-    }
-
-    /// Quartz reliably delivers only a small Unicode payload per keyboard event.
-    /// Batching at this conservative limit avoids the undocumented truncation seen
-    /// with longer payloads, while replacing one down/up pair per character with
-    /// one pair per batch.
-    nonisolated private static let maximumUnicodeBatchLength = 20
-    nonisolated private static let unicodeEventInterval: TimeInterval = 0.004
-
-    /// Posts the password in small UTF-16 batches. Splitting occurs only between
-    /// surrogate pairs, so non-BMP password characters are never corrupted.
-    private nonisolated static func postUnicodeText(_ text: String, source: CGEventSource?) throws {
-        let utf16 = Array(text.utf16)
-        try utf16.withUnsafeBufferPointer { buffer in
-            guard let base = buffer.baseAddress else { return }
-            var start = 0
-
-            while start < buffer.count {
-                var end = min(start + maximumUnicodeBatchLength, buffer.count)
-                // Do not split a high/low-surrogate pair across separate key events.
-                if end < buffer.count,
-                   (0xD800...0xDBFF).contains(buffer[end - 1]) {
-                    end -= 1
+            utf16.withUnsafeBufferPointer { buffer in
+                if let base = buffer.baseAddress {
+                    down.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: base)
+                    up.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: base)
                 }
-                try postUnicode(
-                    base.advanced(by: start),
-                    length: end - start,
-                    source: source
-                )
-                start = end
             }
+            try await postPair(down: down, up: up, pause: characterPause, authorized: stillAuthorized, post: postEvent)
         }
+        guard stillAuthorized() else { throw KeystrokeError.authorizationExpired }
+        try await postKey(0x24, source: source, finishesSubmission: true, authorized: stillAuthorized, post: postEvent)
     }
 
-    /// Unicode injection bypasses keyboard-layout issues. The password is placed
-    /// on a key-down event as a text batch; the matching key-up maintains normal
-    /// secure-field event semantics.
-    private nonisolated static func postUnicode(
-        _ unicode: UnsafePointer<UInt16>,
-        length: Int,
-        source: CGEventSource?
-    ) throws {
-        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else {
-            throw KeystrokeError.eventCreationFailed
+    @MainActor private static func postPair(down: CGEvent, up: CGEvent, pause: Duration,
+                                           finishesSubmission: Bool = false, authorized: () -> Bool, post: (CGEvent) -> Void) async throws {
+        try Task.checkCancellation()
+        guard authorized() else { throw KeystrokeError.authorizationExpired }
+        post(down)
+        // Always release a posted key even if cancellation interrupts the delay.
+        var released = false
+        defer { if !released { post(up) } }
+        do { try await Task.sleep(for: pause) }
+        catch {
+            // Return was already posted with fresh authorization. An unlock
+            // notification can cancel the scan during this yield; release
+            // the key and report submission, not a misleading interruption.
+            // This reports event submission, not macOS accepting a password.
+            if finishesSubmission { return }
+            throw error
         }
-        keyDown.keyboardSetUnicodeString(stringLength: length, unicodeString: unicode)
-        keyUp.keyboardSetUnicodeString(stringLength: length, unicodeString: unicode)
-        keyDown.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: unicodeEventInterval)
-        keyUp.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: unicodeEventInterval)
+        post(up)
+        released = true
+        if !finishesSubmission { try await Task.sleep(for: pause) }
     }
 
-    /// Physical Return key (virtual key 0x24).
-    private nonisolated static func postReturn(source: CGEventSource?) throws {
-        let returnKey: CGKeyCode = 0x24
-        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: returnKey, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: returnKey, keyDown: false) else {
+    @MainActor private static func postKey(_ key: CGKeyCode, flags: CGEventFlags = [], source: CGEventSource?,
+                                          finishesSubmission: Bool = false, authorized: () -> Bool, post: (CGEvent) -> Void) async throws {
+        try Task.checkCancellation()
+        guard authorized() else { throw KeystrokeError.authorizationExpired }
+        var commandUp: CGEvent?
+        if flags.contains(.maskCommand) {
+            guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0x37, keyDown: true),
+                  let up = CGEvent(keyboardEventSource: source, virtualKey: 0x37, keyDown: false) else {
+                throw KeystrokeError.eventCreationFailed
+            }
+            down.flags = .maskCommand
+            up.flags = []
+            commandUp = up
+            post(down)
+        }
+        defer { if let commandUp { post(commandUp) } }
+        try Task.checkCancellation()
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false) else {
             throw KeystrokeError.eventCreationFailed
         }
-        keyDown.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.012)
-        keyUp.post(tap: .cghidEventTap)
+        down.flags = flags; up.flags = flags
+        try await postPair(down: down, up: up, pause: controlPause, finishesSubmission: finishesSubmission,
+                           authorized: authorized, post: post)
     }
 }
