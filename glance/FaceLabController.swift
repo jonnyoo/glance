@@ -155,7 +155,7 @@ final class FaceLabController {
         let pipeline = self.pipeline
         do {
             let (result, livenessFrame) = try await Task.detached(priority: .userInitiated) {
-                let result = try pipeline.recognize(in: cameraFrame.image)
+                let result = try pipeline.recognize(in: cameraFrame)
                 let faceCrop = CameraManager.renderCrop(from: cameraFrame, imageRect: result.face.boundingBox)
                 return (result, LivenessFeatureExtractor.extract(from: result, frame: cameraFrame.image, faceCrop: faceCrop))
             }.value
@@ -210,10 +210,10 @@ final class FaceLabController {
 
     // MARK: - Multi-identity enrollment
 
-    /// Counts only the red band of `FaceSample.qualityTier`, so this debug list and the Your Face tick strip always
+    /// Counts only the red band of `FaceIdentity.qualityTier(of:)`, so this debug list and the Your Face tick strip always
     /// agree about what "low" means. Samples with no score count as unrated, never as low.
     func lowQualityCount(in identity: FaceIdentity) -> Int {
-        identity.samples.filter { $0.qualityTier == .poor }.count
+        identity.poorQualitySampleCount
     }
 
     /// Face Lab and onboarding each own a separate `CameraManager` on the same device — stop ours first to avoid

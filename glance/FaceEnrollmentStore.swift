@@ -28,11 +28,49 @@ extension FaceSample {
         case good
     }
 
-    var qualityTier: QualityTier {
+    /// Straight-on samples (the centre pose, or untagged Face Lab captures).
+    var isFrontal: Bool { pose == nil || pose == "center" }
+
+    /// Vision's capture-quality score ranks shots of the *same* person (Apple's guidance), and it deliberately marks down head
+    /// turns, so an absolute bar made every guided turn look "poor" even when it was sharp and well lit. Frontal samples keep
+    /// the absolute bar; turned ones are judged against `frontalReference`, the same person's own straight-on score, and only
+    /// fall back to the absolute bar when there isn't one.
+    func qualityTier(frontalReference: Float?) -> QualityTier {
         guard let quality else { return .unrated }
+        if !isFrontal, let frontalReference, frontalReference > 0 {
+            let relative = quality / frontalReference
+            if relative < Self.turnedPoorRatio { return .poor }
+            if relative < Self.turnedFairRatio { return .fair }
+            return .good
+        }
         if quality < 0.4 { return .poor }
         if quality < 0.5 { return .fair }
         return .good
+    }
+
+    /// A turned sample under half its owner's frontal score is poor; under 70% is fair.
+    static let turnedPoorRatio: Float = 0.5
+    static let turnedFairRatio: Float = 0.7
+}
+
+extension FaceIdentity {
+    /// Median quality of this identity's frontal samples — the yardstick `FaceSample.qualityTier(frontalReference:)` grades
+    /// its turned samples against. Nil when no frontal sample has a score.
+    var frontalQualityReference: Float? {
+        let scores = samples.filter(\.isFrontal).compactMap(\.quality).sorted()
+        guard !scores.isEmpty else { return nil }
+        let middle = scores.count / 2
+        return scores.count.isMultiple(of: 2) ? (scores[middle - 1] + scores[middle]) / 2 : scores[middle]
+    }
+
+    /// The one grading rule every quality display uses, so Face Lab and Your Face can't disagree.
+    func qualityTier(of sample: FaceSample) -> FaceSample.QualityTier {
+        sample.qualityTier(frontalReference: frontalQualityReference)
+    }
+
+    var poorQualitySampleCount: Int {
+        let reference = frontalQualityReference
+        return samples.filter { $0.qualityTier(frontalReference: reference) == .poor }.count
     }
 }
 

@@ -11,6 +11,7 @@
 //
 
 import Foundation
+import os
 import Observation
 import AVFoundation
 import AppKit
@@ -346,6 +347,8 @@ final class OnboardingController {
 
     /// 9 poses x 2 samples = 18 total, enough for a stable template without overlong holds.
     private let samplesPerPose = 2
+    /// Pose and quality numbers only, for calibrating the per-pose quality grading. Never names or embeddings.
+    nonisolated private static let enrollmentLog = Logger(subsystem: "com.jonathan.glance", category: "enrollment")
     /// Consecutive matching frames required before a capture fires — debounces a lucky
     /// frame near a pose boundary.
     private let requiredMatchStreak = 3
@@ -358,10 +361,9 @@ final class OnboardingController {
     /// Hold off accepting captures this long once the camera comes up, so the first
     /// samples aren't taken mid-blink. Detection still runs during this window.
     private let initialCaptureDelay: Duration = .seconds(1.5)
-    /// Enrollment wants a closer face than unlock's bystander cutoff
-    private var enrollmentMinimumFaceWidth: Float {
-        max(FaceRecognitionPipeline.minimumProminentFaceWidth, 0.2)
-    }
+    /// Enrollment wants a closer face than unlock needs — sitting back in a chair is still
+    /// enough to unlock, but too far for a reliable template.
+    private let enrollmentMinimumFaceWidth: Float = 0.2
 
     // Pose-matching bands, in radians. Yaw: left turn is positive, matching the mirrored
     // preview. Pitch's sign is the opposite of the initial guess — see `pitchMatches` below.
@@ -797,17 +799,17 @@ final class OnboardingController {
 
         let pipeline = self.pipeline
         let minimumWidth = enrollmentMinimumFaceWidth
-        let image = cameraFrame.image
         let outcome = await Task.detached(priority: .userInitiated) {
             do {
-                let faces = try FaceDetector.detectFaces(in: image)
+                // Quality is scored on the native-resolution crop inside `recognize`, not on this small frame.
+                let faces = try FaceDetector.detectFaces(in: cameraFrame.image, includeQuality: false)
                 guard let face = FaceRecognitionPipeline.largestFace(in: faces) else {
                     return EnrollFrameOutcome.noFace
                 }
                 if Float(face.normalizedBoundingBox.width) < minimumWidth {
                     return EnrollFrameOutcome.tooFar
                 }
-                return EnrollFrameOutcome.ready(try pipeline.recognize(face, in: image))
+                return EnrollFrameOutcome.ready(try pipeline.recognize(face, in: cameraFrame))
             } catch {
                 return EnrollFrameOutcome.noFace
             }
@@ -900,6 +902,7 @@ final class OnboardingController {
             capturedAt: Date()
         ))
         capturedForCurrentPose += 1
+        Self.enrollmentLog.notice("enrolment sample: pose=\(pose.name, privacy: .public) quality=\(result.quality ?? -1, format: .fixed(precision: 3), privacy: .public) tier=\(result.alignmentTier.rawValue, privacy: .public) width=\(Double(result.face.normalizedBoundingBox.width), format: .fixed(precision: 3), privacy: .public)")
 
         if capturedForCurrentPose >= samplesPerPose {
             if pose == .center {

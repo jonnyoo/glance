@@ -10,6 +10,7 @@
 import Foundation
 import CoreGraphics
 import Observation
+import os
 
 @Observable
 @MainActor
@@ -40,6 +41,10 @@ final class FaceUnlockCoordinator {
     /// the camera. Require a sustained non-match rather than a few early
     /// frames before giving the failure animation.
     private let wrongFaceGraceDuration: Duration = .seconds(2)
+
+    /// Numbers only (sizes, scores, timings) — no names, images or embeddings. Notice level so it persists in the unified log:
+    /// `log show --predicate 'subsystem == "com.jonathan.glance" AND category == "faceunlock"'`.
+    nonisolated private static let scanLog = Logger(subsystem: "com.jonathan.glance", category: "faceunlock")
 
     private(set) var statusMessage = "Idle"
     private(set) var lastOutcome: String?
@@ -320,6 +325,7 @@ final class FaceUnlockCoordinator {
         guard generation == scanGeneration else { return }
 
         camera.stop()
+        Self.scanLog.notice("scan \(generation, privacy: .public) outcome: \(String(describing: outcome), privacy: .public)")
 
         switch outcome {
         case .matched:
@@ -349,7 +355,7 @@ final class FaceUnlockCoordinator {
             statusMessage = "Face recognized, but the live-face check did not finish. Blink or gently turn your head and try again."
             lastOutcome = statusMessage
             if showsUI { NotchOverlayController.shared.finish(success: false) }
-        case .infraredFailed(let reason):
+        case .infraredFailed(let reason), .unlockFailed(let reason):
             statusMessage = reason
             lastOutcome = reason
             if showsUI { NotchOverlayController.shared.finish(success: false) }
@@ -390,6 +396,8 @@ final class FaceUnlockCoordinator {
         case livenessUnconfirmed
         case noResolution
         case infraredFailed(String)
+        /// The face passed every check but the stored password couldn't be read or typed.
+        case unlockFailed(String)
     }
 
     /// Only frames matching the same continuously observed identity contribute to liveness.
@@ -418,6 +426,9 @@ final class FaceUnlockCoordinator {
         /// Cheap way to detect "no new camera frame yet" vs. "fresh frame" — without it a repeat frame would corrupt the liveness motion signal.
         var lastProcessedFrameID: UInt64?
         var recognizedFace = false
+        var frameNumber = 0
+        let identities = FaceEnrollmentStore.shared.activeIdentities
+        Self.scanLog.notice("scan \(generation, privacy: .public) start: identities=\(identities.count, privacy: .public) stale=\(identities.filter { $0.isStale(comparedTo: self.pipeline.embedder) }.count, privacy: .public) threshold=\(rgbThreshold, privacy: .public) liveness=\(livenessEnabled, privacy: .public) ir=\(infraredRequired, privacy: .public) warmup=\(Self.seconds(scanStarted.duration(to: cameraReadyAt)), format: .fixed(precision: 2), privacy: .public)s")
 
         while ContinuousClock.now < deadline, !Task.isCancelled,
               !requireOverlayScanning || NotchOverlayController.shared.phase == .scanning {
@@ -434,13 +445,21 @@ final class FaceUnlockCoordinator {
 
             let pipeline = self.pipeline
             let previousBoundingBox = lastFaceBoundingBox
-            let outcome = await Task.detached(priority: .userInitiated) { () -> (FaceRecognitionResult, LivenessFrame)? in
-                guard let result = try? pipeline.recognize(in: frame.image, preferNear: previousBoundingBox, includeQuality: false) else { return nil }
+            frameNumber += 1
+            let frameAge = Self.seconds(cameraReadyAt.duration(to: .now))
+            let processed = await Task.detached(priority: .userInitiated) { () -> (match: (FaceRecognitionResult, LivenessFrame)?, faces: Int, widest: Double) in
+                guard let result = try? pipeline.recognize(in: frame, preferNear: previousBoundingBox, includeQuality: false) else {
+                    // Diagnostics only: tells "nobody there" apart from "face smaller than the minimum width".
+                    let faces = (try? FaceDetector.detectFaces(in: frame.image, includeQuality: false)) ?? []
+                    return (nil, faces.count, Double(faces.map(\.normalizedBoundingBox.width).max() ?? 0))
+                }
                 let faceCrop = CameraManager.renderCrop(from: frame, imageRect: result.face.boundingBox)
-                return (result, LivenessFeatureExtractor.extract(from: result, frame: frame.image, faceCrop: faceCrop))
+                return ((result, LivenessFeatureExtractor.extract(from: result, frame: frame.image, faceCrop: faceCrop)), 1, Double(result.face.normalizedBoundingBox.width))
             }.value
+            let outcome = processed.match
 
             guard let (result, livenessFrame) = outcome else {
+                Self.scanLog.notice("scan \(generation, privacy: .public) frame \(frameNumber, privacy: .public) t=\(frameAge, format: .fixed(precision: 2), privacy: .public)s: no usable face (faces=\(processed.faces, privacy: .public) widest=\(processed.widest, format: .fixed(precision: 3), privacy: .public))")
                 readyMatch = nil
                 livenessIdentity = nil
                 liveness.reset()
@@ -455,6 +474,7 @@ final class FaceUnlockCoordinator {
 
             let scored = pipeline.score(result.embedding, against: FaceEnrollmentStore.shared.activeIdentities)
             let matched = pipeline.bestMatch(in: scored, threshold: rgbThreshold)
+            Self.scanLog.notice("scan \(generation, privacy: .public) frame \(frameNumber, privacy: .public) t=\(frameAge, format: .fixed(precision: 2), privacy: .public)s: width=\(processed.widest, format: .fixed(precision: 3), privacy: .public) centroid=\(scored.first?.centroidSimilarity ?? -1, format: .fixed(precision: 3), privacy: .public) bestSample=\(scored.first?.maxSampleSimilarity ?? -1, format: .fixed(precision: 3), privacy: .public) yaw=\(result.face.yaw ?? 0, format: .fixed(precision: 2), privacy: .public) pitch=\(result.face.pitch ?? 0, format: .fixed(precision: 2), privacy: .public) matched=\(matched != nil, privacy: .public) wrongFaceFor=\(matched == nil ? wrongFaceStartedAt.map { Self.seconds($0.duration(to: .now)) } ?? 0 : 0, format: .fixed(precision: 2), privacy: .public)s")
             // Evidence belongs to one continuously observed identity, never a
             // previous face or a bystander who supplied a liveness cue.
             if matched?.identity != livenessIdentity || matched == nil {
@@ -525,7 +545,8 @@ final class FaceUnlockCoordinator {
                         && configuredLiveness == GlanceSettings.shared.livenessChecksEnabled
                         && FaceEnrollmentStore.shared.activeIdentities.contains(readyMatch.identity)
                 }
-                return injected ? .matched : .noResolution
+                // Reporting this as `.noResolution` used to show "No face detected" for a face that had in fact matched.
+                return injected ? .matched : .unlockFailed("Face recognized, but unlocking failed. " + pocController.statusMessage)
             }
 
             try? await Task.sleep(nanoseconds: 20_000_000)
