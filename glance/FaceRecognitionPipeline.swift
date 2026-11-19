@@ -7,7 +7,7 @@
 
 import Foundation
 import CoreGraphics
-import Observation
+import Combine
 
 nonisolated struct FaceRecognitionResult {
     let embedding: [Float]
@@ -31,14 +31,13 @@ nonisolated enum FaceRecognitionPipelineError: LocalizedError {
 }
 
 /// `@Observable` so the debug UI can surface which embedder is active.
-@Observable
 @MainActor
-final class FaceRecognitionPipeline {
+final class FaceRecognitionPipeline: ObservableObject {
     nonisolated let embedder: FaceEmbedder
 
     /// Set when ArcFace failed to load (see tools/convert_arcface.py) and the weaker Vision feature-print embedder is in use instead.
-    private(set) var usingFallbackEmbedder: Bool
-    private(set) var fallbackReason: String?
+    @Published private(set) var usingFallbackEmbedder: Bool
+    @Published private(set) var fallbackReason: String?
 
     init() {
         do {

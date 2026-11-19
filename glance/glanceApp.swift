@@ -40,8 +40,7 @@ struct glanceApp: App {
         .defaultSize(SettingsMetrics.windowSize)
         .windowStyle(.hiddenTitleBar)
         .defaultPosition(.center)
-        .defaultLaunchBehavior(.suppressed)
-        .restorationBehavior(.disabled)
+        // macOS 15+ only: .defaultLaunchBehavior(.suppressed) / .restorationBehavior(.disabled); dropped for the macOS 13 port.
     }
 }
 

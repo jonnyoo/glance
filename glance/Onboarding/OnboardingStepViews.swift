@@ -12,7 +12,7 @@ import AppKit
 // MARK: - 1. Intro
 
 struct IntroStepView: View {
-    let controller: OnboardingController
+    @ObservedObject var controller: OnboardingController
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -55,7 +55,7 @@ private struct GlanceLogoView: View {
 // MARK: - 2. Permissions
 
 struct PermissionsStepView: View {
-    let controller: OnboardingController
+    @ObservedObject var controller: OnboardingController
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -98,7 +98,7 @@ struct PermissionsStepView: View {
 // MARK: - 3. Security notice
 
 struct SecurityNoticeStepView: View {
-    let controller: OnboardingController
+    @ObservedObject var controller: OnboardingController
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -146,7 +146,7 @@ struct SecurityNoticeStepView: View {
 // MARK: - 4. Pre set-up
 
 struct PreSetupStepView: View {
-    let controller: OnboardingController
+    @ObservedObject var controller: OnboardingController
 
     var body: some View {
         VStack(spacing: 2) {
@@ -194,7 +194,7 @@ private struct UnlockGlyphView: View {
 // MARK: - 5. Select camera
 
 struct SelectCameraStepView: View {
-    let controller: OnboardingController
+    @ObservedObject var controller: OnboardingController
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -243,7 +243,7 @@ struct SelectCameraStepView: View {
 // MARK: - 6-8. Guided enrollment (camera + tick ring + camera-complete)
 
 struct EnrollStepView: View {
-    let controller: OnboardingController
+    @ObservedObject var controller: OnboardingController
     @Environment(\.notchPanelStyle) private var style
 
     var body: some View {
@@ -362,7 +362,6 @@ private struct EnrollmentTooFarChevron: View {
             .font(.system(size: OnboardingMetrics.enrollTooFarChevronSize, weight: .semibold))
             .foregroundStyle(.white)
             .shadow(color: .black.opacity(0.45), radius: 6, y: 1)
-            .symbolEffect(.bounce.up.byLayer, options: .repeating)
             .accessibilityHidden(true)
     }
 }
@@ -372,7 +371,7 @@ private struct EnrollmentTooFarChevron: View {
 /// Asks who was just captured — for a recapture, pre-filled with the existing name so
 /// this doubles as rename.
 struct NameStepView: View {
-    @Bindable var controller: OnboardingController
+    @ObservedObject var controller: OnboardingController
 
     private var trimmedName: String {
         controller.pendingName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -422,7 +421,7 @@ struct NameStepView: View {
 // MARK: - 10. Password
 
 struct PasswordStepView: View {
-    let controller: OnboardingController
+    @ObservedObject var controller: OnboardingController
 
     @State private var password = ""
 

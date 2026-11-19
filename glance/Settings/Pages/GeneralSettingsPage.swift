@@ -7,9 +7,10 @@ import OSLog
 import SwiftUI
 
 struct GeneralSettingsPage: View {
-    @Bindable var coordinator: FaceUnlockCoordinator
-    @Bindable var pocController: POCController
-    @Bindable private var settings = GlanceSettings.shared
+    @ObservedObject private var notchOverlay = NotchOverlayController.shared
+    @ObservedObject var coordinator: FaceUnlockCoordinator
+    @ObservedObject var pocController: POCController
+    @ObservedObject private var settings = GlanceSettings.shared
 
     @State private var launchAtLoginEnabled = LaunchAtLogin.isEnabled
     @State private var launchAtLoginError: String?
@@ -52,7 +53,7 @@ struct GeneralSettingsPage: View {
         .onAppear { pocController.refreshCredentialStatus() }
         // The password prompt runs in the notch, outside this view's hierarchy,
         // so refresh the session state when that flow finishes.
-        .onChange(of: NotchOverlayController.shared.phase) { _, newPhase in
+        .onChangeCompat(of: notchOverlay.phase) { _, newPhase in
             guard newPhase == .closed else { return }
             pocController.refreshCredentialStatus()
         }
@@ -110,7 +111,7 @@ struct GeneralSettingsPage: View {
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 inputMonitoring = SpaceKeyMonitor.inputMonitoringAccess
             }
-            .onChange(of: settings.unlockTriggers) { oldValue, newValue in
+            .onChangeCompat(of: settings.unlockTriggers) { oldValue, newValue in
                 // Only prompt on the transition into selecting "On space".
                 SpaceKeyMonitor.log.info("unlockTriggers changed: old=\(String(describing: oldValue), privacy: .public) new=\(String(describing: newValue), privacy: .public) state=\(String(describing: inputMonitoring), privacy: .public)")
                 if newValue.contains(.onSpace), !oldValue.contains(.onSpace), inputMonitoring != .granted {
@@ -126,7 +127,7 @@ struct GeneralSettingsPage: View {
                 SettingsCaption(text: launchAtLoginError)
             }
             if hasInheritedXcodePermission {
-                SettingsCaption(text: "Running from Xcode — permission checks resolve against Xcode’s grants, not glance’s, so this reading is meaningless. Launch glance.app on its own to see the real state.")
+                SettingsCaption(text: "Running from Xcode — permission checks resolve against Xcode’s grants, not Glance’s, so this reading is meaningless. Launch Glance.app on its own to see the real state.")
             } else if needsInputMonitoring {
                 inputMonitoringNotice()
             }
@@ -187,7 +188,7 @@ struct GeneralSettingsPage: View {
     /// Shown while "On space" is selected but Input Monitoring isn't granted.
     private func inputMonitoringNotice() -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            SettingsCaption(text: "“On space” reads the keyboard directly to see the space key on the lock screen, which needs Accessibility — the same permission glance uses to type your password. Switch glance on under Privacy & Security → Accessibility, then quit and reopen glance.")
+            SettingsCaption(text: "“On space” reads the keyboard directly to see the space key on the lock screen, which needs Accessibility — the same permission Glance uses to type your password. Switch Glance on under Privacy & Security → Accessibility, then quit and reopen Glance.")
             Button("Open Accessibility settings") {
                 // Covers the rare install with no Accessibility grant at all.
                 SpaceKeyMonitor.requestInputMonitoringAccess()

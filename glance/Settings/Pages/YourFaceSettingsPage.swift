@@ -10,8 +10,9 @@
 import SwiftUI
 
 struct YourFaceSettingsPage: View {
+    @ObservedObject private var notchOverlay = NotchOverlayController.shared
     let environment: AppEnvironment
-    @Bindable private var store = FaceEnrollmentStore.shared
+    @ObservedObject private var store = FaceEnrollmentStore.shared
 
     @State private var sessionError: String?
     @State private var isUnlocking = false
@@ -42,7 +43,7 @@ struct YourFaceSettingsPage: View {
     /// The notch hosts one flow at a time, so a second Add/Recapture would
     /// swap the content out from under a capture already in progress.
     private var enrollmentFlowIsRunning: Bool {
-        NotchOverlayController.shared.phase == .onboarding
+        notchOverlay.phase == .onboarding
     }
 
     var body: some View {
@@ -71,7 +72,7 @@ struct YourFaceSettingsPage: View {
         .onAppear { store.reloadIfUnlocked() }
         // The enrollment flow runs in the notch, outside this view's
         // hierarchy, so nothing else prompts a re-check once it closes.
-        .onChange(of: NotchOverlayController.shared.phase) { _, newPhase in
+        .onChangeCompat(of: notchOverlay.phase) { _, newPhase in
             guard newPhase == .closed else { return }
             store.reloadIfUnlocked()
         }

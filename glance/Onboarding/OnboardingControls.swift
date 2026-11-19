@@ -154,7 +154,7 @@ struct PillSecureField: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        SecureField("", text: $text, prompt: Text(placeholder).foregroundStyle(GlanceTheme.placeholder))
+        SecureField("", text: $text, prompt: Text(placeholder).foregroundColor(GlanceTheme.placeholder))
             .textFieldStyle(.plain)
             .font(GlanceTheme.Font.passwordPlaceholder)
             .foregroundStyle(GlanceTheme.textPrimary)
@@ -179,7 +179,7 @@ struct PillTextField: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(GlanceTheme.placeholder))
+        TextField("", text: $text, prompt: Text(placeholder).foregroundColor(GlanceTheme.placeholder))
             .textFieldStyle(.plain)
             .font(GlanceTheme.Font.passwordPlaceholder)
             .foregroundStyle(GlanceTheme.textPrimary)

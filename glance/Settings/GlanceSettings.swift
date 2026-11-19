@@ -7,7 +7,7 @@
 //
 
 import Foundation
-import Observation
+import Combine
 
 /// How long the Touch-ID-unlocked session may sit idle before it re-locks.
 enum AutoLockInterval: Int, CaseIterable, Identifiable {
@@ -95,9 +95,8 @@ enum UnlockTrigger: String, CaseIterable, Identifiable {
     }
 }
 
-@Observable
 @MainActor
-final class GlanceSettings {
+final class GlanceSettings: ObservableObject {
     static let shared = GlanceSettings()
 
     private enum Key {
@@ -127,30 +126,30 @@ final class GlanceSettings {
         static let hasAcknowledgedSecurityNotice = "GlanceSettings.hasAcknowledgedSecurityNotice"
     }
 
-    @ObservationIgnored private let defaults = UserDefaults.standard
+    private let defaults = UserDefaults.standard
     /// AppKit owns the actual status item. This callback keeps the persisted
     /// preference independent from that UI lifecycle.
-    @ObservationIgnored private var menuBarVisibilityDidChange: ((Bool) -> Void)?
+    private var menuBarVisibilityDidChange: ((Bool) -> Void)?
 
-    var isFaceUnlockEnabled: Bool {
+    @Published var isFaceUnlockEnabled: Bool {
         didSet { defaults.set(isFaceUnlockEnabled, forKey: Key.isFaceUnlockEnabled) }
     }
-    var matchThreshold: Float {
+    @Published var matchThreshold: Float {
         didSet { defaults.set(matchThreshold, forKey: Key.matchThreshold) }
     }
     /// Master switch for liveness checking. Off means face recognition
     /// alone decides an unlock — a photo of the enrolled user would pass.
-    var livenessChecksEnabled: Bool {
+    @Published var livenessChecksEnabled: Bool {
         didSet { defaults.set(livenessChecksEnabled, forKey: Key.livenessChecksEnabled) }
     }
     /// Light (deny-only) vs Heavy (deny plus a required proof of life) —
     /// see `LivenessMode`.
-    var livenessMode: LivenessMode {
+    @Published var livenessMode: LivenessMode {
         didSet { defaults.set(livenessMode.rawValue, forKey: Key.livenessMode) }
     }
     /// Mirrored into `FaceRecognitionPipeline.minimumProminentFaceWidth` on
     /// every change, since that's read from a background `nonisolated` context.
-    var minimumFaceWidth: Float {
+    @Published var minimumFaceWidth: Float {
         didSet {
             defaults.set(minimumFaceWidth, forKey: Key.minimumFaceWidth)
             FaceRecognitionPipeline.minimumProminentFaceWidth = minimumFaceWidth
@@ -159,10 +158,10 @@ final class GlanceSettings {
     /// The remembered choice (`.minimal`/`.original` only); `showUnlockAnimation`
     /// tracks on/off separately so toggling back on restores the prior pick.
     /// Read `effectiveUnlockAnimationStyle`, not this, to decide what to show.
-    var unlockAnimationStyle: UnlockAnimationStyle {
+    @Published var unlockAnimationStyle: UnlockAnimationStyle {
         didSet { defaults.set(unlockAnimationStyle.rawValue, forKey: Key.unlockAnimationStyle) }
     }
-    var showUnlockAnimation: Bool {
+    @Published var showUnlockAnimation: Bool {
         didSet { defaults.set(showUnlockAnimation, forKey: Key.showUnlockAnimation) }
     }
 
@@ -174,7 +173,7 @@ final class GlanceSettings {
 
     /// Which signals arm Face Unlock. Persisted as raw-value strings; the
     /// setter refuses to store an empty set (see `UnlockTrigger`).
-    var unlockTriggers: Set<UnlockTrigger> {
+    @Published var unlockTriggers: Set<UnlockTrigger> {
         didSet {
             // Belt-and-braces behind the picker's own min-one rule. This
             // reassignment re-enters didSet once, then terminates since the
@@ -185,13 +184,13 @@ final class GlanceSettings {
             defaults.set(unlockTriggers.map(\.rawValue), forKey: Key.unlockTriggers)
         }
     }
-    var retryOnHover: Bool {
+    @Published var retryOnHover: Bool {
         didSet { defaults.set(retryOnHover, forKey: Key.retryOnHover) }
     }
     /// How long each scan cycle looks for a face before giving up. Must stay
     /// equal to `FaceUnlockCoordinator.scanWindowDuration` and
     /// `NotchOverlayController.scanTimeoutDuration`.
-    var faceDetectionSeconds: Int {
+    @Published var faceDetectionSeconds: Int {
         didSet {
             // Only reassign when clamping actually changes the value —
             // unconditional reassignment would recurse infinitely, since the
@@ -205,17 +204,17 @@ final class GlanceSettings {
             defaults.set(faceDetectionSeconds, forKey: Key.faceDetectionSeconds)
         }
     }
-    var autoRetryOnce: Bool {
+    @Published var autoRetryOnce: Bool {
         didSet { defaults.set(autoRetryOnce, forKey: Key.autoRetryOnce) }
     }
     /// Trackpad haptic on hovering the notch/pill and on a successful unlock —
-    /// see `NotchOverlayView`'s hover handler and `.onChange(of: controller.phase)`.
-    var hapticFeedbackEnabled: Bool {
+    /// see `NotchOverlayView`'s hover handler and `.onChangeCompat(of: controller.phase)`.
+    @Published var hapticFeedbackEnabled: Bool {
         didSet { defaults.set(hapticFeedbackEnabled, forKey: Key.hapticFeedbackEnabled) }
     }
     /// Hiding the status item does not quit Glance; a relaunch still routes
     /// through `AppDelegate.applicationShouldHandleReopen` to show Settings.
-    var showsInMenuBar: Bool {
+    @Published var showsInMenuBar: Bool {
         didSet {
             defaults.set(showsInMenuBar, forKey: Key.showsInMenuBar)
             menuBarVisibilityDidChange?(showsInMenuBar)
@@ -234,42 +233,42 @@ final class GlanceSettings {
     /// Which display Face Unlock shows on. `nil` means `NotchGeometry.preferredScreen()`'s
     /// default, re-evaluated live; a pinned display has deliberately no
     /// fallback if disconnected (see `FaceUnlockCoordinator.evaluateTrigger()`).
-    var preferredDisplayID: String? {
+    @Published var preferredDisplayID: String? {
         didSet { defaults.set(preferredDisplayID, forKey: Key.preferredDisplayID) }
     }
     /// The chosen display's name at pick time — cosmetic only, so the row can
     /// show something recognizable when that display is disconnected.
-    var preferredDisplayName: String? {
+    @Published var preferredDisplayName: String? {
         didSet { defaults.set(preferredDisplayName, forKey: Key.preferredDisplayName) }
     }
     /// Enforced by `SessionAutoLocker`, not here — this is only the stored
     /// preference.
-    var autoLockInterval: AutoLockInterval {
+    @Published var autoLockInterval: AutoLockInterval {
         didSet { defaults.set(autoLockInterval.rawValue, forKey: Key.autoLockIntervalDays) }
     }
     /// Device `uniqueID`s, not device objects — devices can disconnect/
     /// reconnect between launches, but their unique ID is stable.
-    var defaultCameraID: String? {
+    @Published var defaultCameraID: String? {
         didSet { defaults.set(defaultCameraID, forKey: Key.defaultCameraID) }
     }
-    var builtInDisplayCameraID: String? {
+    @Published var builtInDisplayCameraID: String? {
         didSet { defaults.set(builtInDisplayCameraID, forKey: Key.builtInDisplayCameraID) }
     }
-    var externalDisplayCameraID: String? {
+    @Published var externalDisplayCameraID: String? {
         didSet { defaults.set(externalDisplayCameraID, forKey: Key.externalDisplayCameraID) }
     }
 
     /// Gates first-run onboarding — `AppDelegate` shows it instead of the
     /// Settings window until this is `true`. Set once, by `OnboardingController`
     /// on the true first-run flow reaching `.complete`.
-    var hasCompletedOnboarding: Bool {
+    @Published var hasCompletedOnboarding: Bool {
         didSet { defaults.set(hasCompletedOnboarding, forKey: Key.hasCompletedOnboarding) }
     }
     /// Where to resume first-run onboarding if the app quit mid-flow; `nil`
     /// starts fresh at `.intro`. Steps depending on in-memory capture state
     /// collapse to `.preSetup` before storing, since that state doesn't
     /// survive a relaunch — see `OnboardingStep.resumeTarget`.
-    var onboardingResumeStep: OnboardingStep? {
+    @Published var onboardingResumeStep: OnboardingStep? {
         didSet { defaults.set(onboardingResumeStep?.rawValue, forKey: Key.onboardingResumeStep) }
     }
     /// Gates the one-time post-update notice for users who completed onboarding before the
@@ -278,7 +277,7 @@ final class GlanceSettings {
     /// `OnboardingController.startPostUpdateNotice()` once the standalone catch-up notice is
     /// acknowledged. Defaults `false`, so an upgrading 1.0 install (where this key has never
     /// been written) correctly triggers the catch-up flow once.
-    var hasAcknowledgedSecurityNotice: Bool {
+    @Published var hasAcknowledgedSecurityNotice: Bool {
         didSet { defaults.set(hasAcknowledgedSecurityNotice, forKey: Key.hasAcknowledgedSecurityNotice) }
     }
 

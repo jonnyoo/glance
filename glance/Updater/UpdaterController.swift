@@ -8,18 +8,17 @@
 //
 
 import AppKit
-import Observation
+import Combine
 import Sparkle
 
-@Observable
 @MainActor
-final class UpdaterController {
+final class UpdaterController: ObservableObject {
     private let controller: SPUStandardUpdaterController
     private let presentationDelegate = UpdatePresentationDelegate()
 
     /// Mirrors `SPUUpdater.canCheckForUpdates` (KVO-only on Sparkle's side, hence the manual observation below).
-    private(set) var canCheckForUpdates = false
-    private var canCheckForUpdatesObservation: NSKeyValueObservation?
+    @Published private(set) var canCheckForUpdates = false
+    @Published private var canCheckForUpdatesObservation: NSKeyValueObservation?
 
     /// Forwards straight to Sparkle rather than keeping a second stored copy — Sparkle already persists this itself under the
     /// same `UserDefaults` suite `GlanceSettings` uses.

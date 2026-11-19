@@ -8,7 +8,7 @@
 
 import Foundation
 import CoreGraphics
-import Observation
+import Combine
 
 struct RecognitionResult: Identifiable {
     let id = UUID()
@@ -28,30 +28,29 @@ struct CalibrationSample: Identifiable {
     let isGenuine: Bool
 }
 
-@Observable
 @MainActor
-final class FaceLabController {
+final class FaceLabController: ObservableObject {
     let camera = CameraManager()
     let store = FaceEnrollmentStore.shared
     let pipeline = FaceRecognitionPipeline()
 
-    private(set) var detectedFaces: [DetectedFace] = []
-    private(set) var currentResult: FaceRecognitionResult?
+    @Published private(set) var detectedFaces: [DetectedFace] = []
+    @Published private(set) var currentResult: FaceRecognitionResult?
 
     /// Fed live, same as `FaceUnlockCoordinator`'s scan loop — this is exactly what the real unlock path would see.
     private let livenessAnalyzer = LivenessAnalyzer()
-    private(set) var currentLiveness = LivenessSnapshot.empty
+    @Published private(set) var currentLiveness = LivenessSnapshot.empty
     /// Diagnostics behind the flat-vs-3D cue, explaining *why* it reads what it reads beyond the cue's own 0...1 level.
-    private(set) var currentGeometry = GeometryLivenessResult.empty
+    @Published private(set) var currentGeometry = GeometryLivenessResult.empty
     /// Lets the debug view show raw measurements live (not just derived cue levels), to tell a wrong threshold from
     /// a measurement that isn't moving at all.
-    private(set) var lastLivenessFrame: LivenessFrame?
+    @Published private(set) var lastLivenessFrame: LivenessFrame?
 
     /// Drives mode/tuning locally rather than reading `GlanceSettings`, so experimenting here can't change what
     /// actually unlocks the Mac. Heavy by default since the point of this tab is watching the confirm cues.
-    var livenessMode: LivenessMode = .heavy
-    var livenessTuning = LivenessTuning.default
-    var enabledLivenessCues: Set<LivenessCue> = Set(LivenessCue.allCases)
+    @Published var livenessMode: LivenessMode = .heavy
+    @Published var livenessTuning = LivenessTuning.default
+    @Published var enabledLivenessCues: Set<LivenessCue> = Set(LivenessCue.allCases)
 
     func isLivenessCueEnabled(_ cue: LivenessCue) -> Bool {
         enabledLivenessCues.contains(cue)
@@ -73,17 +72,17 @@ final class FaceLabController {
         log("Liveness cues reset.")
     }
 
-    var enrollName: String = ""
+    @Published var enrollName: String = ""
     /// Raw cosine similarity cutoff (-1...1); typical ArcFace verification cutoffs sit around 0.28-0.40.
-    var threshold: Double = 0.6
+    @Published var threshold: Double = 0.6
 
-    private(set) var recognitionResults: [RecognitionResult] = []
-    private(set) var bestMatch: RecognitionResult?
+    @Published private(set) var recognitionResults: [RecognitionResult] = []
+    @Published private(set) var bestMatch: RecognitionResult?
 
-    private(set) var logLines: [String] = []
-    private(set) var sessionError: String?
+    @Published private(set) var logLines: [String] = []
+    @Published private(set) var sessionError: String?
 
-    private var isProcessingFrame = false
+    @Published private var isProcessingFrame = false
 
     init() {
         observeFrames()
@@ -134,16 +133,17 @@ final class FaceLabController {
         }
     }
 
-    /// Re-subscribes on every change — `withObservationTracking` only fires once per registration.
+    private var frameCancellable: AnyCancellable?
+
     private func observeFrames() {
-        withObservationTracking {
-            _ = camera.currentFrame
-        } onChange: { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.observeFrames()
-                await self?.processLatestFrame()
+        frameCancellable = camera.$currentFrame
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    await self?.processLatestFrame()
+                }
             }
-        }
     }
 
     /// Skips frames that arrive mid-processing — an "always work on the latest frame" throttle instead of a timer.
@@ -283,7 +283,7 @@ final class FaceLabController {
     // MARK: - Threshold calibration
 
     /// Tagged similarity scores collected this session — the actual data a threshold should be picked from, not guessed.
-    private(set) var calibrationSamples: [CalibrationSample] = []
+    @Published private(set) var calibrationSamples: [CalibrationSample] = []
 
     /// Tags the most recent `recognize()` top score as genuine or impostor, using centroid similarity (what the
     /// threshold slider actually gates on).

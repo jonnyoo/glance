@@ -27,7 +27,7 @@ private struct InteractivePanelFramePreferenceKey: PreferenceKey {
 }
 
 struct NotchOverlayView: View {
-    let controller: NotchOverlayController
+    @ObservedObject var controller: NotchOverlayController
 
     @State private var isHovering = false
 
@@ -314,7 +314,7 @@ struct NotchOverlayView: View {
             lockUnlockTask?.cancel()
             lockUnlockTask = nil
         }
-        .onChange(of: controller.phase) { _, newPhase in
+        .onChangeCompat(of: controller.phase) { _, newPhase in
             scheduleChoreography()
             updateScanPulse()
             updateMinimalLock()
@@ -322,7 +322,7 @@ struct NotchOverlayView: View {
                 performHapticFeedback(.levelChange)
             }
         }
-        .onChange(of: controller.isPillDocked) { _, _ in scheduleChoreography() }
+        .onChangeCompat(of: controller.isPillDocked) { _, _ in scheduleChoreography() }
         .frame(
             width: NotchGeometry.windowSize(for: style).width,
             height: NotchGeometry.windowSize(for: style).height,

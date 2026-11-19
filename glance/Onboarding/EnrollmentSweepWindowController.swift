@@ -7,13 +7,13 @@
 //
 
 import AppKit
+import Combine
 import SwiftUI
 
 @MainActor
 final class EnrollmentSweepWindowController {
-    @Observable
-    final class Host {
-        var isPresented = false
+    final class Host: ObservableObject {
+        @Published var isPresented = false
         let controller: OnboardingController
 
         init(controller: OnboardingController) {
@@ -121,7 +121,7 @@ final class EnrollmentSweepWindowController {
 // MARK: - Overlay root
 
 private struct EnrollmentSweepOverlay: View {
-    @Bindable var host: EnrollmentSweepWindowController.Host
+    @ObservedObject var host: EnrollmentSweepWindowController.Host
     @State private var playingDirection: EnrollmentSweepDirection?
     @State private var playTask: Task<Void, Never>?
 
@@ -146,10 +146,10 @@ private struct EnrollmentSweepOverlay: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onChange(of: direction, initial: true) { _, newDirection in
+        .onChangeCompat(of: direction, initial: true) { _, newDirection in
             scheduleSweep(newDirection, canPlay: canPlay)
         }
-        .onChange(of: canPlay) { _, playable in
+        .onChangeCompat(of: canPlay) { _, playable in
             if !playable {
                 playTask?.cancel()
                 playingDirection = nil

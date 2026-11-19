@@ -7,21 +7,20 @@
 //
 
 import Foundation
-import Observation
+import Combine
 
-@Observable
 @MainActor
-final class POCController {
-    var accessibilityGranted: Bool = KeystrokeInjector.isAccessibilityTrusted()
+final class POCController: ObservableObject {
+    @Published var accessibilityGranted: Bool = KeystrokeInjector.isAccessibilityTrusted()
 
-    var hasStoredPassword: Bool = SecureCredentialManager.hasStoredPassword()
-    var isSessionUnlocked: Bool = SecureCredentialManager.isSessionUnlocked
-    var sessionError: String? = nil
+    @Published var hasStoredPassword: Bool = SecureCredentialManager.hasStoredPassword()
+    @Published var isSessionUnlocked: Bool = SecureCredentialManager.isSessionUnlocked
+    @Published var sessionError: String? = nil
 
     /// Bound to the setup SecureField. Cleared immediately after a successful save.
-    var passwordInput: String = ""
+    @Published var passwordInput: String = ""
 
-    var statusMessage: String = "Idle"
+    @Published var statusMessage: String = "Idle"
 
     func refreshAccessibilityStatus() {
         accessibilityGranted = KeystrokeInjector.isAccessibilityTrusted()
@@ -43,7 +42,7 @@ final class POCController {
         sessionError = nil
         do {
             try await Task.detached(priority: .userInitiated) {
-                try SecureCredentialManager.unlockSession(reason: "Authenticate to set up or use glance")
+                try SecureCredentialManager.unlockSession(reason: "Authenticate to set up or use Glance")
             }.value
             isSessionUnlocked = true
         } catch {
@@ -92,7 +91,7 @@ final class POCController {
     /// confirms the screen is actually locked.
     func injectStoredPassword(requireAuthoritativeLock: Bool = false) async {
         guard KeystrokeInjector.isAccessibilityTrusted() else {
-            statusMessage = "Accessibility not granted — open System Settings and enable glance."
+            statusMessage = "Accessibility not granted — open System Settings and enable Glance."
             return
         }
         guard SecureCredentialManager.isSessionUnlocked else {

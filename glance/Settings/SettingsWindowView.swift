@@ -35,7 +35,6 @@ struct SettingsWindowView: View {
     let environment: AppEnvironment
     @State private var selection: SettingsTab = .general
     @State private var headerTrailingAction: HeaderAction?
-    @Environment(\.dismissWindow) private var dismissWindow
 
     /// Defense-in-depth, not the primary gate: Settings is `.suppressed` at
     /// launch and `AppDelegate.revealSettingsWindow()` refuses to open it
@@ -46,7 +45,11 @@ struct SettingsWindowView: View {
             settingsContent
         } else {
             Color.clear
-                .onAppear { dismissWindow(id: "settings") }
+                .onAppear {
+                    DispatchQueue.main.async {
+                        for window in NSApp.windows where window.canBecomeMain { window.close() }
+                    }
+                }
         }
     }
 
