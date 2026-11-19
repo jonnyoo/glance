@@ -6,10 +6,11 @@
 import SwiftUI
 
 struct CameraSettingsPage: View {
-    @Bindable var pocController: POCController
+    @ObservedObject private var notchOverlay = NotchOverlayController.shared
+    @ObservedObject var pocController: POCController
     @State private var devices: [CameraDevice] = CameraDeviceCatalog.availableDevices()
-    @Bindable private var settings = GlanceSettings.shared
-    @State private var previewCamera = CameraManager()
+    @ObservedObject private var settings = GlanceSettings.shared
+    @StateObject private var previewCamera = CameraManager()
     @State private var isPreviewShown = false
 
     @State private var isUnlocking = false
@@ -37,14 +38,14 @@ struct CameraSettingsPage: View {
             value: isSessionUnlocked ? HeaderAction(perform: refreshDevices) : nil
         )
         .onAppear { pocController.refreshCredentialStatus() }
-        .onChange(of: isSessionUnlocked) { _, unlocked in
+        .onChangeCompat(of: isSessionUnlocked) { _, unlocked in
             guard !unlocked else { return }
             hidePreview()
         }
         .onDisappear { hidePreview() }
         // Password/name/enrollment flows run in the notch, outside this
         // window, so nothing else prompts a re-check once one closes.
-        .onChange(of: NotchOverlayController.shared.phase) { _, newPhase in
+        .onChangeCompat(of: notchOverlay.phase) { _, newPhase in
             guard newPhase == .closed else { return }
             pocController.refreshCredentialStatus()
         }
@@ -89,9 +90,9 @@ struct CameraSettingsPage: View {
                 SettingsCaption(text: error)
             }
         }
-        .onChange(of: settings.defaultCameraID) { restartPreview() }
-        .onChange(of: settings.builtInDisplayCameraID) { restartPreview() }
-        .onChange(of: settings.externalDisplayCameraID) { restartPreview() }
+        .onChangeCompat(of: settings.defaultCameraID) { restartPreview() }
+        .onChangeCompat(of: settings.builtInDisplayCameraID) { restartPreview() }
+        .onChangeCompat(of: settings.externalDisplayCameraID) { restartPreview() }
     }
 
     /// Live feed, or a placeholder until "Show preview" is tapped — opening

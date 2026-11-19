@@ -120,7 +120,7 @@ def convert_to_coreml(onnx_path: Path, output_path: Path) -> None:
             )
         ],
         outputs=[ct.TensorType(name="embedding")],
-        minimum_deployment_target=ct.target.macOS14,
+        minimum_deployment_target=ct.target.macOS13,
         compute_precision=ct.precision.FLOAT16,
         compute_units=ct.ComputeUnit.ALL,
     )

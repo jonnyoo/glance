@@ -112,7 +112,15 @@ enum KeychainManager {
             addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         }
 
-        let status = SecItemAdd(addQuery as CFDictionary, nil)
+        var status = SecItemAdd(addQuery as CFDictionary, nil)
+        // Ad-hoc / no-team builds have no keychain-access-groups entitlement, so the data-protection attributes
+        // (access control, kSecAttrAccessible) fail with -34018 "a required entitlement isn't present". Retry
+        // as a plain login-keychain item (also covers Macs without Touch ID/T2).
+        if status == errSecMissingEntitlement {
+            addQuery.removeValue(forKey: kSecAttrAccessControl as String)
+            addQuery.removeValue(forKey: kSecAttrAccessible as String)
+            status = SecItemAdd(addQuery as CFDictionary, nil)
+        }
         if status == errSecSuccess { return }
         // Another save may have added the item after our update reported
         // not-found. Complete that competing replacement with an update instead

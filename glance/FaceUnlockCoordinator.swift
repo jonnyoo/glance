@@ -9,18 +9,17 @@
 
 import Foundation
 import CoreGraphics
-import Observation
+import Combine
 
-@Observable
 @MainActor
-final class FaceUnlockCoordinator {
+final class FaceUnlockCoordinator: ObservableObject {
     private let pocController: POCController
     let lockMonitor = LockMonitor()
     let camera = CameraManager()
     let pipeline = FaceRecognitionPipeline()
 
     /// Persisted via GlanceSettings. Setting to false cancels any in-flight scan and disarms the overlay immediately.
-    var isEnabled: Bool {
+    @Published var isEnabled: Bool {
         didSet {
             GlanceSettings.shared.isFaceUnlockEnabled = isEnabled
             if !isEnabled { disarmOverlay() }
@@ -28,7 +27,7 @@ final class FaceUnlockCoordinator {
     }
 
     /// Kept independent from Face Lab's own `threshold` so tuning the debug tool never silently changes the real unlock gate.
-    var matchThreshold: Float {
+    @Published var matchThreshold: Float {
         didSet { GlanceSettings.shared.matchThreshold = matchThreshold }
     }
     /// Shares its setting with NotchOverlayController's scanning timeout, so the background loop stops in step with the UI collapsing.
@@ -40,21 +39,21 @@ final class FaceUnlockCoordinator {
     /// frames before giving the failure animation.
     private let wrongFaceGraceDuration: Duration = .seconds(2)
 
-    private(set) var statusMessage = "Idle"
-    private(set) var lastOutcome: String?
+    @Published private(set) var statusMessage = "Idle"
+    @Published private(set) var lastOutcome: String?
 
-    private var hasArmedForCurrentLock = false
+    @Published private var hasArmedForCurrentLock = false
     /// One-shot per lock session — an auto-retry that could itself auto-retry would loop the camera for the whole lock session.
-    private var hasAutoRetriedForCurrentLock = false
-    private var scanTask: Task<Void, Never>?
+    @Published private var hasAutoRetriedForCurrentLock = false
+    @Published private var scanTask: Task<Void, Never>?
     /// Bumped by every `startScanCycle()`; a cycle bails once superseded (see `runScanCycle(generation:)`).
-    private var scanGeneration = 0
+    @Published private var scanGeneration = 0
     /// When the last scan cycle was armed — collapses a single wake into a single arm (see `.wake` branch of `evaluateTrigger`).
-    private var lastArmedAt: ContinuousClock.Instant?
+    @Published private var lastArmedAt: ContinuousClock.Instant?
     /// One lid-open fires several wake signals within a few hundred ms of each other; anything in this window counts as the same wake.
     private let rearmDebounce: Duration = .seconds(2)
     /// Held separately from `scanTask` since it's scheduled from inside the scan task it follows — reusing `scanTask` would self-cancel it.
-    private var autoRetryTask: Task<Void, Never>?
+    @Published private var autoRetryTask: Task<Void, Never>?
     /// Gap between headless auto-retries, just to keep the camera from restarting in a tight loop.
     private let headlessRetryDelay: Duration = .seconds(1)
 
@@ -72,17 +71,19 @@ final class FaceUnlockCoordinator {
         observeLockAndWakeEvents()
     }
 
-    /// Re-subscribes on every change — `withObservationTracking` only fires once per registration.
+    private var lockCancellable: AnyCancellable?
+
     private func observeLockAndWakeEvents() {
-        withObservationTracking {
-            _ = lockMonitor.isScreenLocked
-            _ = lockMonitor.wakeEventCount
-            _ = lockMonitor.isSleeping
+        lockCancellable = Publishers.MergeMany(
+            lockMonitor.$isScreenLocked.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            lockMonitor.$wakeEventCount.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            lockMonitor.$isSleeping.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             // Also tracked so screensaver-stop and display-only wakes still wake this up.
-            _ = lockMonitor.eventCount
-        } onChange: { [weak self] in
+            lockMonitor.$eventCount.dropFirst().map { _ in () }.eraseToAnyPublisher()
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.observeLockAndWakeEvents()
                 // Brief settle delay: CGSession's reported state can lag the true state right after wake.
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 self?.evaluateTrigger()

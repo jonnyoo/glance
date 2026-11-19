@@ -10,7 +10,8 @@
 import SwiftUI
 
 struct SessionLockButton: View {
-    @Bindable var pocController: POCController
+    @ObservedObject private var notchOverlay = NotchOverlayController.shared
+    @ObservedObject var pocController: POCController
 
     @State private var isUnlocking = false
 
@@ -21,7 +22,7 @@ struct SessionLockButton: View {
                     .font(.system(size: 12))
                     // `.replace` animates the padlock shackle popping open
                     // where supported; SwiftUI falls back to a crossfade.
-                    .contentTransition(.symbolEffect(.replace))
+                    .contentTransition(.opacity)
 
                 Text(label)
                     .font(SettingsMetrics.headerButtonFont)
@@ -48,7 +49,7 @@ struct SessionLockButton: View {
         // than through this pocController, so this doesn't update
         // reactively on its own — refresh after the notch closes, same as
         // every gated page.
-        .onChange(of: NotchOverlayController.shared.phase) { _, newPhase in
+        .onChangeCompat(of: notchOverlay.phase) { _, newPhase in
             guard newPhase == .closed else { return }
             pocController.refreshCredentialStatus()
         }

@@ -14,9 +14,16 @@ struct CameraDevice: Identifiable, Hashable {
 }
 
 enum CameraDeviceCatalog {
+    private static var deviceTypes: [AVCaptureDevice.DeviceType] {
+        if #available(macOS 14.0, *) {
+            return [.builtInWideAngleCamera, .external, .continuityCamera]
+        }
+        return [.builtInWideAngleCamera, .externalUnknown]
+    }
+
     static func availableDevices() -> [CameraDevice] {
         let discovery = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera],
+            deviceTypes: Self.deviceTypes,
             mediaType: .video,
             position: .unspecified
         )

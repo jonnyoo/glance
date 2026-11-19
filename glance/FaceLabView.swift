@@ -11,8 +11,9 @@ import SwiftUI
 import Charts
 
 struct FaceLabView: View {
+    @ObservedObject private var notchOverlay = NotchOverlayController.shared
     /// Retained only while the hidden debug tab is visible.
-    @Bindable var controller: FaceLabController
+    @ObservedObject var controller: FaceLabController
 
     var body: some View {
         ScrollView {
@@ -64,7 +65,7 @@ struct FaceLabView: View {
         }
         // Guided enrollment runs in the notch, outside this view hierarchy, so nothing else prompts a re-read once
         // it closes. Same trick YourFaceSettingsPage uses.
-        .onChange(of: NotchOverlayController.shared.phase) { _, newPhase in
+        .onChangeCompat(of: notchOverlay.phase) { _, newPhase in
             guard newPhase == .closed else { return }
             controller.store.reloadIfUnlocked()
         }
@@ -72,7 +73,7 @@ struct FaceLabView: View {
 
     /// True while the notch (a single shared panel) is already hosting an onboarding flow.
     private var enrollmentFlowIsRunning: Bool {
-        NotchOverlayController.shared.phase == .onboarding
+        notchOverlay.phase == .onboarding
     }
 
     // MARK: - Which embedder is active

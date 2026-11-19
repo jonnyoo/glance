@@ -11,11 +11,10 @@
 
 import AppKit
 import SwiftUI
-import Observation
+import Combine
 
-@Observable
 @MainActor
-final class NotchOverlayController {
+final class NotchOverlayController: ObservableObject {
     /// One overlay window for the whole app — sharing one instance guarantees
     /// the triggers never run concurrently, rather than leaving that incidental.
     static let shared = NotchOverlayController()
@@ -50,38 +49,38 @@ final class NotchOverlayController {
         }
     }
 
-    private(set) var phase: Phase = .closed
-    private(set) var content: Content = .scan(.idle)
+    @Published private(set) var phase: Phase = .closed
+    @Published private(set) var content: Content = .scan(.idle)
     /// Read-only convenience for the scan-mode view/callers — `.idle` while
     /// onboarding owns the panel.
     var media: ScanMedia {
         if case .scan(let media) = content { return media }
         return .idle
     }
-    private(set) var geometry: NotchGeometry = .forMainScreen()
+    @Published private(set) var geometry: NotchGeometry = .forMainScreen()
     /// Read by the view for the hover-driven size/shadow bump — irrelevant
     /// to the phase state machine itself.
-    private(set) var isArmed = false
+    @Published private(set) var isArmed = false
 
     /// Pill style only: whether the pill is parked on screen at rest vs. off-screen.
     /// Deliberately separate from `isArmed` — it lags it by a frame on the way in
     /// (making the pill slide into place) and leads it on the way out.
-    private(set) var isPillDocked = false
+    @Published private(set) var isPillDocked = false
 
     /// Snapshotted from `GlanceSettings` when a cycle begins rather than read live,
     /// so a settings change mid-attempt can't resize the panel or change how it resolves.
-    private(set) var activeUnlockStyle: UnlockAnimationStyle = .original
+    @Published private(set) var activeUnlockStyle: UnlockAnimationStyle = .original
 
     /// What a hover-driven activation should do — set by `arm()` (persists
     /// across scan cycles) or by one-shot `present(onRetry:)` (single use).
-    private var onActivate: (() -> Void)?
+    @Published private var onActivate: (() -> Void)?
 
     private let windowController = NotchWindowController()
-    private var resolveTask: Task<Void, Never>?
-    private var scanTimeoutTask: Task<Void, Never>?
+    @Published private var resolveTask: Task<Void, Never>?
+    @Published private var scanTimeoutTask: Task<Void, Never>?
 
     /// Guards `primeWindowIfNeeded` so the extra render pass only happens on the first show.
-    private var hasPrimedWindow = false
+    @Published private var hasPrimedWindow = false
 
     /// Matches the success asset duration (~1.22s) plus a short beat to read the final frame.
     private let successHoldDuration: Duration = .milliseconds(1_700)

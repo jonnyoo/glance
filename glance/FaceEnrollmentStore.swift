@@ -7,7 +7,7 @@
 //
 
 import Foundation
-import Observation
+import Combine
 
 struct FaceSample: Codable, Equatable {
     let embedding: [Float]
@@ -101,22 +101,21 @@ enum FaceEnrollmentStoreError: LocalizedError {
     }
 }
 
-@Observable
 @MainActor
-final class FaceEnrollmentStore {
+final class FaceEnrollmentStore: ObservableObject {
     /// Shared so the Face Lab tab and onboarding window observe and persist the same identities, not diverging copies.
     static let shared = FaceEnrollmentStore()
 
-    private(set) var identities: [FaceIdentity] = []
+    @Published private(set) var identities: [FaceIdentity] = []
     /// True until a successful load — distinguishes "nothing enrolled yet" from "locked, needs Touch ID."
-    private(set) var isLocked = true
+    @Published private(set) var isLocked = true
 
     /// Non-nil when unlocked but the encrypted store still couldn't be read (decrypt/decode failure, not a missing key) —
     /// unlike `isLocked`, unlocking again won't fix this.
-    private(set) var loadFailure: String?
+    @Published private(set) var loadFailure: String?
 
     /// False until a load succeeds. Guards `persist()` so an unreadable store is never overwritten by an empty array.
-    private var hasLoadedSuccessfully = false
+    @Published private var hasLoadedSuccessfully = false
 
     /// Everyone the user hasn't switched off — what unlock actually scores against. `identities` stays the full list.
     var activeIdentities: [FaceIdentity] {

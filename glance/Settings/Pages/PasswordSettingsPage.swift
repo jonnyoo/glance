@@ -6,8 +6,9 @@
 import SwiftUI
 
 struct PasswordSettingsPage: View {
-    @Bindable var pocController: POCController
-    @Bindable private var settings = GlanceSettings.shared
+    @ObservedObject private var notchOverlay = NotchOverlayController.shared
+    @ObservedObject var pocController: POCController
+    @ObservedObject private var settings = GlanceSettings.shared
 
     @State private var isUnlocking = false
     @State private var sessionError: String?
@@ -53,7 +54,7 @@ struct PasswordSettingsPage: View {
         .onAppear { pocController.refreshCredentialStatus() }
         // The onboarding password step runs in the notch, outside this
         // view's hierarchy, so nothing else prompts a re-check once it closes.
-        .onChange(of: NotchOverlayController.shared.phase) { _, newPhase in
+        .onChangeCompat(of: notchOverlay.phase) { _, newPhase in
             guard newPhase == .closed else { return }
             pocController.refreshCredentialStatus()
             FaceEnrollmentStore.shared.reloadIfUnlocked()

@@ -7,7 +7,7 @@ import SwiftUI
 import AppKit
 
 struct AboutSettingsPage: View {
-    @Bindable var updater: UpdaterController
+    @ObservedObject var updater: UpdaterController
     let environment: AppEnvironment
 
     /// Secret-tap state for revealing the Debug/Face Lab sidebar section —
