@@ -22,7 +22,7 @@ struct AboutSettingsPage: View {
         let info = Bundle.main.infoDictionary
         let short = info?["CFBundleShortVersionString"] as? String ?? "1.0"
         let build = info?["CFBundleVersion"] as? String ?? "1"
-        return "Version \(short) (\(build))"
+        return String(localized: "Version \(short) (\(build))")
     }
 
     var body: some View {
@@ -48,8 +48,8 @@ struct AboutSettingsPage: View {
 
         SettingsGroup {
             SettingsActionRowContent(
-                title: "Check for Updates",
-                buttonTitle: "Check",
+                title: String(localized: "Check for Updates"),
+                buttonTitle: String(localized: "Check"),
                 isEnabled: updater.canCheckForUpdates
             ) {
                 updater.checkForUpdates()
@@ -57,15 +57,15 @@ struct AboutSettingsPage: View {
 
             SettingsGroupDivider()
 
-            SettingsRowContent(title: "Automatically check for updates") {
+            SettingsRowContent(title: String(localized: "Automatically check for updates")) {
                 GlanceToggle(isOn: $updater.automaticallyChecksForUpdates)
             }
 
             SettingsGroupDivider()
 
             SettingsActionRowContent(
-                title: "Send Feedback",
-                buttonTitle: "Send"
+                title: String(localized: "Send Feedback"),
+                buttonTitle: String(localized: "Send")
             ) {
                 if let url = URL(string: "https://tryglance.app/feedback") {
                     NSWorkspace.shared.open(url)
