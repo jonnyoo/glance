@@ -96,8 +96,8 @@ struct YourFaceSettingsPage: View {
     private var lockedState: some View {
         SettingsEmptyStateView(
             icon: "lock.fill",
-            message: "Session locked",
-            buttonTitle: isUnlocking ? "Authenticating…" : "Unlock session",
+            message: String(localized: "Session locked"),
+            buttonTitle: isUnlocking ? String(localized: "Authenticating…") : String(localized: "Unlock session"),
             isButtonEnabled: !isUnlocking,
             caption: sessionError,
             action: unlock
@@ -119,10 +119,10 @@ struct YourFaceSettingsPage: View {
                 .font(SettingsMetrics.rowFont)
                 .foregroundStyle(SettingsMetrics.textSecondary)
 
-            SettingsCaption(text: store.loadFailure ?? "The stored data couldn't be decrypted with this session key.")
+            SettingsCaption(text: store.loadFailure ?? String(localized: "The stored data couldn't be decrypted with this session key."))
                 .multilineTextAlignment(.center)
 
-            SettingsCaption(text: "Nothing has been deleted, and Glance will not overwrite it — enrolling is blocked until this resolves. Quit and reopen Glance to retry. If it keeps failing, the session key no longer matches this data: remove the stored password on the Password tab to clear both, then set up again.")
+            SettingsCaption(text: String(localized: "Nothing has been deleted, and Glance will not overwrite it — enrolling is blocked until this resolves. Quit and reopen Glance to retry. If it keeps failing, the session key no longer matches this data: remove the stored password on the Password tab to clear both, then set up again."))
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, minHeight: SettingsMetrics.emptyStateMinHeight)
@@ -133,8 +133,8 @@ struct YourFaceSettingsPage: View {
     private var notEnrolledState: some View {
         SettingsEmptyStateView(
             icon: "faceid",
-            message: "Face enrollment",
-            buttonTitle: "Set up Face Unlock",
+            message: String(localized: "Face enrollment"),
+            buttonTitle: String(localized: "Set up Face Unlock"),
             isButtonEnabled: !enrollmentFlowIsRunning,
             action: { OnboardingController.startEnrollmentOnly() }
         )
@@ -162,7 +162,7 @@ struct YourFaceSettingsPage: View {
             }
 
             if !store.identities.isEmpty && store.activeIdentities.isEmpty {
-                SettingsCaption(text: "No identities are enabled — face unlock won't recognize anyone until you switch one back on.")
+                SettingsCaption(text: String(localized: "No identities are enabled — face unlock won't recognize anyone until you switch one back on."))
             }
 
             if let writeError {
@@ -199,7 +199,7 @@ struct YourFaceSettingsPage: View {
 
     private var identitiesHeader: some View {
         HStack(spacing: 0) {
-            SettingsSectionTitle(text: "Identities")
+            SettingsSectionTitle(text: String(localized: "Identities"))
 
             Button {
                 OnboardingController.startAddIdentity()
@@ -253,7 +253,7 @@ struct YourFaceSettingsPage: View {
         Task {
             do {
                 try await Task.detached(priority: .userInitiated) {
-                    try SecureCredentialManager.unlockSession(reason: "Authenticate to view your enrolled face")
+                    try SecureCredentialManager.unlockSession(reason: String(localized: "Authenticate to view your enrolled face"))
                 }.value
                 store.reloadIfUnlocked()
             } catch {
@@ -296,9 +296,9 @@ private struct IdentityCard: View {
     /// An enrollment saved before per-sample quality existed reports "not
     /// recorded" rather than a misleading 100%.
     private var qualityCaption: String {
-        if identity.samples.isEmpty { return "No samples captured" }
-        if ratedCount == 0 { return "Capture quality • not recorded" }
-        return "Capture quality • \(qualityPercentage)%"
+        if identity.samples.isEmpty { return String(localized: "No samples captured") }
+        if ratedCount == 0 { return String(localized: "Capture quality • not recorded") }
+        return String(localized: "Capture quality • \(qualityPercentage)%")
     }
 
     var body: some View {
@@ -320,7 +320,7 @@ private struct IdentityCard: View {
                         QualityTickStrip(samples: identity.samples)
                         .padding(.leading, 2)
                         Spacer(minLength: 12)
-                        PillActionButton(title: "Recapture", action: recapture)
+                        PillActionButton(title: String(localized: "Recapture"), action: recapture)
                             .disabled(!canStartFlow)
                             .opacity(canStartFlow ? 1 : 0.4)
                         PillIconButton(systemImage: "trash", action: delete)

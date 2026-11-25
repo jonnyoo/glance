@@ -7,6 +7,7 @@
 //
 
 import CoreGraphics
+import Foundation
 
 /// One cue's latest reading. `confidence` 0 is always an abstention, never a reading of
 /// zero — a cue that can't see anything must not be able to convict or acquit.
@@ -78,8 +79,8 @@ enum LivenessMode: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .light: return "Light"
-        case .heavy: return "Heavy"
+        case .light: return String(localized: "Light")
+        case .heavy: return String(localized: "Heavy")
         }
     }
 

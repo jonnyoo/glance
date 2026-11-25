@@ -14,6 +14,8 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
     case password
     case camera
     case recognition
+    case attempts
+    case appLock
     case about
     case debugFaceLab
 
@@ -21,12 +23,14 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .general: return "General"
-        case .yourFace: return "Face"
-        case .password: return "Password"
-        case .camera: return "Camera"
-        case .recognition: return "Recognition"
-        case .about: return "About"
+        case .general: return String(localized: "General")
+        case .yourFace: return String(localized: "Face")
+        case .password: return String(localized: "Password")
+        case .camera: return String(localized: "Camera")
+        case .recognition: return String(localized: "Recognition")
+        case .attempts: return String(localized: "Attempts")
+        case .appLock: return String(localized: "App Lock")
+        case .about: return String(localized: "About")
         case .debugFaceLab: return "Face Lab"
         }
     }
@@ -40,6 +44,8 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
         case .password: return .system("lock.fill")
         case .camera: return .system("video.fill")
         case .recognition: return .system("sparkle")
+        case .attempts: return .system("person.crop.circle.badge.exclamationmark")
+        case .appLock: return .system("lock.rectangle.stack.fill")
         case .about: return .system("info.circle.fill")
         case .debugFaceLab: return .system("flask")
         }

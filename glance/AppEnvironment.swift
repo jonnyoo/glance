@@ -15,14 +15,20 @@ final class AppEnvironment {
     let faceUnlockCoordinator: FaceUnlockCoordinator
     /// Held, not just constructed — owns a repeating timer that would silently stop enforcing auto-lock if deallocated.
     let sessionAutoLocker: SessionAutoLocker
+    /// Covers apps the user locked until their face, Touch ID or password opens them. Shares the lock screen's
+    /// recognition model so a second copy isn't loaded.
+    let appLockMonitor: AppLockMonitor
     /// Constructed here (not started) so the About page and `AppDelegate` share one instance; `AppDelegate` calls `updater.start()`.
     let updater = UpdaterController()
 
     /// Revealed by tapping the app icon 5 times on the About page. Plain in-memory `var` so it resets on every relaunch.
     var isDebugSectionRevealed = false
+    /// Set before opening Settings to land on a specific tab (e.g. the menu bar's "new attempts" row); the window consumes it.
+    var pendingSettingsTab: SettingsTab?
 
     init() {
         faceUnlockCoordinator = FaceUnlockCoordinator(pocController: pocController)
         sessionAutoLocker = SessionAutoLocker(pocController: pocController)
+        appLockMonitor = AppLockMonitor(pipeline: faceUnlockCoordinator.pipeline, pocController: pocController)
     }
 }

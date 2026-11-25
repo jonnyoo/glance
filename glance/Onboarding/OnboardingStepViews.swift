@@ -26,7 +26,7 @@ struct IntroStepView: View {
 
                 Spacer(minLength: 12)
 
-                PillButton(title: "Next") {
+                PillButton(title: String(localized: "Next")) {
                     controller.advance()
                 }
             }
@@ -67,24 +67,24 @@ struct PermissionsStepView: View {
             // Spacer(minLength: 0)
 
             PermissionRow(
-                title: "Accessibility",
-                detail: "Allow Glance to unlock your Mac",
+                title: String(localized: "Accessibility"),
+                detail: String(localized: "Allow Glance to unlock your Mac"),
                 granted: controller.accessibilityGranted
             ) { controller.grantAccessibility() }
 
             PermissionRow(
-                title: "Camera",
-                detail: "Allow Glance to recognize your face",
+                title: String(localized: "Camera"),
+                detail: String(localized: "Allow Glance to recognize your face"),
                 granted: controller.cameraPermission == .granted
             ) { controller.grantCamera() }
 
             // Spacer(minLength: 0)
 
             HStack(spacing: 10) {
-                PillButton(title: "Back", style: .secondary) {
+                PillButton(title: String(localized: "Back"), style: .secondary) {
                     controller.back()
                 }
-                PillButton(title: "Next", isEnabled: controller.bothPermissionsGranted) {
+                PillButton(title: String(localized: "Next"), isEnabled: controller.bothPermissionsGranted) {
                     controller.advance()
                 }
             }
@@ -124,15 +124,15 @@ struct SecurityNoticeStepView: View {
             HStack(spacing: 10) {
                 if controller.isPostUpdateNotice {
                     // Declining isn't a real option here — see `declinePostUpdateNotice()`.
-                    PillButton(title: "No thanks", style: .secondary) {
+                    PillButton(title: String(localized: "No thanks"), style: .secondary) {
                         controller.declinePostUpdateNotice()
                     }
                 } else {
-                    PillButton(title: "Back", style: .secondary) {
+                    PillButton(title: String(localized: "Back"), style: .secondary) {
                         controller.back()
                     }
                 }
-                PillButton(title: "I understand", isDefault: true) {
+                PillButton(title: String(localized: "I understand"), isDefault: true) {
                     controller.advance()
                 }
             }
@@ -171,10 +171,10 @@ struct PreSetupStepView: View {
             Spacer(minLength: 4)
 
             HStack(spacing: 10) {
-                PillButton(title: "Back", style: .secondary) {
+                PillButton(title: String(localized: "Back"), style: .secondary) {
                     controller.back()
                 }
-                PillButton(title: "Next") {
+                PillButton(title: String(localized: "Next")) {
                     controller.advance()
                 }
             }
@@ -222,10 +222,10 @@ struct SelectCameraStepView: View {
             Spacer(minLength: 4)
 
             HStack(spacing: 10) {
-                PillButton(title: "Back", style: .secondary) {
+                PillButton(title: String(localized: "Back"), style: .secondary) {
                     controller.back()
                 }
-                PillButton(title: "Next") {
+                PillButton(title: String(localized: "Next")) {
                     controller.advance()
                 }
             }
@@ -393,7 +393,7 @@ struct NameStepView: View {
 
             Spacer(minLength: 2)
 
-            PillTextField(placeholder: "Enter a name...", text: $controller.pendingName, autofocus: true) {
+            PillTextField(placeholder: String(localized: "Enter a name..."), text: $controller.pendingName, autofocus: true) {
                 controller.confirmName()
             }
 
@@ -405,7 +405,7 @@ struct NameStepView: View {
             }
 
             HStack(spacing: 10) {
-                PillButton(title: "Back", style: .secondary) {
+                PillButton(title: String(localized: "Back"), style: .secondary) {
                     controller.back()
                 }
                 PillButton(title: controller.nameStepPrimaryTitle, isEnabled: !trimmedName.isEmpty, isDefault: true) {
@@ -441,7 +441,7 @@ struct PasswordStepView: View {
 
             Spacer(minLength: 2)
 
-            PillSecureField(placeholder: "Enter password...", text: $password, autofocus: true) {
+            PillSecureField(placeholder: String(localized: "Enter password..."), text: $password, autofocus: true) {
                 guard !password.isEmpty, !controller.isSavingPassword else { return }
                 Task { _ = await controller.finish(password: password) }
             }
@@ -455,11 +455,11 @@ struct PasswordStepView: View {
             // Spacer(minLength: 0)
 
             HStack(spacing: 10) {
-                PillButton(title: "Back", style: .secondary) {
+                PillButton(title: String(localized: "Back"), style: .secondary) {
                     controller.back()
                 }
                 PillButton(
-                    title: controller.isSavingPassword ? "Saving…" : "Confirm",
+                    title: controller.isSavingPassword ? String(localized: "Saving…") : String(localized: "Confirm"),
                     isEnabled: !password.isEmpty && !controller.isSavingPassword,
                     isDefault: true
                 ) {

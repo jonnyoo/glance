@@ -1,0 +1,2488 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "" : {
+      "shouldTranslate" : false
+    },
+    "\"%@\" will stop being recognized until you enroll them again." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "\"%@\" siz yeniden kaydedene kadar tanınmayacak."
+          }
+        }
+      }
+    },
+    "%@ (Default)" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (Varsayılan)"
+          }
+        }
+      }
+    },
+    "%@ (disconnected)" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (bağlı değil)"
+          }
+        }
+      }
+    },
+    "%@ is locked" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ kilitli"
+          }
+        }
+      }
+    },
+    "%lld enrolled" : {
+      "shouldTranslate" : false
+    },
+    "%lld frames" : {
+      "shouldTranslate" : false
+    },
+    "%lld new attempts" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld new attempt"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld new attempts"
+                }
+              }
+            }
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld yeni deneme"
+          }
+        }
+      }
+    },
+    "%lld of %lld samples are low quality" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld samples are low quality"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "%lld sample%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld sample%2$@"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "%lld/%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld/%2$lld"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "%lld/9 poses · %lld samples · enrolled %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld/9 poses · %2$lld samples · enrolled %3$@"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "%llds" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld sn"
+          }
+        }
+      }
+    },
+    "(ArcFace unavailable — see log)" : {
+      "shouldTranslate" : false
+    },
+    "14 days" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "14 gün"
+          }
+        }
+      }
+    },
+    "30 days" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 gün"
+          }
+        }
+      }
+    },
+    "5 minutes after switching away" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Başka uygulamaya geçince 5 dk sonra"
+          }
+        }
+      }
+    },
+    "7 days" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "7 gün"
+          }
+        }
+      }
+    },
+    "A face named \"%@\" is already enrolled." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "\"%@\" adlı bir yüz zaten kayıtlı."
+          }
+        }
+      }
+    },
+    "A locked app stays covered until Glance recognizes your face, or you use Touch ID or your password. It keeps casual onlookers out; it doesn't replace a separate macOS user account." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kilitli bir uygulama, Glance yüzünüzü tanıyana ya da Touch ID veya parolanızı kullanana kadar örtülü kalır. Meraklı gözlere karşı korur; ayrı bir macOS kullanıcı hesabının yerini tutmaz."
+          }
+        }
+      }
+    },
+    "About" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hakkında"
+          }
+        }
+      }
+    },
+    "Abstaining — not enough head rotation to tell a plane from a still 3D face." : {
+      "shouldTranslate" : false
+    },
+    "Accessibility" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erişilebilirlik"
+          }
+        }
+      }
+    },
+    "Accessibility permission required. Open System Settings → Privacy & Security → Accessibility and enable glance." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erişilebilirlik izni gerekli. Sistem Ayarları → Gizlilik ve Güvenlik → Erişilebilirlik bölümünü açın ve glance'i etkinleştirin."
+          }
+        }
+      }
+    },
+    "Add Identity" : {
+      "shouldTranslate" : false
+    },
+    "Add…" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ekle…"
+          }
+        }
+      }
+    },
+    "Aligned face" : {
+      "shouldTranslate" : false
+    },
+    "Aligned input" : {
+      "shouldTranslate" : false
+    },
+    "Alignment: %@" : {
+      "shouldTranslate" : false
+    },
+    "Allow Glance to recognize your face" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Glance'in yüzünüzü tanımasına izin verin"
+          }
+        }
+      }
+    },
+    "Allow Glance to unlock your Mac" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac'inizin kilidini açmaya izin verin"
+          }
+        }
+      }
+    },
+    "Animation" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Animasyon"
+          }
+        }
+      }
+    },
+    "App Lock" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uygulama Kilidi"
+          }
+        }
+      }
+    },
+    "Attempts" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denemeler"
+          }
+        }
+      }
+    },
+    "Authenticate to enroll another face" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Başka bir yüz kaydetmek için kimliğinizi doğrulayın"
+          }
+        }
+      }
+    },
+    "Authenticate to open %@" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ uygulamasını açmak için kimliğinizi doğrulayın"
+          }
+        }
+      }
+    },
+    "Authenticate to re-enroll this face" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu yüzü yeniden kaydetmek için kimliğinizi doğrulayın"
+          }
+        }
+      }
+    },
+    "Authenticate to re-enroll your face" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yüzünüzü yeniden kaydetmek için kimliğinizi doğrulayın"
+          }
+        }
+      }
+    },
+    "Authenticate to set up or use glance" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "glance'i ayarlamak veya kullanmak için kimliğinizi doğrulayın"
+          }
+        }
+      }
+    },
+    "Authenticate to view your enrolled face" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kayıtlı yüzünüzü görüntülemek için kimliğinizi doğrulayın"
+          }
+        }
+      }
+    },
+    "Authenticating…" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kimlik doğrulanıyor…"
+          }
+        }
+      }
+    },
+    "Authentication was cancelled or failed." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kimlik doğrulama iptal edildi veya başarısız oldu."
+          }
+        }
+      }
+    },
+    "Auto lock session" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oturumu otomatik kilitle"
+          }
+        }
+      }
+    },
+    "Auto retry once after failure" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Başarısız olursa bir kez otomatik yeniden dene"
+          }
+        }
+      }
+    },
+    "Automatically check for updates" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Güncellemeleri otomatik olarak denetle"
+          }
+        }
+      }
+    },
+    "Back" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geri"
+          }
+        }
+      }
+    },
+    "Behaviour" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Davranış"
+          }
+        }
+      }
+    },
+    "Best match: %@ — centroid %@, max %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Best match: %1$@ — centroid %2$@, max %3$@"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "Bring your face closer" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yüzünüzü yaklaştırın"
+          }
+        }
+      }
+    },
+    "Built-in display" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dahili ekran"
+          }
+        }
+      }
+    },
+    "Camera" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kamera"
+          }
+        }
+      }
+    },
+    "Camera Preview" : {
+      "shouldTranslate" : false
+    },
+    "Camera access not granted (status: %@). " : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kamera erişimine izin verilmedi (durum: %@). "
+          }
+        }
+      }
+    },
+    "Cancel" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vazgeç"
+          }
+        }
+      }
+    },
+    "Capture Sample" : {
+      "shouldTranslate" : false
+    },
+    "Capture quality for %lld samples" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld örnek için yakalama kalitesi"
+          }
+        }
+      }
+    },
+    "Capture quality • %lld%%" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yakalama kalitesi • %%%lld"
+          }
+        }
+      }
+    },
+    "Capture quality • not recorded" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yakalama kalitesi • kaydedilmemiş"
+          }
+        }
+      }
+    },
+    "Capture quality: %@" : {
+      "shouldTranslate" : false
+    },
+    "Capture quality: —" : {
+      "shouldTranslate" : false
+    },
+    "Captured with a different recognition model — recapture before this face can unlock your Mac." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Farklı bir tanıma modeliyle yakalandı — bu yüzün Mac'inizin kilidini açabilmesi için yeniden yakalayın."
+          }
+        }
+      }
+    },
+    "Change" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Değiştir"
+          }
+        }
+      }
+    },
+    "Change password" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parolayı değiştir"
+          }
+        }
+      }
+    },
+    "Check" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denetle"
+          }
+        }
+      }
+    },
+    "Check for Updates" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Güncellemeleri denetle"
+          }
+        }
+      }
+    },
+    "Checks that you're a live person, not a photo. May increase unlock time." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bir fotoğraf değil, canlı bir kişi olduğunuzu doğrular. Kilit açma süresini uzatabilir."
+          }
+        }
+      }
+    },
+    "Clear" : {
+      "shouldTranslate" : false
+    },
+    "Close" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kapat"
+          }
+        }
+      }
+    },
+    "Closest: %@ — centroid %@, max %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Closest: %1$@ — centroid %2$@, max %3$@"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "Coherence: %@  Motion: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Coherence: %1$@  Motion: %2$@"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "Confirm" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Onayla"
+          }
+        }
+      }
+    },
+    "Continue" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Devam"
+          }
+        }
+      }
+    },
+    "Couldn't create CGEvent for keystroke." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tuş vuruşu için CGEvent oluşturulamadı."
+          }
+        }
+      }
+    },
+    "Couldn't create Keychain access control: %@" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anahtar Zinciri erişim denetimi oluşturulamadı: %@"
+          }
+        }
+      }
+    },
+    "Couldn't remove: %@" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kaldırılamadı: %@"
+          }
+        }
+      }
+    },
+    "Couldn't select the camera's highest-resolution format: %@" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kameranın en yüksek çözünürlüklü biçimi seçilemedi: %@"
+          }
+        }
+      }
+    },
+    "Cue firing latches for the whole scan — reset to re-test." : {
+      "shouldTranslate" : false
+    },
+    "Decryption failed. The stored credential may be corrupted." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Şifre çözme başarısız oldu. Saklanan kimlik bilgisi bozulmuş olabilir."
+          }
+        }
+      }
+    },
+    "Default" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Varsayılan"
+          }
+        }
+      }
+    },
+    "Delete" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sil"
+          }
+        }
+      }
+    },
+    "Delete %@" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ kimliğini sil"
+          }
+        }
+      }
+    },
+    "Delete all attempts" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tüm denemeleri sil"
+          }
+        }
+      }
+    },
+    "Delete this attempt" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu denemeyi sil"
+          }
+        }
+      }
+    },
+    "Delete this enrolled face?" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu kayıtlı yüz silinsin mi?"
+          }
+        }
+      }
+    },
+    "Detection" : {
+      "shouldTranslate" : false
+    },
+    "Detection distance" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Algılama mesafesi"
+          }
+        }
+      }
+    },
+    "DetectionDistanceLevel.close" : {
+      "comment" : "Detection distance slider stop: face near the camera",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Close"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yakın"
+          }
+        }
+      }
+    },
+    "Device overlap: %@" : {
+      "shouldTranslate" : false
+    },
+    "Display on" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gösterileceği ekran"
+          }
+        }
+      }
+    },
+    "Distributions overlap — no single cutoff perfectly separates these samples yet." : {
+      "shouldTranslate" : false
+    },
+    "Embedder: %@" : {
+      "shouldTranslate" : false
+    },
+    "Embedding: %lld numbers" : {
+      "shouldTranslate" : false
+    },
+    "Enable Face Unlock" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yüzle kilit açmayı etkinleştir"
+          }
+        }
+      }
+    },
+    "Enable it in System Settings > Privacy & Security > Camera. If glance isn't listed there, quit the app, run `tccutil reset Camera com.jonathan.glance` in Terminal, then relaunch so macOS asks again." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sistem Ayarları > Gizlilik ve Güvenlik > Kamera bölümünden etkinleştirin. glance orada listelenmiyorsa uygulamadan çıkın, Terminal'de `tccutil reset Camera com.jonathan.glance` komutunu çalıştırın, ardından macOS'in yeniden sorması için uygulamayı tekrar açın."
+          }
+        }
+      }
+    },
+    "Encryption failed." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Şifreleme başarısız oldu."
+          }
+        }
+      }
+    },
+    "Enroll" : {
+      "shouldTranslate" : false
+    },
+    "Enroll another face" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Başka bir yüz kaydet"
+          }
+        }
+      }
+    },
+    "Enroll separate identities to use Glance with multiple people, accessories (ex. glasses), facial expressions, or new lighting environments. This improves recognition quality." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Glance'i birden fazla kişiyle, aksesuarlarla (ör. gözlük), farklı yüz ifadeleriyle veya yeni ışık ortamlarında kullanmak için ayrı kimlikler kaydedin. Bu, tanıma kalitesini artırır."
+          }
+        }
+      }
+    },
+    "Enrolled faces couldn't be read" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kayıtlı yüzler okunamadı"
+          }
+        }
+      }
+    },
+    "Enter a name." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bir ad girin."
+          }
+        }
+      }
+    },
+    "Enter a name..." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bir ad girin..."
+          }
+        }
+      }
+    },
+    "Enter a password." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bir parola girin."
+          }
+        }
+      }
+    },
+    "Enter password..." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parolayı girin..."
+          }
+        }
+      }
+    },
+    "Enter your password" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parolanızı girin"
+          }
+        }
+      }
+    },
+    "Every time it opens" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Her öne gelişte"
+          }
+        }
+      }
+    },
+    "External display" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Harici ekran"
+          }
+        }
+      }
+    },
+    "FIRED" : {
+      "shouldTranslate" : false
+    },
+    "Face" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yüz"
+          }
+        }
+      }
+    },
+    "Face Lab — On-Device Face Recognition (Debug)" : {
+      "shouldTranslate" : false
+    },
+    "Face Unlock for Mac" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac için yüzle kilit açma"
+          }
+        }
+      }
+    },
+    "Face captured" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yüz yakalandı"
+          }
+        }
+      }
+    },
+    "Face detection duration" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yüz algılama süresi"
+          }
+        }
+      }
+    },
+    "Face encrypted" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yüz şifrelendi"
+          }
+        }
+      }
+    },
+    "Face enrollment" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yüz kaydı"
+          }
+        }
+      }
+    },
+    "Face not recognized" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yüz tanınmadı"
+          }
+        }
+      }
+    },
+    "Faces detected: %lld" : {
+      "shouldTranslate" : false
+    },
+    "Far" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uzak"
+          }
+        }
+      }
+    },
+    "Fit residual: %@  Probe residual: %@  Excess: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Fit residual: %1$@  Probe residual: %2$@  Excess: %3$@"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "Flat vs 3D diagnostics" : {
+      "shouldTranslate" : false
+    },
+    "Follow the directions\nshown on the screen" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ekranda gösterilen\nyönergeleri izleyin"
+          }
+        }
+      }
+    },
+    "General" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Genel"
+          }
+        }
+      }
+    },
+    "Glance" : {
+      "shouldTranslate" : false
+    },
+    "Glance Settings" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Glance Ayarları"
+          }
+        }
+      }
+    },
+    "Glance is not as secure as Apple's FaceID or TouchID." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Glance, Apple'ın FaceID'si veya TouchID'si kadar güvenli değildir."
+          }
+        }
+      }
+    },
+    "Grant" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "İzin ver"
+          }
+        }
+      }
+    },
+    "Granted" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verildi"
+          }
+        }
+      }
+    },
+    "Haptic feedback" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dokunsal geri bildirim"
+          }
+        }
+      }
+    },
+    "Heavy" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Güçlü"
+          }
+        }
+      }
+    },
+    "Heavy: a deny cue fails the scan; at least one confirm cue must fire before it can pass." : {
+      "shouldTranslate" : false
+    },
+    "I understand" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anlıyorum"
+          }
+        }
+      }
+    },
+    "Identify" : {
+      "shouldTranslate" : false
+    },
+    "Identities" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kimlikler"
+          }
+        }
+      }
+    },
+    "It uses your Mac's standard webcam and is designed for convenience, not high-security authentication." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac'inizin standart web kamerasını kullanır ve yüksek güvenlikli kimlik doğrulama için değil, kolaylık için tasarlanmıştır."
+          }
+        }
+      }
+    },
+    "Keychain error: %@" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anahtar Zinciri hatası: %@"
+          }
+        }
+      }
+    },
+    "Keychain item had an unexpected format." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anahtar Zinciri öğesi beklenmeyen bir biçimdeydi."
+          }
+        }
+      }
+    },
+    "Keychain item not found." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anahtar Zinciri öğesi bulunamadı."
+          }
+        }
+      }
+    },
+    "Landmarks: %lld   Pairs: %lld   Rejected: %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Landmarks: %1$lld   Pairs: %2$lld   Rejected: %3$lld"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "Launch at login" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Girişte başlat"
+          }
+        }
+      }
+    },
+    "Left EAR: %@  Right EAR: %@  Nose offset: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Left EAR: %1$@  Right EAR: %2$@  Nose offset: %3$@"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "Less strict" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daha az katı"
+          }
+        }
+      }
+    },
+    "Light" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hafif"
+          }
+        }
+      }
+    },
+    "Light includes basic protection. Heavy requires you to blink or slightly move your head." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hafif, temel koruma sağlar. Güçlü, göz kırpmanızı veya başınızı hafifçe hareket ettirmenizi gerektirir."
+          }
+        }
+      }
+    },
+    "Light: only the deny cues run. Anything not actively rejected is treated as live." : {
+      "shouldTranslate" : false
+    },
+    "Liveness" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlılık"
+          }
+        }
+      }
+    },
+    "Liveness detection" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canlılık algılama"
+          }
+        }
+      }
+    },
+    "Loading Face Lab…" : {
+      "shouldTranslate" : false
+    },
+    "Lock" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kilitle"
+          }
+        }
+      }
+    },
+    "Lock again" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tekrar kilitle"
+          }
+        }
+      }
+    },
+    "Lock another app" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Başka bir uygulama kilitle"
+          }
+        }
+      }
+    },
+    "Locked apps" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kilitli uygulamalar"
+          }
+        }
+      }
+    },
+    "Log" : {
+      "shouldTranslate" : false
+    },
+    "Look at the camera to open it" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Açmak için kameraya bakın"
+          }
+        }
+      }
+    },
+    "Look straight at the camera" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Doğrudan kameraya bakın"
+          }
+        }
+      }
+    },
+    "MATCH" : {
+      "shouldTranslate" : false
+    },
+    "Main display" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ana ekran"
+          }
+        }
+      }
+    },
+    "Mark Genuine (this is me)" : {
+      "shouldTranslate" : false
+    },
+    "Mark Impostor (not me)" : {
+      "shouldTranslate" : false
+    },
+    "Match confidence" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eşleşme güveni"
+          }
+        }
+      }
+    },
+    "Minimal" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minimal"
+          }
+        }
+      }
+    },
+    "Mode" : {
+      "shouldTranslate" : false
+    },
+    "More information" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daha fazla bilgi"
+          }
+        }
+      }
+    },
+    "More strict" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daha katı"
+          }
+        }
+      }
+    },
+    "NO MATCH" : {
+      "shouldTranslate" : false
+    },
+    "Name" : {
+      "shouldTranslate" : false
+    },
+    "Name this face" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu yüze bir ad verin"
+          }
+        }
+      }
+    },
+    "Never" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hiçbir zaman"
+          }
+        }
+      }
+    },
+    "Next" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "İleri"
+          }
+        }
+      }
+    },
+    "No apps are locked yet." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Henüz kilitli uygulama yok."
+          }
+        }
+      }
+    },
+    "No camera device found." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kamera aygıtı bulunamadı."
+          }
+        }
+      }
+    },
+    "No face" : {
+      "shouldTranslate" : false
+    },
+    "No failed attempts yet." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Henüz başarısız deneme yok."
+          }
+        }
+      }
+    },
+    "No identities are enabled — face unlock won't recognize anyone until you switch one back on." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Etkin kimlik yok — siz birini yeniden açana kadar yüzle kilit açma kimseyi tanımayacak."
+          }
+        }
+      }
+    },
+    "No identities enrolled yet — run the guided nine-pose capture with Add Identity." : {
+      "shouldTranslate" : false
+    },
+    "No identities enrolled yet." : {
+      "shouldTranslate" : false
+    },
+    "No liveness frame yet." : {
+      "shouldTranslate" : false
+    },
+    "No samples captured" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hiç örnek yakalanmadı"
+          }
+        }
+      }
+    },
+    "No thanks" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hayır, teşekkürler"
+          }
+        }
+      }
+    },
+    "None" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yok"
+          }
+        }
+      }
+    },
+    "Nothing has been deleted, and Glance will not overwrite it — enrolling is blocked until this resolves. Quit and reopen Glance to retry. If it keeps failing, the session key no longer matches this data: remove the stored password on the Password tab to clear both, then set up again." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hiçbir şey silinmedi ve Glance bu verilerin üzerine yazmayacak — sorun çözülene kadar kayıt engellendi. Yeniden denemek için Glance'ten çıkıp tekrar açın. Sorun devam ederse oturum anahtarı artık bu verilerle eşleşmiyor demektir: ikisini de temizlemek için Parola sekmesinden saklanan parolayı kaldırın, ardından yeniden ayarlayın."
+          }
+        }
+      }
+    },
+    "On lock" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kilitlenince"
+          }
+        }
+      }
+    },
+    "On space" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Boşluk tuşuyla"
+          }
+        }
+      }
+    },
+    "On wake" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uyanınca"
+          }
+        }
+      }
+    },
+    "Open Accessibility settings" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erişilebilirlik ayarlarını aç"
+          }
+        }
+      }
+    },
+    "Open with Touch ID" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Touch ID ile aç"
+          }
+        }
+      }
+    },
+    "Original" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orijinal"
+          }
+        }
+      }
+    },
+    "Owner" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sahip"
+          }
+        }
+      }
+    },
+    "Password" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parola"
+          }
+        }
+      }
+    },
+    "Password and face enrollment removed." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parola ve yüz kaydı kaldırıldı."
+          }
+        }
+      }
+    },
+    "Password cannot be empty." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parola boş olamaz."
+          }
+        }
+      }
+    },
+    "Password encrypted" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parola şifrelendi"
+          }
+        }
+      }
+    },
+    "Permissions" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "İzinler"
+          }
+        }
+      }
+    },
+    "Preview" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Önizleme"
+          }
+        }
+      }
+    },
+    "Preview ✓" : {
+      "shouldTranslate" : false
+    },
+    "Preview ✗" : {
+      "shouldTranslate" : false
+    },
+    "Quit" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Çık"
+          }
+        }
+      }
+    },
+    "Recapture" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yeniden yakala"
+          }
+        }
+      }
+    },
+    "Recent attempts" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Son denemeler"
+          }
+        }
+      }
+    },
+    "Recognition" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tanıma"
+          }
+        }
+      }
+    },
+    "Recognize" : {
+      "shouldTranslate" : false
+    },
+    "Record at least one genuine and one impostor sample to get a suggestion." : {
+      "shouldTranslate" : false
+    },
+    "Refresh camera list" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kamera listesini yenile"
+          }
+        }
+      }
+    },
+    "Remove" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kaldır"
+          }
+        }
+      }
+    },
+    "Remove password" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parolayı kaldır"
+          }
+        }
+      }
+    },
+    "Reset cues" : {
+      "shouldTranslate" : false
+    },
+    "Retry on notch hover" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Çentiğin üzerine gelince yeniden dene"
+          }
+        }
+      }
+    },
+    "Run Identify, then tag whether that was really you or someone else — do this across lighting, angle, and expression, and again with a different person, to see where the two score distributions actually fall." : {
+      "shouldTranslate" : false
+    },
+    "Running" : {
+      "shouldTranslate" : false
+    },
+    "Running from Xcode — permission checks resolve against Xcode’s grants, not glance’s, so this reading is meaningless. Launch glance.app on its own to see the real state." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xcode'dan çalıştırılıyor — izin denetimleri glance'in değil Xcode'un izinlerine göre yapılır, bu nedenle bu değer anlamsızdır. Gerçek durumu görmek için glance.app'i tek başına başlatın."
+          }
+        }
+      }
+    },
+    "Save" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kaydet"
+          }
+        }
+      }
+    },
+    "Save photos of failed attempts" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Başarısız denemelerin fotoğrafını kaydet"
+          }
+        }
+      }
+    },
+    "Saving…" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kaydediliyor…"
+          }
+        }
+      }
+    },
+    "Select camera" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kamera seçin"
+          }
+        }
+      }
+    },
+    "Select multiple" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Birden fazla seçin"
+          }
+        }
+      }
+    },
+    "Selected display (disconnected)" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seçili ekran (bağlı değil)"
+          }
+        }
+      }
+    },
+    "Send" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gönder"
+          }
+        }
+      }
+    },
+    "Send Feedback" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geri bildirim gönder"
+          }
+        }
+      }
+    },
+    "Session Locked" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oturum kilitli"
+          }
+        }
+      }
+    },
+    "Session Unlocked" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oturum kilidi açık"
+          }
+        }
+      }
+    },
+    "Session is locked. Authenticate with Touch ID before storing or using the password." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oturum kilitli. Parolayı saklamadan veya kullanmadan önce Touch ID ile kimliğinizi doğrulayın."
+          }
+        }
+      }
+    },
+    "Session is locked. Authenticate with Touch ID to access enrolled faces." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oturum kilitli. Kayıtlı yüzlere erişmek için Touch ID ile kimliğinizi doğrulayın."
+          }
+        }
+      }
+    },
+    "Session locked" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oturum kilitli"
+          }
+        }
+      }
+    },
+    "Session locked — enrolled faces are encrypted and can't be read or saved yet." : {
+      "shouldTranslate" : false
+    },
+    "Session unlocked" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oturum kilidi açık"
+          }
+        }
+      }
+    },
+    "Set password" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parola belirle"
+          }
+        }
+      }
+    },
+    "Set up Face\nRecognition" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yüz tanımayı\nayarlayın"
+          }
+        }
+      }
+    },
+    "Set up Face Unlock" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yüzle kilit açmayı ayarla"
+          }
+        }
+      }
+    },
+    "Set up Glance" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Glance'i ayarlayın"
+          }
+        }
+      }
+    },
+    "Set up a password" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bir parola belirleyin"
+          }
+        }
+      }
+    },
+    "Settings" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ayarlar"
+          }
+        }
+      }
+    },
+    "Show animation" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Animasyonu göster"
+          }
+        }
+      }
+    },
+    "Show in menu bar" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Menü çubuğunda göster"
+          }
+        }
+      }
+    },
+    "Show photo" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fotoğrafı göster"
+          }
+        }
+      }
+    },
+    "Show preview" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Önizlemeyi göster"
+          }
+        }
+      }
+    },
+    "Similarity" : {
+      "shouldTranslate" : false
+    },
+    "Specular: %@  Cluster: %@  Crop: %lldpx" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Specular: %1$@  Cluster: %2$@  Crop: %3$lldpx"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "Specular: — (no native-resolution crop this frame)" : {
+      "shouldTranslate" : false
+    },
+    "Spoof attempt" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sahte yüz denemesi"
+          }
+        }
+      }
+    },
+    "Start" : {
+      "shouldTranslate" : false
+    },
+    "Start Onboarding" : {
+      "shouldTranslate" : false
+    },
+    "Stop" : {
+      "shouldTranslate" : false
+    },
+    "Stop locking this app" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu uygulamanın kilidini kaldır"
+          }
+        }
+      }
+    },
+    "Stopped" : {
+      "shouldTranslate" : false
+    },
+    "Strength" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Düzey"
+          }
+        }
+      }
+    },
+    "Style" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stil"
+          }
+        }
+      }
+    },
+    "Suggested threshold: %@" : {
+      "shouldTranslate" : false
+    },
+    "System default" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sistem varsayılanı"
+          }
+        }
+      }
+    },
+    "Takes a photo when a face that isn't enrolled, or a photo of one, tries to unlock your Mac. Photos stay on this Mac." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kayıtlı olmayan bir yüz ya da bir yüzün fotoğrafı Mac'inizin kilidini açmaya çalışırsa fotoğraf çekilir. Fotoğraflar sadece bu Mac'te saklanır."
+          }
+        }
+      }
+    },
+    "The animation that appears when unlocking your Mac" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac'inizin kilidi açılırken görünen animasyon"
+          }
+        }
+      }
+    },
+    "The session key is missing, but encrypted data still exists that only it could read. Nothing has been deleted. Remove the stored password on the Password tab to clear both and start fresh." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oturum anahtarı eksik, ancak yalnızca onun okuyabileceği şifreli veriler hâlâ mevcut. Hiçbir şey silinmedi. İkisini de temizleyip baştan başlamak için Parola sekmesinden saklanan parolayı kaldırın."
+          }
+        }
+      }
+    },
+    "The stored data couldn't be decrypted with this session key." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saklanan verilerin şifresi bu oturum anahtarıyla çözülemedi."
+          }
+        }
+      }
+    },
+    "Threshold" : {
+      "shouldTranslate" : false
+    },
+    "Threshold Calibration" : {
+      "shouldTranslate" : false
+    },
+    "Threshold: %@" : {
+      "shouldTranslate" : false
+    },
+    "Too far down" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fazla aşağı baktınız, başınızı biraz kaldırın"
+          }
+        }
+      }
+    },
+    "Too far left" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fazla sola döndünüz, biraz geri dönün"
+          }
+        }
+      }
+    },
+    "Too far right" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fazla sağa döndünüz, biraz geri dönün"
+          }
+        }
+      }
+    },
+    "Too far toward the bottom left" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fazla sol alta döndünüz, biraz geri dönün"
+          }
+        }
+      }
+    },
+    "Too far toward the bottom right" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fazla sağ alta döndünüz, biraz geri dönün"
+          }
+        }
+      }
+    },
+    "Too far toward the top left" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fazla sol üste döndünüz, biraz geri dönün"
+          }
+        }
+      }
+    },
+    "Too far toward the top right" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fazla sağ üste döndünüz, biraz geri dönün"
+          }
+        }
+      }
+    },
+    "Too far up" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fazla yukarı baktınız, başınızı biraz indirin"
+          }
+        }
+      }
+    },
+    "Triggers" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tetikleyiciler"
+          }
+        }
+      }
+    },
+    "Try again" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yeniden dene"
+          }
+        }
+      }
+    },
+    "Turn your head slightly down" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Başınızı hafifçe aşağı çevirin"
+          }
+        }
+      }
+    },
+    "Turn your head slightly left" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Başınızı hafifçe sola çevirin"
+          }
+        }
+      }
+    },
+    "Turn your head slightly right" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Başınızı hafifçe sağa çevirin"
+          }
+        }
+      }
+    },
+    "Turn your head slightly up" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Başınızı hafifçe yukarı çevirin"
+          }
+        }
+      }
+    },
+    "Turn your head to the bottom left" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Başınızı sol alta çevirin"
+          }
+        }
+      }
+    },
+    "Turn your head to the bottom right" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Başınızı sağ alta çevirin"
+          }
+        }
+      }
+    },
+    "Turn your head to the top left" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Başınızı sol üste çevirin"
+          }
+        }
+      }
+    },
+    "Turn your head to the top right" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Başınızı sağ üste çevirin"
+          }
+        }
+      }
+    },
+    "Type" : {
+      "shouldTranslate" : false
+    },
+    "Unlock" : {
+      "shouldTranslate" : false
+    },
+    "Unlock session" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oturumun kilidini aç"
+          }
+        }
+      }
+    },
+    "Unlock the session to view enrolled identities." : {
+      "shouldTranslate" : false
+    },
+    "Unrecognized face" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tanınmayan yüz"
+          }
+        }
+      }
+    },
+    "Use it" : {
+      "shouldTranslate" : false
+    },
+    "Used for Face enrollment and for unlocking your Mac" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yüz kaydı ve Mac'inizin kilidini açmak için kullanılır"
+          }
+        }
+      }
+    },
+    "Used to tell enrolled faces apart when more than one person is set up on this Mac." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu Mac'te birden fazla kişi ayarlandığında kayıtlı yüzleri birbirinden ayırt etmek için kullanılır."
+          }
+        }
+      }
+    },
+    "Version %@ (%@)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Version %1$@ (%2$@)"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sürüm %1$@ (%2$@)"
+          }
+        }
+      }
+    },
+    "When the app quits" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uygulama kapanınca"
+          }
+        }
+      }
+    },
+    "Yaw: %@  Pitch: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Yaw: %1$@  Pitch: %2$@"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "You're all set" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Her şey hazır"
+          }
+        }
+      }
+    },
+    "Your enrolled faces couldn't be read, so nothing was saved — writing now would overwrite them." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kayıtlı yüzleriniz okunamadığı için hiçbir şey kaydedilmedi — şimdi yazmak onların üzerine yazardı."
+          }
+        }
+      }
+    },
+    "Your password is required to unlock your Mac. It is encrypted and securely stored on your device. Glance works entirely offline, so your password never leaves your Mac." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac'inizin kilidini açmak için parolanız gereklidir. Parolanız şifrelenir ve cihazınızda güvenli bir şekilde saklanır. Glance tamamen çevrimdışı çalışır, bu nedenle parolanız Mac'inizden asla çıkmaz."
+          }
+        }
+      }
+    },
+    "centroid %@" : {
+      "shouldTranslate" : false
+    },
+    "macOS reports this as *restricted* — not a simple user denial. This usually means Screen Time content restrictions or an MDM/profile policy is blocking camera access for this app; toggling it in System Settings > Privacy & Security > Camera won't help until that restriction is lifted." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS bunu basit bir kullanıcı reddi olarak değil, *kısıtlı* olarak bildiriyor. Bu genellikle Ekran Süresi içerik kısıtlamalarının veya bir MDM/profil ilkesinin bu uygulamanın kamera erişimini engellediği anlamına gelir; bu kısıtlama kaldırılana kadar Sistem Ayarları > Gizlilik ve Güvenlik > Kamera bölümünden açıp kapatmak işe yaramaz."
+          }
+        }
+      }
+    },
+    "max %@" : {
+      "shouldTranslate" : false
+    },
+    "stale" : {
+      "shouldTranslate" : false
+    },
+    "“On space” reads the keyboard directly to see the space key on the lock screen, which needs Accessibility — the same permission glance uses to type your password. Switch glance on under Privacy & Security → Accessibility, then quit and reopen glance." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“Boşluk tuşuyla” seçeneği, kilit ekranında boşluk tuşunu görebilmek için klavyeyi doğrudan okur ve bunun için Erişilebilirlik izni gerekir — glance'in parolanızı yazmak için kullandığı izinle aynıdır. Gizlilik ve Güvenlik → Erişilebilirlik bölümünde glance'i açın, ardından glance'ten çıkıp yeniden açın."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}
