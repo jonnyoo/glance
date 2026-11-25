@@ -65,8 +65,8 @@ struct PasswordSettingsPage: View {
     private var noPasswordState: some View {
         SettingsEmptyStateView(
             icon: "lock.fill",
-            message: "Set up a password",
-            buttonTitle: "Set password",
+            message: String(localized: "Set up a password"),
+            buttonTitle: String(localized: "Set password"),
             caption: statusMessage,
             action: { OnboardingController.startPasswordOnly() }
         )
@@ -77,8 +77,8 @@ struct PasswordSettingsPage: View {
     private var lockedState: some View {
         SettingsEmptyStateView(
             icon: "lock.fill",
-            message: "Session locked",
-            buttonTitle: isUnlocking ? "Authenticating…" : "Unlock session",
+            message: String(localized: "Session locked"),
+            buttonTitle: isUnlocking ? String(localized: "Authenticating…") : String(localized: "Unlock session"),
             isButtonEnabled: !isUnlocking,
             caption: sessionError,
             action: unlock
@@ -90,7 +90,7 @@ struct PasswordSettingsPage: View {
     private var unlockedState: some View {
         VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
             SettingsGroup {
-                SettingsRowContent(title: "Password encrypted") {
+                SettingsRowContent(title: String(localized: "Password encrypted")) {
                     Image(systemName: "lock.fill")
                         .font(.system(size: 12))
                         .foregroundStyle(SettingsMetrics.textSecondary)
@@ -99,7 +99,7 @@ struct PasswordSettingsPage: View {
                 SettingsGroupDivider()
 
                 SettingsSteppedSliderRowContent(
-                    title: "Auto lock session",
+                    title: String(localized: "Auto lock session"),
                     valueLabel: settings.autoLockInterval.title,
                     index: Binding(
                         get: { settings.autoLockInterval.sliderIndex },
@@ -110,16 +110,16 @@ struct PasswordSettingsPage: View {
 
                 SettingsGroupDivider()
 
-                SettingsRowContent(title: "Change password") {
-                    SettingsPrimaryButton(title: "Change", compact: true) {
+                SettingsRowContent(title: String(localized: "Change password")) {
+                    SettingsPrimaryButton(title: String(localized: "Change"), compact: true) {
                         OnboardingController.startPasswordOnly()
                     }
                 }
 
                 SettingsGroupDivider()
 
-                SettingsRowContent(title: "Remove password") {
-                    HoldToConfirmButton(title: "Remove", action: removePassword)
+                SettingsRowContent(title: String(localized: "Remove password")) {
+                    HoldToConfirmButton(title: String(localized: "Remove"), action: removePassword)
                 }
             }
 
@@ -152,9 +152,9 @@ struct PasswordSettingsPage: View {
             FaceEnrollmentStore.shared.deleteAll()
             try SecureCredentialManager.deletePassword()
             pocController.refreshCredentialStatus()
-            statusMessage = "Password and face enrollment removed."
+            statusMessage = String(localized: "Password and face enrollment removed.")
         } catch {
-            statusMessage = "Couldn't remove: \(error.localizedDescription)"
+            statusMessage = String(localized: "Couldn't remove: \(error.localizedDescription)")
         }
     }
 }

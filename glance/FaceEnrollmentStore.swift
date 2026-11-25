@@ -96,7 +96,7 @@ enum FaceEnrollmentStoreError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .storeUnreadable:
-            return "Your enrolled faces couldn't be read, so nothing was saved — writing now would overwrite them."
+            return String(localized: "Your enrolled faces couldn't be read, so nothing was saved — writing now would overwrite them.")
         }
     }
 }

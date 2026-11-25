@@ -20,10 +20,10 @@ enum AutoLockInterval: Int, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .never: return "Never"
-        case .sevenDays: return "7 days"
-        case .fourteenDays: return "14 days"
-        case .thirtyDays: return "30 days"
+        case .never: return String(localized: "Never")
+        case .sevenDays: return String(localized: "7 days")
+        case .fourteenDays: return String(localized: "14 days")
+        case .thirtyDays: return String(localized: "30 days")
         }
     }
 
@@ -54,9 +54,9 @@ enum UnlockAnimationStyle: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .none: return "None"
-        case .minimal: return "Minimal"
-        case .original: return "Original"
+        case .none: return String(localized: "None")
+        case .minimal: return String(localized: "Minimal")
+        case .original: return String(localized: "Original")
         }
     }
 
@@ -80,9 +80,9 @@ enum UnlockTrigger: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .onWake: return "On wake"
-        case .onLock: return "On lock"
-        case .onSpace: return "On space"
+        case .onWake: return String(localized: "On wake")
+        case .onLock: return String(localized: "On lock")
+        case .onSpace: return String(localized: "On space")
         }
     }
 

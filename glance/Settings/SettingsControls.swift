@@ -692,8 +692,8 @@ struct UnlockAnimationPicker: View {
 
     var body: some View {
         SettingsLabeledOptionRow(
-            title: "Style",
-            subtitle: "The animation that appears when unlocking your Mac"
+            title: String(localized: "Style"),
+            subtitle: String(localized: "The animation that appears when unlocking your Mac")
         ) {
             ForEach(UnlockAnimationStyle.selectableCases) { style in
                 SettingsOptionTile(
@@ -779,8 +779,8 @@ struct LivenessModePicker: View {
 
     var body: some View {
         SettingsLabeledOptionRow(
-            title: "Strength",
-            subtitle: "Light includes basic protection. Heavy requires you to blink or slightly move your head."
+            title: String(localized: "Strength"),
+            subtitle: String(localized: "Light includes basic protection. Heavy requires you to blink or slightly move your head.")
         ) {
             ForEach(LivenessMode.allCases) { mode in
                 SettingsOptionTile(
@@ -819,7 +819,7 @@ struct UnlockTriggerPicker: View {
     var isEnabled: Bool = true
 
     var body: some View {
-        SettingsLabeledOptionRow(title: "Triggers", subtitle: "Select multiple") {
+        SettingsLabeledOptionRow(title: String(localized: "Triggers"), subtitle: String(localized: "Select multiple")) {
             ForEach(UnlockTrigger.allCases) { trigger in
                 let isSelected = selection.contains(trigger)
                 SettingsOptionTile(

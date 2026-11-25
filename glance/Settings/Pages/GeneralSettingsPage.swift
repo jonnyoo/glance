@@ -63,8 +63,8 @@ struct GeneralSettingsPage: View {
     private var lockedState: some View {
         SettingsEmptyStateView(
             icon: "lock.fill",
-            message: "Session locked",
-            buttonTitle: isUnlocking ? "Authenticating…" : "Unlock session",
+            message: String(localized: "Session locked"),
+            buttonTitle: isUnlocking ? String(localized: "Authenticating…") : String(localized: "Unlock session"),
             isButtonEnabled: !isUnlocking,
             caption: sessionError,
             action: unlock
@@ -76,7 +76,7 @@ struct GeneralSettingsPage: View {
     private var unlockedState: some View {
         VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
             SettingsGroup {
-                SettingsRowContent(title: "Launch at login") {
+                SettingsRowContent(title: String(localized: "Launch at login")) {
                     GlanceToggle(isOn: Binding(
                         get: { launchAtLoginEnabled },
                         set: { newValue in
@@ -92,11 +92,11 @@ struct GeneralSettingsPage: View {
                     ))
                 }
                 SettingsGroupDivider()
-                SettingsRowContent(title: "Show in menu bar") {
+                SettingsRowContent(title: String(localized: "Show in menu bar")) {
                     GlanceToggle(isOn: $settings.showsInMenuBar)
                 }
                 SettingsGroupDivider()
-                SettingsRowContent(title: "Enable Face Unlock") {
+                SettingsRowContent(title: String(localized: "Enable Face Unlock")) {
                     GlanceToggle(isOn: $coordinator.isEnabled)
                 }
                 SettingsGroupDivider()
@@ -126,29 +126,29 @@ struct GeneralSettingsPage: View {
                 SettingsCaption(text: launchAtLoginError)
             }
             if hasInheritedXcodePermission {
-                SettingsCaption(text: "Running from Xcode — permission checks resolve against Xcode’s grants, not glance’s, so this reading is meaningless. Launch glance.app on its own to see the real state.")
+                SettingsCaption(text: String(localized: "Running from Xcode — permission checks resolve against Xcode’s grants, not glance’s, so this reading is meaningless. Launch glance.app on its own to see the real state."))
             } else if needsInputMonitoring {
                 inputMonitoringNotice()
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                SettingsSectionTitle(text: "Behaviour")
+                SettingsSectionTitle(text: String(localized: "Behaviour"))
                 SettingsGroup {
-                    SettingsRowContent(title: "Retry on notch hover") {
+                    SettingsRowContent(title: String(localized: "Retry on notch hover")) {
                         GlanceToggle(isOn: $settings.retryOnHover)
                     }
                     SettingsGroupDivider()
-                    SettingsRowContent(title: "Auto retry once after failure") {
+                    SettingsRowContent(title: String(localized: "Auto retry once after failure")) {
                         GlanceToggle(isOn: $settings.autoRetryOnce)
                     }
                     SettingsGroupDivider()
-                    SettingsRowContent(title: "Haptic feedback") {
+                    SettingsRowContent(title: String(localized: "Haptic feedback")) {
                         GlanceToggle(isOn: $settings.hapticFeedbackEnabled)
                     }
                     SettingsGroupDivider()
                     SettingsSteppedSliderRowContent(
-                        title: "Face detection duration",
-                        valueLabel: "\(settings.faceDetectionSeconds)s",
+                        title: String(localized: "Face detection duration"),
+                        valueLabel: String(localized: "\(settings.faceDetectionSeconds)s"),
                         index: Binding(
                             get: { Double(settings.faceDetectionSeconds - GlanceSettings.faceDetectionRange.lowerBound) },
                             set: { settings.faceDetectionSeconds = GlanceSettings.faceDetectionRange.lowerBound + Int($0.rounded()) }
@@ -159,9 +159,9 @@ struct GeneralSettingsPage: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                SettingsSectionTitle(text: "Animation")
+                SettingsSectionTitle(text: String(localized: "Animation"))
                 SettingsGroup {
-                    SettingsRowContent(title: "Show animation") {
+                    SettingsRowContent(title: String(localized: "Show animation")) {
                         GlanceToggle(isOn: $settings.showUnlockAnimation)
                     }
                     SettingsGroupDivider()
@@ -187,7 +187,7 @@ struct GeneralSettingsPage: View {
     /// Shown while "On space" is selected but Input Monitoring isn't granted.
     private func inputMonitoringNotice() -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            SettingsCaption(text: "“On space” reads the keyboard directly to see the space key on the lock screen, which needs Accessibility — the same permission glance uses to type your password. Switch glance on under Privacy & Security → Accessibility, then quit and reopen glance.")
+            SettingsCaption(text: String(localized: "“On space” reads the keyboard directly to see the space key on the lock screen, which needs Accessibility — the same permission glance uses to type your password. Switch glance on under Privacy & Security → Accessibility, then quit and reopen glance."))
             Button("Open Accessibility settings") {
                 // Covers the rare install with no Accessibility grant at all.
                 SpaceKeyMonitor.requestInputMonitoringAccess()
@@ -208,7 +208,7 @@ struct GeneralSettingsPage: View {
     }
 
     private func displayPicker() -> some View {
-        SettingsRowContent(title: "Display on") {
+        SettingsRowContent(title: String(localized: "Display on")) {
             SettingsMenuPickerPill(label: displayLabel) {
                 Button("Main display") {
                     settings.preferredDisplayID = nil
@@ -238,13 +238,13 @@ struct GeneralSettingsPage: View {
     }
 
     private var displayLabel: String {
-        guard let targetID = settings.preferredDisplayID else { return "Main display" }
+        guard let targetID = settings.preferredDisplayID else { return String(localized: "Main display") }
         if let connected = screens.first(where: { $0.stableDisplayID == targetID }) {
             return connected.localizedName
         }
         // Picked, but not currently connected — say so rather than showing
         // a bare ID or falling back to another display's name.
-        guard let name = settings.preferredDisplayName else { return "Selected display (disconnected)" }
-        return "\(name) (disconnected)"
+        guard let name = settings.preferredDisplayName else { return String(localized: "Selected display (disconnected)") }
+        return String(localized: "\(name) (disconnected)")
     }
 }
