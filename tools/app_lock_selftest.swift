@@ -66,6 +66,20 @@ enum AppLockSelfTest {
               && state.needsVerification(bundleID: "com.apple.Notes", pid: 20, policy: .onQuit, now: t0.addingTimeInterval(10)),
               "lockAll locks every app")
 
+        // Regression: the Touch ID / password sheet (coreautha) is an accessory agent; treating its activation as the user
+        // switching apps cancelled the pending check, hid the locked app and threw away the password the user typed.
+        let own = "com.eminalan.glance"
+        check(!AppLockState.reactsToActivation(bundleID: "com.apple.LocalAuthentication.UIAgent", isRegularApp: false, ownBundleID: own),
+              "the Touch ID / password sheet (accessory agent) is ignored")
+        check(!AppLockState.reactsToActivation(bundleID: "com.vorssaint.utils", isRegularApp: false, ownBundleID: own),
+              "menu bar utilities and launchers (accessory) are ignored")
+        check(AppLockState.reactsToActivation(bundleID: app, isRegularApp: true, ownBundleID: own),
+              "a regular app such as WhatsApp is handled")
+        check(!AppLockState.reactsToActivation(bundleID: own, isRegularApp: true, ownBundleID: own),
+              "Glance itself is ignored")
+        check(!AppLockState.reactsToActivation(bundleID: nil, isRegularApp: true, ownBundleID: own),
+              "an app without a bundle ID is ignored")
+
         print(failures == 0 ? "ALL PASSED" : "\(failures) FAILED")
         exit(failures == 0 ? 0 : 1)
     }

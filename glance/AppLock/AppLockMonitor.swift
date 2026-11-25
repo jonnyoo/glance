@@ -71,7 +71,13 @@ final class AppLockMonitor: NSObject {
     }
 
     private func handleActivation(of app: NSRunningApplication?) {
-        guard let app, let bundleID = app.bundleIdentifier, bundleID != Bundle.main.bundleIdentifier else { return }
+        guard let app,
+              AppLockState.reactsToActivation(
+                  bundleID: app.bundleIdentifier,
+                  isRegularApp: app.activationPolicy == .regular,
+                  ownBundleID: Bundle.main.bundleIdentifier
+              ),
+              let bundleID = app.bundleIdentifier else { return }
         if let pendingApp {
             guard pendingApp.processIdentifier != app.processIdentifier else { return }
             // The user moved on mid-check: keep the locked app out of sight.

@@ -33,6 +33,14 @@ nonisolated struct AppLockState: Sendable {
 
     init() {}
 
+    /// Whether an app coming to the front is something App Lock should react to at all. Background agents — the Touch ID /
+    /// password sheet (`coreautha`), menu bar utilities, launchers — aren't the user switching apps, so they must neither
+    /// cancel a pending check nor be locked themselves. Glance is skipped too.
+    static func reactsToActivation(bundleID: String?, isRegularApp: Bool, ownBundleID: String?) -> Bool {
+        guard let bundleID, isRegularApp else { return false }
+        return bundleID != ownBundleID
+    }
+
     func needsVerification(bundleID: String, pid: Int32, policy: AppLockRelockPolicy, now: Date) -> Bool {
         guard let unlock = unlocks[bundleID], unlock.pid == pid else { return true }
         if now.timeIntervalSince(unlock.unlockedAt) < Self.reactivationGrace { return false }
