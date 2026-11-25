@@ -44,8 +44,8 @@ struct RecognitionSettingsPage: View {
     private var lockedState: some View {
         SettingsEmptyStateView(
             icon: "lock.fill",
-            message: "Session locked",
-            buttonTitle: isUnlocking ? "Authenticating…" : "Unlock session",
+            message: String(localized: "Session locked"),
+            buttonTitle: isUnlocking ? String(localized: "Authenticating…") : String(localized: "Unlock session"),
             isButtonEnabled: !isUnlocking,
             caption: sessionError,
             action: unlock
@@ -58,7 +58,7 @@ struct RecognitionSettingsPage: View {
         VStack(alignment: .leading, spacing: 20) {
             SettingsGroup {
                 SettingsOptionSliderRowContent(
-                    title: "Match confidence",
+                    title: String(localized: "Match confidence"),
                     stepLabels: MatchConfidenceLevel.allCases.map(\.title),
                     index: matchConfidenceIndex,
                     stopCount: MatchConfidenceLevel.allCases.count
@@ -67,7 +67,7 @@ struct RecognitionSettingsPage: View {
                 SettingsGroupDivider()
 
                 SettingsOptionSliderRowContent(
-                    title: "Detection distance",
+                    title: String(localized: "Detection distance"),
                     stepLabels: DetectionDistanceLevel.allCases.map(\.title),
                     index: detectionDistanceIndex,
                     stopCount: DetectionDistanceLevel.allCases.count
@@ -75,11 +75,11 @@ struct RecognitionSettingsPage: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                SettingsSectionTitle(text: "Liveness")
+                SettingsSectionTitle(text: String(localized: "Liveness"))
                 SettingsGroup {
                     SettingsRowContent(
-                        title: "Liveness detection",
-                        subtitle: "Checks that you're a live person, not a photo. May increase unlock time.",
+                        title: String(localized: "Liveness detection"),
+                        subtitle: String(localized: "Checks that you're a live person, not a photo. May increase unlock time."),
                         subtitleMaxWidth: SettingsMetrics.rowSubtitleMaxWidth
                     ) {
                         GlanceToggle(isOn: $settings.livenessChecksEnabled)
@@ -142,9 +142,9 @@ private enum MatchConfidenceLevel: Int, CaseIterable {
 
     var title: String {
         switch self {
-        case .lessStrict: return "Less strict"
-        case .standard: return "Default"
-        case .moreStrict: return "More strict"
+        case .lessStrict: return String(localized: "Less strict")
+        case .standard: return String(localized: "Default")
+        case .moreStrict: return String(localized: "More strict")
         }
     }
 
@@ -177,9 +177,9 @@ private enum DetectionDistanceLevel: Int, CaseIterable {
 
     var title: String {
         switch self {
-        case .close: return "Close"
-        case .standard: return "Default"
-        case .far: return "Far"
+        case .close: return String(localized: "DetectionDistanceLevel.close", defaultValue: "Close", comment: "Detection distance slider stop: face near the camera")
+        case .standard: return String(localized: "Default")
+        case .far: return String(localized: "Far")
         }
     }
 

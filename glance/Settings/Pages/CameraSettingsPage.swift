@@ -55,8 +55,8 @@ struct CameraSettingsPage: View {
     private var lockedState: some View {
         SettingsEmptyStateView(
             icon: "lock.fill",
-            message: "Session locked",
-            buttonTitle: isUnlocking ? "Authenticating…" : "Unlock session",
+            message: String(localized: "Session locked"),
+            buttonTitle: isUnlocking ? String(localized: "Authenticating…") : String(localized: "Unlock session"),
             isButtonEnabled: !isUnlocking,
             caption: sessionError,
             action: unlock
@@ -68,14 +68,14 @@ struct CameraSettingsPage: View {
     private var unlockedState: some View {
         VStack(alignment: .leading, spacing: SettingsMetrics.rowSpacing) {
             SettingsGroup {
-                cameraPicker(title: "Default", selection: $settings.defaultCameraID)
+                cameraPicker(title: String(localized: "Default"), selection: $settings.defaultCameraID)
                 SettingsGroupDivider()
-                cameraPicker(title: "Built-in display", selection: $settings.builtInDisplayCameraID)
+                cameraPicker(title: String(localized: "Built-in display"), selection: $settings.builtInDisplayCameraID)
                 SettingsGroupDivider()
-                cameraPicker(title: "External display", selection: $settings.externalDisplayCameraID)
+                cameraPicker(title: String(localized: "External display"), selection: $settings.externalDisplayCameraID)
             }
 
-            SettingsSectionTitle(text: "Preview")
+            SettingsSectionTitle(text: String(localized: "Preview"))
             .padding(.bottom, -4)
             previewArea
                 .frame(height: 220)
@@ -103,7 +103,7 @@ struct CameraSettingsPage: View {
         } else {
             ZStack {
                 SettingsMetrics.rowColor
-                SettingsPrimaryButton(title: "Show preview", action: showPreview)
+                SettingsPrimaryButton(title: String(localized: "Show preview"), action: showPreview)
             }
         }
     }
@@ -146,7 +146,7 @@ struct CameraSettingsPage: View {
 
     private func cameraLabel(for id: String?) -> String {
         guard let id, let device = devices.first(where: { $0.id == id }) else {
-            return "System default"
+            return String(localized: "System default")
         }
         return device.name
     }
