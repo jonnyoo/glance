@@ -127,6 +127,8 @@ final class GlanceSettings {
         static let hasAcknowledgedSecurityNotice = "GlanceSettings.hasAcknowledgedSecurityNotice"
         static let saveAttemptPhotos = "GlanceSettings.saveAttemptPhotos"
         static let attemptsLastSeenAt = "GlanceSettings.attemptsLastSeenAt"
+        static let lockedAppBundleIDs = "GlanceSettings.lockedAppBundleIDs"
+        static let appLockRelockPolicy = "GlanceSettings.appLockRelockPolicy"
     }
 
     @ObservationIgnored private let defaults = UserDefaults.standard
@@ -294,6 +296,13 @@ final class GlanceSettings {
             NotificationCenter.default.post(name: .attemptLogDidChange, object: nil)
         }
     }
+    /// Apps that stay covered until the user's face (or Touch ID) opens them — see `AppLockMonitor`.
+    var lockedAppBundleIDs: [String] {
+        didSet { defaults.set(lockedAppBundleIDs, forKey: Key.lockedAppBundleIDs) }
+    }
+    var appLockRelockPolicy: AppLockRelockPolicy {
+        didSet { defaults.set(appLockRelockPolicy.rawValue, forKey: Key.appLockRelockPolicy) }
+    }
 
     private init() {
         // Enabled by default — onboarding already enrolled a face and set a
@@ -363,6 +372,9 @@ final class GlanceSettings {
         hasAcknowledgedSecurityNotice = defaults.object(forKey: Key.hasAcknowledgedSecurityNotice) as? Bool ?? false
         saveAttemptPhotos = defaults.object(forKey: Key.saveAttemptPhotos) as? Bool ?? true
         attemptsLastSeenAt = defaults.object(forKey: Key.attemptsLastSeenAt) as? Date
+        lockedAppBundleIDs = defaults.stringArray(forKey: Key.lockedAppBundleIDs) ?? []
+        appLockRelockPolicy = defaults.string(forKey: Key.appLockRelockPolicy)
+            .flatMap(AppLockRelockPolicy.init(rawValue:)) ?? .onQuit
 
         // Push into the nonisolated mirror immediately, or FaceRecognitionPipeline
         // would keep its own default until the slider is first touched.
