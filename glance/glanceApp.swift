@@ -55,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     /// Held so `menuNeedsUpdate` can refresh this row in place rather than rebuilding the whole menu.
     private var sessionMenuItem: NSMenuItem?
+    private var attemptsMenuItem: NSMenuItem?
     /// Bridges SwiftUI's `openWindow(\.settings)` action in from `glanceApp.body`, since this plain `NSObject` has no
     /// `@Environment` of its own. Bound from the scene body (not `onAppear`) so it's ready before Settings has ever shown —
     /// `NSApp.windows` stops containing the window once fully closed, so only `openWindow(id:)` can reliably re-create it.
@@ -89,6 +90,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self, selector: #selector(windowWillClose(_:)),
             name: NSWindow.willCloseNotification, object: nil
         )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(attemptLogDidChange(_:)),
+            name: .attemptLogDidChange, object: nil
+        )
 
         // Deferred until onboarding is done — Sparkle's own "Check for updates automatically?" consent alert fires the moment
         // it starts on a fresh install, and starting unconditionally here used to pop it mid-onboarding.
@@ -113,6 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSStatusBar.system.removeStatusItem(statusItem)
             self.statusItem = nil
             sessionMenuItem = nil
+            attemptsMenuItem = nil
         }
     }
 
@@ -134,6 +140,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Refreshes `sessionMenuItem` right before the menu displays — see `menuNeedsUpdate` below.
         menu.delegate = self
 
+        let attemptsItem = NSMenuItem(title: "", action: #selector(openAttempts), keyEquivalent: "")
+        attemptsItem.target = self
+        attemptsItem.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
+        attemptsItem.isHidden = true
+        menu.addItem(attemptsItem)
+        attemptsMenuItem = attemptsItem
+
         let sessionItem = NSMenuItem(title: "", action: #selector(toggleSession), keyEquivalent: "")
         sessionItem.target = self
         menu.addItem(sessionItem)
@@ -152,6 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem = item
 
         updateSessionMenuItem()
+        updateAttemptsIndicator()
     }
 
     /// First-run gate: onboarding lives entirely in the notch, so this stays accessory. Called once at launch if onboarding
@@ -205,6 +219,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Fires right before the menu opens — simpler than keeping an `NSMenuItem` reactively bound to `isSessionUnlocked`.
     func menuNeedsUpdate(_ menu: NSMenu) {
         updateSessionMenuItem()
+        updateAttemptsIndicator()
     }
 
     private func updateSessionMenuItem() {
@@ -215,6 +230,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             systemSymbolName: isUnlocked ? "lock.open.fill" : "lock.fill",
             accessibilityDescription: nil
         )
+    }
+
+    @objc private func attemptLogDidChange(_ notification: Notification) {
+        updateAttemptsIndicator()
+    }
+
+    /// Failed attempts since the Attempts tab was last opened — shown next to the icon and as a menu row that opens the tab.
+    private func updateAttemptsIndicator() {
+        let unseen = AttemptLog.unseenCount(since: GlanceSettings.shared.attemptsLastSeenAt)
+        attemptsMenuItem?.isHidden = unseen == 0
+        attemptsMenuItem?.title = String(localized: "\(unseen) new attempts")
+        guard let statusItem, let button = statusItem.button else { return }
+        button.title = unseen == 0 ? "" : " \(unseen)"
+        button.imagePosition = unseen == 0 ? .imageOnly : .imageLeading
+        statusItem.length = unseen == 0 ? NSStatusItem.squareLength : NSStatusItem.variableLength
+    }
+
+    @objc private func openAttempts() {
+        environment.pendingSettingsTab = .attempts
+        openSettingsWindow()
     }
 
     /// Locking is immediate; unlocking prompts Touch ID, so this can't be a plain synchronous action for that branch.
