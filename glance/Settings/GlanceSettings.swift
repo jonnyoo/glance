@@ -125,6 +125,8 @@ final class GlanceSettings {
         static let hasCompletedOnboarding = "GlanceSettings.hasCompletedOnboarding"
         static let onboardingResumeStep = "GlanceSettings.onboardingResumeStep"
         static let hasAcknowledgedSecurityNotice = "GlanceSettings.hasAcknowledgedSecurityNotice"
+        static let saveAttemptPhotos = "GlanceSettings.saveAttemptPhotos"
+        static let attemptsLastSeenAt = "GlanceSettings.attemptsLastSeenAt"
     }
 
     @ObservationIgnored private let defaults = UserDefaults.standard
@@ -281,6 +283,17 @@ final class GlanceSettings {
     var hasAcknowledgedSecurityNotice: Bool {
         didSet { defaults.set(hasAcknowledgedSecurityNotice, forKey: Key.hasAcknowledgedSecurityNotice) }
     }
+    /// Off means failed attempts leave no photo — see `AttemptLog`.
+    var saveAttemptPhotos: Bool {
+        didSet { defaults.set(saveAttemptPhotos, forKey: Key.saveAttemptPhotos) }
+    }
+    /// When the Attempts tab was last opened; attempts newer than this count as unseen in the menu bar.
+    var attemptsLastSeenAt: Date? {
+        didSet {
+            defaults.set(attemptsLastSeenAt, forKey: Key.attemptsLastSeenAt)
+            NotificationCenter.default.post(name: .attemptLogDidChange, object: nil)
+        }
+    }
 
     private init() {
         // Enabled by default — onboarding already enrolled a face and set a
@@ -348,6 +361,8 @@ final class GlanceSettings {
         onboardingResumeStep = defaults.string(forKey: Key.onboardingResumeStep)
             .flatMap(OnboardingStep.init(rawValue:))
         hasAcknowledgedSecurityNotice = defaults.object(forKey: Key.hasAcknowledgedSecurityNotice) as? Bool ?? false
+        saveAttemptPhotos = defaults.object(forKey: Key.saveAttemptPhotos) as? Bool ?? true
+        attemptsLastSeenAt = defaults.object(forKey: Key.attemptsLastSeenAt) as? Date
 
         // Push into the nonisolated mirror immediately, or FaceRecognitionPipeline
         // would keep its own default until the slider is first touched.

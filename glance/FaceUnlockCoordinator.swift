@@ -269,7 +269,8 @@ final class FaceUnlockCoordinator {
             if showsUI {
                 NotchOverlayController.shared.finish(success: true)
             }
-        case .consistentlyWrongFace:
+        case .consistentlyWrongFace(let evidence):
+            recordAttempt(evidence, kind: .unrecognized)
             statusMessage = "Face not recognized."
             if showsUI {
                 NotchOverlayController.shared.finish(success: false)
@@ -278,7 +279,8 @@ final class FaceUnlockCoordinator {
             } else {
                 scheduleAutoRetryIfEnabled(after: headlessRetryDelay)
             }
-        case .spoofSuspected:
+        case .spoofSuspected(let evidence):
+            recordAttempt(evidence, kind: .spoof)
             statusMessage = "Couldn't confirm a live face."
             if showsUI {
                 NotchOverlayController.shared.finish(success: false)
@@ -316,11 +318,20 @@ final class FaceUnlockCoordinator {
         }
     }
 
+    /// Saves the failed attempt's frame off the main actor, so the failure UI and auto-retry never wait on disk I/O.
+    private func recordAttempt(_ evidence: CGImage?, kind: AttemptLog.Kind) {
+        guard GlanceSettings.shared.saveAttemptPhotos, let evidence else { return }
+        Task.detached(priority: .utility) {
+            _ = try? AttemptLog.record(evidence, kind: kind)
+        }
+    }
+
     private enum ScanOutcome {
         case matched
-        case consistentlyWrongFace
+        /// `evidence` is the last frame showing the unmatched face, for `AttemptLog`.
+        case consistentlyWrongFace(evidence: CGImage?)
         /// A deny cue (glare, device rectangle) fired — actively rejected as a spoof regardless of match. Same failure path as `.consistentlyWrongFace`.
-        case spoofSuspected
+        case spoofSuspected(evidence: CGImage?)
         case noResolution
     }
 
@@ -380,7 +391,7 @@ final class FaceUnlockCoordinator {
                 case .denied:
                     // Overrides everything, including a match and any confirmation that already happened.
                     lastOutcome = snapshot.decision.denialReason
-                    return .spoofSuspected
+                    return .spoofSuspected(evidence: frame.image)
                 case .confirmed(let cue):
                     livenessConfirmed = true
                     confirmingCue = cue
@@ -402,7 +413,7 @@ final class FaceUnlockCoordinator {
                     wrongFaceStartedAt = .now
                 }
                 if ContinuousClock.now - wrongFaceStartedAt! >= wrongFaceGraceDuration {
-                    return .consistentlyWrongFace
+                    return .consistentlyWrongFace(evidence: frame.image)
                 }
             }
 
