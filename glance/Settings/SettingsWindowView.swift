@@ -76,6 +76,8 @@ struct SettingsWindowView: View {
         // NSWindow out, keeping `@State` alive, so without this `selection`
         // would remember the last tab instead of resetting to General.
         .onDisappear { selection = .general }
+        .onAppear { applyPendingTab() }
+        .onChange(of: environment.pendingSettingsTab) { _, _ in applyPendingTab() }
         // A native swipe-event monitor observes the hosting window so it
         // recognizes two-finger trackpad swipes across the full Settings UI,
         // including the header, page content, and tab bar.
@@ -169,6 +171,8 @@ struct SettingsWindowView: View {
                     coordinator: environment.faceUnlockCoordinator,
                     pocController: environment.pocController
                 )
+            case .attempts:
+                AttemptsSettingsPage()
             case .about:
                 AboutSettingsPage(updater: environment.updater, environment: environment)
             case .debugFaceLab:
@@ -176,6 +180,12 @@ struct SettingsWindowView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func applyPendingTab() {
+        guard let tab = environment.pendingSettingsTab else { return }
+        selection = tab
+        environment.pendingSettingsTab = nil
     }
 
     private func selectAdjacentTab(for direction: SettingsTabSwipeDirection) {

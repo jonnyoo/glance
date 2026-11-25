@@ -20,6 +20,8 @@ final class AppEnvironment {
 
     /// Revealed by tapping the app icon 5 times on the About page. Plain in-memory `var` so it resets on every relaunch.
     var isDebugSectionRevealed = false
+    /// Set before opening Settings to land on a specific tab (e.g. the menu bar's "new attempts" row); the window consumes it.
+    var pendingSettingsTab: SettingsTab?
 
     init() {
         faceUnlockCoordinator = FaceUnlockCoordinator(pocController: pocController)
