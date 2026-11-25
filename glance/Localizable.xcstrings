@@ -40,6 +40,34 @@
     "%lld frames" : {
       "shouldTranslate" : false
     },
+    "%lld new attempts" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld new attempt"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld new attempts"
+                }
+              }
+            }
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld yeni deneme"
+          }
+        }
+      }
+    },
     "%lld of %lld samples are low quality" : {
       "localizations" : {
         "en" : {
@@ -208,6 +236,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Animasyon"
+          }
+        }
+      }
+    },
+    "Attempts" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denemeler"
           }
         }
       }
@@ -629,6 +667,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ kimliğini sil"
+          }
+        }
+      }
+    },
+    "Delete all attempts" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tüm denemeleri sil"
+          }
+        }
+      }
+    },
+    "Delete this attempt" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu denemeyi sil"
           }
         }
       }
@@ -1273,6 +1331,16 @@
     "No face" : {
       "shouldTranslate" : false
     },
+    "No failed attempts yet." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Henüz başarısız deneme yok."
+          }
+        }
+      }
+    },
     "No identities are enabled — face unlock won't recognize anyone until you switch one back on." : {
       "localizations" : {
         "tr" : {
@@ -1478,6 +1546,16 @@
         }
       }
     },
+    "Recent attempts" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Son denemeler"
+          }
+        }
+      }
+    },
     "Recognition" : {
       "localizations" : {
         "tr" : {
@@ -1559,6 +1637,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kaydet"
+          }
+        }
+      }
+    },
+    "Save photos of failed attempts" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Başarısız denemelerin fotoğrafını kaydet"
           }
         }
       }
@@ -1766,6 +1854,16 @@
         }
       }
     },
+    "Show photo" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fotoğrafı göster"
+          }
+        }
+      }
+    },
     "Show preview" : {
       "localizations" : {
         "tr" : {
@@ -1792,6 +1890,16 @@
     },
     "Specular: — (no native-resolution crop this frame)" : {
       "shouldTranslate" : false
+    },
+    "Spoof attempt" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sahte yüz denemesi"
+          }
+        }
+      }
     },
     "Start" : {
       "shouldTranslate" : false
@@ -1834,6 +1942,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sistem varsayılanı"
+          }
+        }
+      }
+    },
+    "Takes a photo when a face that isn't enrolled, or a photo of one, tries to unlock your Mac. Photos stay on this Mac." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kayıtlı olmayan bir yüz ya da bir yüzün fotoğrafı Mac'inizin kilidini açmaya çalışırsa fotoğraf çekilir. Fotoğraflar sadece bu Mac'te saklanır."
           }
         }
       }
@@ -2065,6 +2183,16 @@
     },
     "Unlock the session to view enrolled identities." : {
       "shouldTranslate" : false
+    },
+    "Unrecognized face" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tanınmayan yüz"
+          }
+        }
+      }
     },
     "Use it" : {
       "shouldTranslate" : false
