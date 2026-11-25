@@ -29,6 +29,6 @@ final class AppEnvironment {
     init() {
         faceUnlockCoordinator = FaceUnlockCoordinator(pocController: pocController)
         sessionAutoLocker = SessionAutoLocker(pocController: pocController)
-        appLockMonitor = AppLockMonitor(pipeline: faceUnlockCoordinator.pipeline)
+        appLockMonitor = AppLockMonitor(pipeline: faceUnlockCoordinator.pipeline, pocController: pocController)
     }
 }

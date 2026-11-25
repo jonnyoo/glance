@@ -12,12 +12,15 @@ import LocalAuthentication
 final class AppLockMonitor: NSObject {
     private var state = AppLockState()
     private let verifier: FaceVerifier
+    /// Told when App Lock's prompt unlocks Glance's session, so the menu bar and Settings stop showing it as locked.
+    private let pocController: POCController
     private let overlay = AppLockOverlayController()
     /// The locked app currently behind the overlay, if any.
     private var pendingApp: NSRunningApplication?
     private var checkTask: Task<Void, Never>?
 
-    init(pipeline: FaceRecognitionPipeline) {
+    init(pipeline: FaceRecognitionPipeline, pocController: POCController) {
+        self.pocController = pocController
         // Its own camera, not the lock screen's: a late `stop()` on a shared camera can kill a lock-screen scan mid-warm-up.
         verifier = FaceVerifier(camera: CameraManager(), pipeline: pipeline)
         super.init()
@@ -121,13 +124,26 @@ final class AppLockMonitor: NSObject {
         checkTask?.cancel()
         overlay.model.phase = .authenticating
         let name = app.localizedName ?? ""
+        let reason = String(localized: "Authenticate to open \(name)")
+        // With Glance's session locked (right after an update or restart), unlock the session itself: that one prompt then
+        // lets face checks work again — here and on the lock screen — instead of asking for the password every time.
+        let unlocksSession = !SecureCredentialManager.isSessionUnlocked && SecureCredentialManager.hasStoredPassword()
         checkTask = Task { [weak self] in
-            let context = LAContext()
-            let approved = (try? await context.evaluatePolicy(
-                .deviceOwnerAuthentication,
-                localizedReason: String(localized: "Authenticate to open \(name)")
-            )) ?? false
-            guard let self, !Task.isCancelled, self.pendingApp?.processIdentifier == app.processIdentifier else { return }
+            let approved: Bool
+            if unlocksSession {
+                // Blocking keychain read behind Touch ID / password, so off the main actor.
+                approved = await Task.detached(priority: .userInitiated) { () -> Bool in
+                    (try? SecureCredentialManager.unlockSession(reason: reason)) != nil
+                }.value
+            } else {
+                approved = (try? await LAContext().evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)) ?? false
+            }
+            guard let self else { return }
+            if approved, unlocksSession {
+                // Even if this check was abandoned meanwhile, the session did unlock — keep the UI truthful.
+                self.pocController.refreshCredentialStatus()
+            }
+            guard !Task.isCancelled, self.pendingApp?.processIdentifier == app.processIdentifier else { return }
             if approved {
                 self.unlockPendingApp()
             } else {
