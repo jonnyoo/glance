@@ -173,6 +173,8 @@ struct SettingsWindowView: View {
                 )
             case .attempts:
                 AttemptsSettingsPage()
+            case .appLock:
+                AppLockSettingsPage()
             case .about:
                 AboutSettingsPage(updater: environment.updater, environment: environment)
             case .debugFaceLab:
