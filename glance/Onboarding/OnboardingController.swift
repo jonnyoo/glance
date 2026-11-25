@@ -365,15 +365,17 @@ final class OnboardingController {
 
     // Pose-matching bands, in radians. Yaw: left turn is positive, matching the mirrored
     // preview. Pitch's sign is the opposite of the initial guess — see `pitchMatches` below.
-    private let yawInnerThreshold: Float = 0.24
+    // Side bands are ~12.6°–35° yaw: wide enough to hit without overshooting, with the
+    // inner edge still above `yawCenterTolerance` so side samples differ from center.
+    private let yawInnerThreshold: Float = 0.22
     private let yawCenterTolerance: Float = 0.18
-    private let yawOuterCap: Float = 0.51
+    private let yawOuterCap: Float = 0.61
     private let pitchInnerThreshold: Float = 0.17
     private let pitchCenterTolerance: Float = 0.15
-    private let pitchOuterCap: Float = 0.37
+    private let pitchOuterCap: Float = 0.45
     /// If a pose takes longer than this, matching bands widen by `stallWidenFactor` so an
     /// unusual camera angle can't permanently strand the user.
-    private let stallTimeout: Duration = .seconds(12)
+    private let stallTimeout: Duration = .seconds(6)
     private let stallWidenFactor: Float = 1.25
 
     private(set) var currentPoseIndex = 0
